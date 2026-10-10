@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for auth & roles
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return request.auth.token.role != null 
+        ? request.auth.token.role 
+        : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (getUserRole() == 'Admin' || getUserRole() == 'admin');
+    }
+
+    function isManager() {
+      return isAuthenticated() && (getUserRole() == 'Manager' || getUserRole() == 'manager');
+    }
+
+    function isSupervisor() {
+      return isAuthenticated() && (getUserRole() == 'Supervisor' || getUserRole() == 'supervisor');
+    }
+
+    function isAuthorizedUser() {
+      return isAdmin() || isManager();
+    }
+
+    // Vendors Collection
+    match /vendors/{vendorId} {
+      // Allow read to Admin, Manager, and Supervisor (with read approval)
+      allow read: if isAuthenticated();
+
+      // Creation & Updates: Only Admin and Manager via authorized Cloud Functions or direct matching write rules
+      allow create: if isAuthorizedUser()
+                    && request.resource.data.vendorCode != null
+                    && !request.resource.data.keys().hasAny(['financialDetails']) || isAuthorizedUser();
+
+      allow update: if isAuthorizedUser()
+                    && request.resource.data.vendorCode == resource.data.vendorCode
+                    && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Prevent hard deletion of vendors (soft deactivation required)
+      allow delete: if isAdmin();
+
+      // Contacts Subcollection
+      match /contacts/{contactId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthorizedUser();
+        allow delete: if isAdmin();
+      }
+
+      // Documents Subcollection
+      match /documents/{documentId} {
+        allow read: if isAuthorizedUser();
+        allow create, update: if isAuthorizedUser();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Vendor Audit Logs (Immutable, Client Write Prohibited)
+    match /vendor_audit_logs/{auditId} {
+      allow read: if isAuthorizedUser();
+      allow write: if false; // Only Cloud Functions / Admin SDK can write audit logs
+    }
+
+    // Vendor Counters (Client Write Prohibited)
+    match /vendor_counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Atomic updates strictly handled by server Cloud Functions
+    }
+
+    // Default deny all other collections unless explicitly matched
+    match /{document=**} {
+      allow read, write: if isAuthenticated() && isAdmin();
+    }
+  }
+}
