@@ -1,31 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Building2,
-  MapPin,
-  FileText,
-  CreditCard,
-  Mail,
-  Users,
-  Paperclip,
-  CheckCircle2,
-  AlertCircle,
-  Plus,
-  Trash2,
-  Info,
-  Lock,
-  Save,
-  RotateCcw,
-  X,
-  AlertTriangle
-} from 'lucide-react';
-import {
   Vendor,
   VendorContact,
   VendorType,
   VendorCategory,
   GSTRegistrationStatus,
-  PaymentTerms,
-  OpeningBalanceType,
   PreferredPaymentMethod,
   PreferredContactMethod,
   DocumentType
@@ -90,21 +69,6 @@ export const VendorForm: React.FC<VendorFormProps> = ({
   );
 
   // Section 4 — Financial Details
-  const [paymentTerms, setPaymentTerms] = useState<PaymentTerms>(
-    initialVendor?.financialDetails?.paymentTerms || '30_days'
-  );
-  const [customPaymentDays, setCustomPaymentDays] = useState<number>(
-    initialVendor?.financialDetails?.customPaymentDays || 30
-  );
-  const [creditLimit, setCreditLimit] = useState<number>(
-    initialVendor?.financialDetails?.creditLimit || 1000000
-  );
-  const [openingBalance, setOpeningBalance] = useState<number>(
-    initialVendor?.financialDetails?.openingBalance || 0
-  );
-  const [openingBalanceType, setOpeningBalanceType] = useState<OpeningBalanceType>(
-    initialVendor?.financialDetails?.openingBalanceType || 'none'
-  );
   const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<PreferredPaymentMethod>(
     initialVendor?.financialDetails?.preferredPaymentMethod || 'bank_transfer'
   );
@@ -156,7 +120,6 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
   // Section 7 — Notes & Attachments
   const [notes, setNotes] = useState(initialVendor?.notes || '');
-  const [uploadedFiles, setUploadedFiles] = useState<{ file: File; docType: DocumentType }[]>([]);
 
   // Validation Errors & Duplicate Alerts
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -199,7 +162,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         contactNumber: '',
         email: '',
         preferredContactMethod: 'phone',
-        isPrimary: contacts.length === 0, // Primary if first contact
+        isPrimary: contacts.length === 0,
         status: 'active'
       }
     ]);
@@ -208,7 +171,6 @@ export const VendorForm: React.FC<VendorFormProps> = ({
   const handleUpdateContact = (index: number, field: string, value: any) => {
     const updated = [...contacts];
     if (field === 'isPrimary' && value === true) {
-      // Unmark other contacts as primary
       updated.forEach((c, idx) => {
         c.isPrimary = idx === index;
       });
@@ -248,7 +210,6 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       errs.ifscCode = 'Invalid IFSC Code format (e.g. SBIN0001234).';
     }
 
-    // Contact person validation
     if (contacts.length > 0) {
       contacts.forEach((c, idx) => {
         if (!c.personName?.trim()) {
@@ -275,7 +236,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         legalCompanyName: legalCompanyName.trim() || undefined,
         vendorType,
         vendorCategory,
-        parentVendorId: parentVendorId || null,
+        parentVendorId: vendorCategory === 'main_company' ? null : (parentVendorId || null),
         businessDescription: businessDescription.trim() || undefined,
         address: {
           addressLine1: addressLine1.trim(),
@@ -296,11 +257,11 @@ export const VendorForm: React.FC<VendorFormProps> = ({
           otherRegistrationNumber: otherRegistrationNumber.trim() || undefined
         },
         financialDetails: {
-          paymentTerms,
-          customPaymentDays: paymentTerms === 'custom' ? Number(customPaymentDays) : undefined,
-          creditLimit: Number(creditLimit) || 0,
-          openingBalance: Number(openingBalance) || 0,
-          openingBalanceType,
+          paymentTerms: initialVendor?.financialDetails?.paymentTerms || '30_days',
+          customPaymentDays: initialVendor?.financialDetails?.customPaymentDays,
+          creditLimit: initialVendor?.financialDetails?.creditLimit,
+          openingBalance: initialVendor?.financialDetails?.openingBalance,
+          openingBalanceType: initialVendor?.financialDetails?.openingBalanceType,
           preferredPaymentMethod,
           bankAccountHolderName: bankAccountHolderName.trim() || undefined,
           bankName: bankName.trim() || undefined,
@@ -352,8 +313,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       {/* Header Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div>
-          <h2 className="text-xl font-bold text-[#1F4E79] flex items-center gap-2">
-            <Building2 className="w-5 h-5" />
+          <h2 className="text-xl font-bold text-[#1F4E79]">
             {isEditMode ? `Edit Vendor: ${initialVendor?.companyName}` : 'Add New Vendor & Client Record'}
           </h2>
           <p className="text-xs text-slate-500">
@@ -365,7 +325,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={isSubmitting} icon={<Save className="w-4 h-4" />}>
+          <Button type="submit" variant="primary" disabled={isSubmitting}>
             {isSubmitting ? 'Saving...' : 'Save Vendor Master'}
           </Button>
         </div>
@@ -373,30 +333,25 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
       {/* Duplicate Warning Alert */}
       {duplicateWarning && (
-        <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl text-amber-900 flex items-start gap-3 shadow-2xs">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-bold text-sm">Potential Duplicate Vendor Detected</h4>
-            <p className="text-xs text-amber-800">{duplicateWarning}</p>
-            <p className="text-[11px] text-amber-700 mt-1 italic">
-              Please double check to avoid creating duplicate vendor entries.
-            </p>
-          </div>
+        <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl text-amber-900 shadow-2xs">
+          <h4 className="font-bold text-sm">Potential Duplicate Vendor Detected</h4>
+          <p className="text-xs text-amber-800">{duplicateWarning}</p>
+          <p className="text-[11px] text-amber-700 mt-1 italic">
+            Please double check to avoid creating duplicate vendor entries.
+          </p>
         </div>
       )}
 
       {/* Form Submission Error Banner */}
       {errors.submit && (
-        <div className="bg-rose-50 border border-rose-300 p-4 rounded-xl text-rose-900 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+        <div className="bg-rose-50 border border-rose-300 p-4 rounded-xl text-rose-900">
           <span className="text-xs font-semibold">{errors.submit}</span>
         </div>
       )}
 
       {/* SECTION 1: Company Information */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <Building2 className="w-5 h-5 text-blue-600" />
+        <div className="pb-3 border-b border-slate-200 text-[#1F4E79]">
           <h3 className="font-bold text-base">Section 1 — Company Information</h3>
         </div>
 
@@ -467,7 +422,13 @@ export const VendorForm: React.FC<VendorFormProps> = ({
             </label>
             <select
               value={vendorCategory}
-              onChange={(e) => setVendorCategory(e.target.value as VendorCategory)}
+              onChange={(e) => {
+                const newCat = e.target.value as VendorCategory;
+                setVendorCategory(newCat);
+                if (newCat === 'main_company') {
+                  setParentVendorId(null);
+                }
+              }}
               className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
             >
               <option value="main_company">Main Company</option>
@@ -478,26 +439,28 @@ export const VendorForm: React.FC<VendorFormProps> = ({
             </select>
           </div>
 
-          {/* Parent Company Selection */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Parent Company (Optional)
-            </label>
-            <select
-              value={parentVendorId || ''}
-              onChange={(e) => setParentVendorId(e.target.value || null)}
-              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
-            >
-              <option value="">None (Independent Parent Company)</option>
-              {existingVendors
-                .filter((v) => v.vendorId !== initialVendor?.vendorId)
-                .map((v) => (
-                  <option key={v.vendorId} value={v.vendorId}>
-                    {v.companyName} ({v.vendorCode})
-                  </option>
-                ))}
-            </select>
-          </div>
+          {/* Parent Company Selection - Only shown if Vendor Category is other than Main Company */}
+          {vendorCategory !== 'main_company' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                Parent Company
+              </label>
+              <select
+                value={parentVendorId || ''}
+                onChange={(e) => setParentVendorId(e.target.value || null)}
+                className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
+              >
+                <option value="">Select Parent Company</option>
+                {existingVendors
+                  .filter((v) => v.vendorId !== initialVendor?.vendorId)
+                  .map((v) => (
+                    <option key={v.vendorId} value={v.vendorId}>
+                      {v.companyName} ({v.vendorCode})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
 
           {/* Status */}
           <div>
@@ -515,7 +478,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
           </div>
 
           {/* Business Description */}
-          <div className="md:col-span-2">
+          <div className={vendorCategory === 'main_company' ? 'md:col-span-3' : 'md:col-span-2'}>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
               Business Description / Operations Summary
             </label>
@@ -532,8 +495,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
       {/* SECTION 2: Address Details */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <MapPin className="w-5 h-5 text-emerald-600" />
+        <div className="pb-3 border-b border-slate-200 text-[#1F4E79]">
           <h3 className="font-bold text-base">Section 2 — Address Details</h3>
         </div>
 
@@ -641,10 +603,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       {/* SECTION 3: Tax and Registration Details */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-purple-600" />
-            <h3 className="font-bold text-base">Section 3 — Tax and Registration Details</h3>
-          </div>
+          <h3 className="font-bold text-base">Section 3 — Tax and Registration Details</h3>
           <span className="text-xs bg-purple-50 text-purple-800 px-2.5 py-1 rounded-full border border-purple-200">
             Unregistered Vendors Allowed
           </span>
@@ -737,98 +696,13 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       {/* SECTION 4: Financial Details */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-amber-600" />
-            <h3 className="font-bold text-base">Section 4 — Financial Details</h3>
-          </div>
-          <span className="flex items-center gap-1 text-xs bg-amber-50 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300 font-semibold">
-            <Lock className="w-3 h-3 text-amber-700" />
+          <h3 className="font-bold text-base">Section 4 — Financial Details</h3>
+          <span className="text-xs bg-amber-50 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300 font-semibold">
             Restricted Access Fields
           </span>
         </div>
 
-        {/* Verification Alert Banner */}
-        <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-blue-900 flex items-start gap-2.5 text-xs">
-          <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold">Accounting Compliance Note:</span> Entering an opening balance does not automatically post a confirmed accounting journal entry. It is marked for verification and manager approval.
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Payment Terms
-            </label>
-            <select
-              value={paymentTerms}
-              onChange={(e) => setPaymentTerms(e.target.value as PaymentTerms)}
-              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
-            >
-              <option value="immediate">Immediate Payment</option>
-              <option value="7_days">7 Days Net</option>
-              <option value="15_days">15 Days Net</option>
-              <option value="30_days">30 Days Net</option>
-              <option value="45_days">45 Days Net</option>
-              <option value="60_days">60 Days Net</option>
-              <option value="custom">Custom Credit Period</option>
-            </select>
-          </div>
-
-          {paymentTerms === 'custom' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Custom Payment Days
-              </label>
-              <input
-                type="number"
-                value={customPaymentDays}
-                onChange={(e) => setCustomPaymentDays(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Credit Limit (₹)
-            </label>
-            <input
-              type="number"
-              placeholder="1000000"
-              value={creditLimit}
-              onChange={(e) => setCreditLimit(Number(e.target.value))}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Opening Balance (₹)
-            </label>
-            <input
-              type="number"
-              placeholder="0"
-              value={openingBalance}
-              onChange={(e) => setOpeningBalance(Number(e.target.value))}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Opening Balance Type
-            </label>
-            <select
-              value={openingBalanceType}
-              onChange={(e) => setOpeningBalanceType(e.target.value as OpeningBalanceType)}
-              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
-            >
-              <option value="none">None (Zero Balance)</option>
-              <option value="receivable">Receivable (Customer owes us)</option>
-              <option value="payable">Payable (We owe supplier)</option>
-            </select>
-          </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
@@ -925,8 +799,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
       {/* SECTION 5: Official Communication Details */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <Mail className="w-5 h-5 text-indigo-600" />
+        <div className="pb-3 border-b border-slate-200 text-[#1F4E79]">
           <h3 className="font-bold text-base">Section 5 — Official Communication Details</h3>
         </div>
 
@@ -999,16 +872,12 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       {/* SECTION 6: Contact Persons */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-teal-600" />
-            <h3 className="font-bold text-base">Section 6 — Contact Persons</h3>
-          </div>
+          <h3 className="font-bold text-base">Section 6 — Contact Persons</h3>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleAddContact}
-            icon={<Plus className="w-4 h-4" />}
           >
             + Add Contact Person
           </Button>
@@ -1050,9 +919,9 @@ export const VendorForm: React.FC<VendorFormProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveContact(index)}
-                    className="text-rose-600 hover:text-rose-800 p-1 rounded-lg hover:bg-rose-100 transition-colors cursor-pointer"
+                    className="text-rose-600 hover:text-rose-800 px-2 py-1 text-xs rounded-lg hover:bg-rose-100 transition-colors cursor-pointer font-bold"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    Remove
                   </button>
                 )}
               </div>
@@ -1153,8 +1022,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
       {/* SECTION 7: Notes and Attachments */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-200 text-[#1F4E79]">
-          <Paperclip className="w-5 h-5 text-rose-600" />
+        <div className="pb-3 border-b border-slate-200 text-[#1F4E79]">
           <h3 className="font-bold text-base">Section 7 — Notes and Attachments</h3>
         </div>
 
@@ -1178,9 +1046,8 @@ export const VendorForm: React.FC<VendorFormProps> = ({
           <button
             type="button"
             onClick={handleResetForm}
-            className="text-xs text-slate-600 hover:text-slate-900 font-semibold flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+            className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-4 h-4" />
             Reset Form
           </button>
         </div>
@@ -1201,7 +1068,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
             </button>
           )}
 
-          <Button type="submit" variant="primary" disabled={isSubmitting} icon={<CheckCircle2 className="w-4 h-4" />}>
+          <Button type="submit" variant="primary" disabled={isSubmitting}>
             {isSubmitting ? 'Saving Vendor...' : isEditMode ? 'Update Vendor' : 'Save Vendor Master'}
           </Button>
         </div>

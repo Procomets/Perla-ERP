@@ -516,3 +516,647 @@ export const archiveVendorDocument = functions.https.onCall(async (data, context
 
   return { success: true };
 });
+
+// ==========================================
+// PURCHASE ORDER (PO) CLOUD FUNCTIONS
+// ==========================================
+
+function calculateServerPOTotals(lines: any[]) {
+  const totalQtyByUnit: Record<string, number> = { piece: 0, kg: 0 };
+  let totalQuantity = 0;
+  let totalAmount = 0;
+
+  for (const line of lines) {
+    const qty = Number(line.quantity) || 0;
+    const rate = Number(line.rate) || 0;
+    const unit = line.unit || 'piece';
+    const rateBasis = line.rateBasis || 'per_piece';
+
+    totalQtyByUnit[unit] = (totalQtyByUnit[unit] || 0) + qty;
+    totalQuantity += qty;
+
+    const isPerKgRate =
+      rateBasis === 'per_kg' || rateBasis === 'perKg' || rateBasis === 'per kg';
+
+    let lineAmount = 0;
+    if (isPerKgRate) {
+      if (unit === 'piece' && line.billableWeightKg) {
+        lineAmount = Math.round(Number(line.billableWeightKg) * rate * 100) / 100;
+      } else {
+        lineAmount = Math.round(qty * rate * 100) / 100;
+      }
+    } else {
+      if (unit === 'kg' && line.billablePieceQty) {
+        lineAmount = Math.round(Number(line.billablePieceQty) * rate * 100) / 100;
+      } else {
+        lineAmount = Math.round(qty * rate * 100) / 100;
+      }
+    }
+
+    line.lineAmount = lineAmount;
+    line.amount = lineAmount;
+    totalAmount += lineAmount;
+  }
+
+  return {
+    totalQtyByUnit,
+    totalQuantity,
+    totalAmount: Math.round(totalAmount * 100) / 100
+  };
+}
+
+// Function 9: createPurchaseOrder
+export const createPurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+
+  const {
+    customerId,
+    processCategory,
+    styleNo,
+    styleNumber,
+    itemName,
+    orderDate,
+    deliveryDate,
+    expectedCompletionDate,
+    colourLines = [],
+    customerReferenceNo,
+    customerInstructions,
+    internalRemarks,
+    notes,
+    status = 'draft'
+  } = data;
+
+  const resolvedStyleNo = styleNo || styleNumber;
+
+  if (!customerId || !processCategory || !resolvedStyleNo || !itemName) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing required PO fields: customerId, processCategory, styleNo, and itemName are required.'
+    );
+  }
+
+  if (!Array.isArray(colourLines) || colourLines.length === 0) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'At least one colour line is required to create a Purchase Order.'
+    );
+  }
+
+  // Verify customer in Vendor Master
+  const customerDoc = await db.collection('vendors').doc(customerId).get();
+  if (!customerDoc.exists) {
+    throw new functions.https.HttpsError(
+      'not-found',
+      `Customer vendor ID '${customerId}' was not found in Vendor Master.`
+    );
+  }
+
+  const customerData = customerDoc.data();
+  const customerName = customerData?.companyName || 'Unknown Customer';
+  const customerCode = customerData?.vendorCode || '';
+
+  // Fetch creator display name
+  let userName = 'Authorized User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Authorized User';
+  }
+
+  const now = admin.firestore.Timestamp.now();
+  const dateObj = now.toDate();
+  const month = dateObj.getMonth() + 1;
+  const year = dateObj.getFullYear();
+  const fyStart = month >= 4 ? year : year - 1;
+  const fyEnd = (fyStart + 1) % 100;
+  const fyString = `${fyStart}-${String(fyEnd).padStart(2, '0')}`;
+  const counterKey = `po_${fyString}`;
+
+  const poRef = db.collection('purchase_orders').doc();
+  const poId = poRef.id;
+  let poNumber = '';
+
+  // Atomic counter generation
+  await db.runTransaction(async (transaction) => {
+    const counterRef = db.collection('purchase_order_counters').doc(counterKey);
+    const counterDoc = await transaction.get(counterRef);
+
+    let nextVal = 1;
+    if (counterDoc.exists) {
+      nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+    }
+
+    transaction.set(
+      counterRef,
+      {
+        counterKey,
+        currentValue: nextVal,
+        updatedAt: now
+      },
+      { merge: true }
+    );
+
+    const padded = String(nextVal).padStart(4, '0');
+    poNumber = `PO/${fyString}/${padded}`;
+  });
+
+  const processedColourLines = colourLines.map((line: any, idx: number) => {
+    const lineId = line.id || line.lineId || `pol_${Date.now()}_${idx}`;
+    return {
+      id: lineId,
+      lineId,
+      colourName: line.colourName || '',
+      colourCode: line.colourCode || null,
+      processType: line.processType || 'Softener Wash',
+      quantity: Number(line.quantity) || 0,
+      unit: line.unit || 'piece',
+      rateBasis: line.rateBasis || 'per_piece',
+      rate: Number(line.rate) || 0,
+      billableWeightKg: line.billableWeightKg ? Number(line.billableWeightKg) : null,
+      billablePieceQty: line.billablePieceQty ? Number(line.billablePieceQty) : null,
+      lineAmount: 0,
+      amount: 0,
+      notes: line.notes || null,
+      remarks: line.remarks || ''
+    };
+  });
+
+  const totals = calculateServerPOTotals(processedColourLines);
+
+  const poDoc = {
+    id: poId,
+    poId,
+    poNumber,
+    customerId,
+    customerVendorId: customerId,
+    customerCode,
+    customerName,
+    customerCompanyNameSnapshot: customerName,
+    processCategory: String(processCategory).toLowerCase(),
+    styleNo: resolvedStyleNo,
+    styleNumber: resolvedStyleNo,
+    itemName,
+    orderDate: orderDate || now.toDate().toISOString().split('T')[0],
+    deliveryDate: deliveryDate || null,
+    expectedCompletionDate: expectedCompletionDate || deliveryDate || null,
+    colourLines: processedColourLines,
+    lines: processedColourLines,
+    totalQtyByUnit: totals.totalQtyByUnit,
+    totalQuantity: totals.totalQuantity,
+    totalAmount: totals.totalAmount,
+    currency: 'INR',
+    customerReferenceNo: customerReferenceNo || null,
+    customerInstructions: customerInstructions || null,
+    internalRemarks: internalRemarks || null,
+    notes: notes || null,
+    status: status === 'submitted' ? 'submitted' : 'draft',
+    revision: 1,
+    createdBy: uid,
+    createdById: uid,
+    createdByName: userName,
+    createdAt: now,
+    updatedBy: uid,
+    updatedById: uid,
+    updatedAt: now,
+    schemaVersion: 1
+  };
+
+  const batch = db.batch();
+  batch.set(poRef, poDoc);
+
+  // Write audit log
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber,
+    action: 'created',
+    performedBy: uid,
+    performedByName: userName,
+    performedAt: now,
+    summary: `Purchase Order ${poNumber} created with ${processedColourLines.length} colour line(s). Initial status: ${poDoc.status}.`
+  });
+
+  await batch.commit();
+
+  return { poId, poNumber, success: true };
+});
+
+// Function 10: updatePurchaseOrder
+export const updatePurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId, updates } = data;
+
+  if (!poId || !updates) {
+    throw new functions.https.HttpsError('invalid-argument', 'poId and updates are required.');
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Purchase Order ${poId} does not exist.`);
+  }
+
+  const currentPo = poSnap.data();
+
+  // Only draft POs can be edited directly
+  if (currentPo?.status !== 'draft') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Cannot edit PO in '${currentPo?.status}' status. Only draft POs can be edited directly.`
+    );
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  let processedColourLines = currentPo.colourLines;
+  if (updates.colourLines) {
+    processedColourLines = updates.colourLines.map((line: any, idx: number) => {
+      const lineId = line.id || line.lineId || `pol_${Date.now()}_${idx}`;
+      return {
+        id: lineId,
+        lineId,
+        colourName: line.colourName || '',
+        colourCode: line.colourCode || null,
+        processType: line.processType || 'Softener Wash',
+        quantity: Number(line.quantity) || 0,
+        unit: line.unit || 'piece',
+        rateBasis: line.rateBasis || 'per_piece',
+        rate: Number(line.rate) || 0,
+        billableWeightKg: line.billableWeightKg ? Number(line.billableWeightKg) : null,
+        billablePieceQty: line.billablePieceQty ? Number(line.billablePieceQty) : null,
+        lineAmount: 0,
+        amount: 0,
+        notes: line.notes || null,
+        remarks: line.remarks || ''
+      };
+    });
+  }
+
+  const totals = calculateServerPOTotals(processedColourLines);
+
+  const cleanUpdates = {
+    ...updates,
+    colourLines: processedColourLines,
+    lines: processedColourLines,
+    totalQtyByUnit: totals.totalQtyByUnit,
+    totalQuantity: totals.totalQuantity,
+    totalAmount: totals.totalAmount,
+    updatedAt: now,
+    updatedBy: uid,
+    updatedById: uid
+  };
+
+  if (updates.styleNo) {
+    cleanUpdates.styleNumber = updates.styleNo;
+  }
+
+  // Prevent overriding protected fields
+  delete cleanUpdates.poNumber;
+  delete cleanUpdates.createdAt;
+  delete cleanUpdates.createdBy;
+  delete cleanUpdates.createdById;
+  delete cleanUpdates.createdByName;
+  delete cleanUpdates.approvedAt;
+  delete cleanUpdates.approvedBy;
+  delete cleanUpdates.approvedById;
+
+  const batch = db.batch();
+  batch.update(poRef, cleanUpdates);
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo.poNumber,
+    action: 'updated',
+    performedBy: uid,
+    performedAt: now,
+    changedFields: Object.keys(updates),
+    summary: `Draft Purchase Order ${currentPo.poNumber} updated.`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId };
+});
+
+// Function 11: submitPurchaseOrder
+export const submitPurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId } = data;
+
+  if (!poId) {
+    throw new functions.https.HttpsError('invalid-argument', 'poId is required.');
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Purchase Order not found.');
+  }
+
+  const currentPo = poSnap.data();
+  if (currentPo?.status !== 'draft') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Cannot submit PO with status '${currentPo?.status}'. Only 'draft' POs can be submitted.`
+    );
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const batch = db.batch();
+  batch.update(poRef, {
+    status: 'submitted',
+    submittedBy: uid,
+    submittedById: uid,
+    submittedAt: now,
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo.poNumber,
+    action: 'submitted',
+    performedBy: uid,
+    performedAt: now,
+    summary: `Purchase Order ${currentPo.poNumber} submitted for manager/admin approval.`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId };
+});
+
+// Function 12: approvePurchaseOrder
+export const approvePurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId } = data;
+
+  if (!poId) {
+    throw new functions.https.HttpsError('invalid-argument', 'poId is required.');
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Purchase Order not found.');
+  }
+
+  const currentPo = poSnap.data();
+  if (currentPo?.status !== 'submitted' && currentPo?.status !== 'draft') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Cannot approve PO with status '${currentPo?.status}'.`
+    );
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const batch = db.batch();
+  batch.update(poRef, {
+    status: 'approved',
+    approvedBy: uid,
+    approvedById: uid,
+    approvedAt: now,
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo.poNumber,
+    action: 'approved',
+    performedBy: uid,
+    performedAt: now,
+    summary: `Purchase Order ${currentPo.poNumber} approved by ${uid}. Eligible for Inward receipt workflow.`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId };
+});
+
+// Function 13: rejectPurchaseOrder
+export const rejectPurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId, reason } = data;
+
+  if (!poId || !reason) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'poId and rejection reason are required.'
+    );
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Purchase Order not found.');
+  }
+
+  const currentPo = poSnap.data();
+  const now = admin.firestore.Timestamp.now();
+
+  const batch = db.batch();
+  batch.update(poRef, {
+    status: 'rejected',
+    rejectionReason: reason,
+    rejectedBy: uid,
+    rejectedById: uid,
+    rejectedAt: now,
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo?.poNumber || '',
+    action: 'rejected',
+    performedBy: uid,
+    performedAt: now,
+    summary: `Purchase Order ${currentPo?.poNumber || poId} rejected. Reason: ${reason}`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId };
+});
+
+// Function 14: cancelPurchaseOrder
+export const cancelPurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId, reason } = data;
+
+  if (!poId || !reason) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'poId and cancellation reason are required.'
+    );
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Purchase Order not found.');
+  }
+
+  const currentPo = poSnap.data();
+
+  // Check whether operational transactions reference this PO
+  const inwardCheck = await db.collection('inwards').where('poId', '==', poId).limit(1).get();
+  if (!inwardCheck.empty) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Cannot cancel Purchase Order: Inward receipts already reference this PO. Use operational closure instead.'
+    );
+  }
+
+  const outwardCheck = await db.collection('outwards').where('poId', '==', poId).limit(1).get();
+  if (!outwardCheck.empty) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Cannot cancel Purchase Order: Outward delivery entries already reference this PO.'
+    );
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const batch = db.batch();
+  batch.update(poRef, {
+    status: 'cancelled',
+    cancellationReason: reason,
+    cancelledBy: uid,
+    cancelledById: uid,
+    cancelledAt: now,
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo?.poNumber || '',
+    action: 'cancelled',
+    performedBy: uid,
+    performedAt: now,
+    summary: `Purchase Order ${currentPo?.poNumber || poId} cancelled. Reason: ${reason}`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId };
+});
+
+// Function 15: amendPurchaseOrder
+export const amendPurchaseOrder = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { poId, newValues, reason } = data;
+
+  if (!poId || !newValues || !reason) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'poId, newValues, and amendment reason are required.'
+    );
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const poSnap = await poRef.get();
+  if (!poSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Purchase Order not found.');
+  }
+
+  const currentPo = poSnap.data();
+  const currentRevision = currentPo?.revision || 1;
+  const nextRevision = currentRevision + 1;
+  const now = admin.firestore.Timestamp.now();
+
+  // Create amendment record
+  const amendmentRef = db.collection('purchase_order_amendments').doc();
+  const amendmentDoc = {
+    amendmentId: amendmentRef.id,
+    poId,
+    poNumber: currentPo?.poNumber,
+    amendmentNumber: nextRevision,
+    previousSnapshot: currentPo,
+    newValues,
+    reason,
+    requestedBy: uid,
+    requestedAt: now,
+    approvedBy: uid,
+    approvedAt: now,
+    status: 'approved'
+  };
+
+  const processedColourLines = (newValues.colourLines || currentPo?.colourLines || []).map(
+    (line: any, idx: number) => {
+      const lineId = line.id || line.lineId || `pol_${Date.now()}_${idx}`;
+      return {
+        id: lineId,
+        lineId,
+        colourName: line.colourName || '',
+        colourCode: line.colourCode || null,
+        processType: line.processType || 'Softener Wash',
+        quantity: Number(line.quantity) || 0,
+        unit: line.unit || 'piece',
+        rateBasis: line.rateBasis || 'per_piece',
+        rate: Number(line.rate) || 0,
+        billableWeightKg: line.billableWeightKg ? Number(line.billableWeightKg) : null,
+        billablePieceQty: line.billablePieceQty ? Number(line.billablePieceQty) : null,
+        lineAmount: 0,
+        amount: 0,
+        notes: line.notes || null,
+        remarks: line.remarks || ''
+      };
+    }
+  );
+
+  const totals = calculateServerPOTotals(processedColourLines);
+
+  const updatedPo = {
+    ...newValues,
+    colourLines: processedColourLines,
+    lines: processedColourLines,
+    totalQtyByUnit: totals.totalQtyByUnit,
+    totalQuantity: totals.totalQuantity,
+    totalAmount: totals.totalAmount,
+    revision: nextRevision,
+    updatedAt: now,
+    updatedBy: uid,
+    updatedById: uid
+  };
+
+  // Preserve protected keys
+  delete updatedPo.poNumber;
+  delete updatedPo.createdAt;
+  delete updatedPo.createdBy;
+  delete updatedPo.createdById;
+
+  const batch = db.batch();
+  batch.set(amendmentRef, amendmentDoc);
+  batch.update(poRef, updatedPo);
+
+  const auditRef = db.collection('purchase_order_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    poId,
+    poNumber: currentPo?.poNumber,
+    action: 'amended',
+    performedBy: uid,
+    performedAt: now,
+    summary: `Purchase Order ${currentPo?.poNumber} amended to Revision ${nextRevision}. Reason: ${reason}`
+  });
+
+  await batch.commit();
+
+  return { success: true, poId, revision: nextRevision };
+});
+

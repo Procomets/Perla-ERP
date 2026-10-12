@@ -160,13 +160,18 @@ export const INITIAL_POS: PurchaseOrder[] = [
     orderDate: '2026-02-01',
     deliveryDate: '2026-02-25',
     customerId: 'v1',
+    customerVendorId: 'v1',
+    customerCode: 'VND-000001',
     customerName: 'Apex Garments & Co.',
+    customerCompanyNameSnapshot: 'Apex Garments & Co.',
     processCategory: 'Washing',
     styleNo: 'APX-DENIM-9021',
+    styleNumber: 'APX-DENIM-9021',
     itemName: 'Mens Denim Jacket Washing',
     status: 'In Progress',
     lines: [
       {
+        id: 'pol-1',
         lineId: 'pol-1',
         colourName: 'Indio Ocean Blue',
         processType: 'Enzyme Bio Wash',
@@ -174,9 +179,11 @@ export const INITIAL_POS: PurchaseOrder[] = [
         unit: 'piece',
         rate: 42.0,
         rateBasis: 'per piece',
+        lineAmount: 50400,
         amount: 50400
       },
       {
+        id: 'pol-2',
         lineId: 'pol-2',
         colourName: 'Vintage Black Wash',
         processType: 'Enzyme Bio Wash',
@@ -184,13 +191,111 @@ export const INITIAL_POS: PurchaseOrder[] = [
         unit: 'piece',
         rate: 45.0,
         rateBasis: 'per piece',
+        lineAmount: 36000,
         amount: 36000
       }
     ],
+    colourLines: [
+      {
+        id: 'pol-1',
+        lineId: 'pol-1',
+        colourName: 'Indio Ocean Blue',
+        processType: 'Enzyme Bio Wash',
+        quantity: 1200,
+        unit: 'piece',
+        rate: 42.0,
+        rateBasis: 'per piece',
+        lineAmount: 50400,
+        amount: 50400
+      },
+      {
+        id: 'pol-2',
+        lineId: 'pol-2',
+        colourName: 'Vintage Black Wash',
+        processType: 'Enzyme Bio Wash',
+        quantity: 800,
+        unit: 'piece',
+        rate: 45.0,
+        rateBasis: 'per piece',
+        lineAmount: 36000,
+        amount: 36000
+      }
+    ],
+    totalQtyByUnit: { piece: 2000, kg: 0 },
     totalQuantity: 2000,
     totalAmount: 86400,
+    currency: 'INR',
+    revision: 1,
     createdBy: 'admin-uid',
-    createdAt: '2026-02-01T09:30:00Z'
+    createdById: 'admin-uid',
+    createdByName: 'Admin',
+    createdAt: '2026-02-01T09:30:00Z',
+    schemaVersion: 1
+  },
+  {
+    id: 'po-paramount-2467',
+    poId: 'po-paramount-2467',
+    poNumber: 'PO/2026-27/0002',
+    customerId: 'v-102',
+    customerVendorId: 'v-102',
+    customerCode: 'VND-000002',
+    customerName: 'Paramount Apparel Processing',
+    customerCompanyNameSnapshot: 'Paramount Apparel Processing',
+    processCategory: 'dyeing',
+    styleNo: '2467',
+    styleNumber: '2467',
+    itemName: 'shoe',
+    orderDate: '2026-10-11',
+    deliveryDate: null,
+    colourLines: [
+      {
+        id: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
+        lineId: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
+        colourName: 'pink',
+        colourCode: null,
+        processType: 'stoneWash',
+        quantity: 2,
+        unit: 'piece',
+        rateBasis: 'perPiece',
+        rate: 15,
+        lineAmount: 30,
+        amount: 30,
+        notes: null
+      }
+    ],
+    lines: [
+      {
+        id: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
+        lineId: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
+        colourName: 'pink',
+        colourCode: null,
+        processType: 'stoneWash',
+        quantity: 2,
+        unit: 'piece',
+        rateBasis: 'perPiece',
+        rate: 15,
+        lineAmount: 30,
+        amount: 30,
+        notes: null
+      }
+    ],
+    totalQtyByUnit: { piece: 2, kg: 0 },
+    totalQuantity: 2,
+    totalAmount: 30,
+    currency: 'INR',
+    status: 'approved',
+    revision: 1,
+    createdBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    createdById: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    createdByName: 'Pranav',
+    createdAt: '2026-10-11T12:38:11.000Z',
+    submittedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    submittedById: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    submittedAt: '2026-10-11T12:38:21.000Z',
+    approvedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    approvedById: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
+    approvedAt: '2026-10-11T12:38:25.000Z',
+    schemaVersion: 1
   }
 ];
 

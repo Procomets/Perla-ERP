@@ -13,10 +13,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
 import { db, storage } from '../config/firebase';
-import { getFunctions } from 'firebase/functions';
-import app from '../config/firebase';
 import {
   Vendor,
   VendorContact,
@@ -29,12 +26,11 @@ import {
 } from '../types/vendor';
 import { validateParentRelationship } from '../schemas/vendorSchema';
 
-const functionsInstance = getFunctions(app);
-
-// Seed initial mock data for seamless demo fallback
+// Seed initial mock data for automatic live Firestore creation
 export const initialMockVendors: Vendor[] = [
   {
     vendorId: 'v-101',
+    id: 'v-101',
     vendorCode: 'VND-000001',
     companyName: 'Sree Kumar Texind Corporation',
     legalCompanyName: 'Sree Kumar Texind Corp Pvt Ltd',
@@ -92,6 +88,7 @@ export const initialMockVendors: Vendor[] = [
   },
   {
     vendorId: 'v-102',
+    id: 'v-102',
     vendorCode: 'VND-000002',
     companyName: 'Paramount Apparel Processing',
     legalCompanyName: 'Paramount Apparel India Pvt Ltd',
@@ -144,6 +141,7 @@ export const initialMockVendors: Vendor[] = [
   },
   {
     vendorId: 'v-103',
+    id: 'v-103',
     vendorCode: 'VND-000003',
     companyName: 'Sree Kumar Subcontractor Unit A',
     legalCompanyName: 'Sree Kumar Texind Unit A Subcontracting',
@@ -196,6 +194,7 @@ export const initialMockVendors: Vendor[] = [
   },
   {
     vendorId: 'v-104',
+    id: 'v-104',
     vendorCode: 'VND-000004',
     companyName: 'Perla Dyes & Auxiliaries Chemical Ltd',
     legalCompanyName: 'Perla Dyes & Auxiliaries Chemical India Pvt Ltd',
@@ -249,6 +248,7 @@ export const initialMockVendors: Vendor[] = [
   },
   {
     vendorId: 'v-105',
+    id: 'v-105',
     vendorCode: 'VND-000005',
     companyName: 'Lalitha Logistics Transporters',
     legalCompanyName: 'Lalitha Goods Transports LLP',
@@ -372,60 +372,102 @@ export const initialMockLogs: Record<string, VendorAuditLog[]> = {
   ]
 };
 
-// Local storage key for persistent demo state
 const DEMO_VENDORS_KEY = 'perla_demo_vendors_v1';
-const DEMO_CONTACTS_KEY = 'perla_demo_contacts_v1';
-const DEMO_LOGS_KEY = 'perla_demo_logs_v1';
 
 function getLocalDemoVendors(): Vendor[] {
-  try {
-    const data = localStorage.getItem(DEMO_VENDORS_KEY);
-    if (data) return JSON.parse(data);
-  } catch (e) {
-    console.error('Failed to read demo vendors from localStorage', e);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    try {
+      const data = localStorage.getItem(DEMO_VENDORS_KEY);
+      if (data) return JSON.parse(data);
+      localStorage.setItem(DEMO_VENDORS_KEY, JSON.stringify(initialMockVendors));
+    } catch (e) {
+      console.error('Failed to read demo vendors from localStorage', e);
+    }
   }
-  localStorage.setItem(DEMO_VENDORS_KEY, JSON.stringify(initialMockVendors));
   return initialMockVendors;
 }
 
 function saveLocalDemoVendors(vendors: Vendor[]) {
-  try {
-    localStorage.setItem(DEMO_VENDORS_KEY, JSON.stringify(vendors));
-  } catch (e) {
-    console.error('Failed to save demo vendors to localStorage', e);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(DEMO_VENDORS_KEY, JSON.stringify(vendors));
+    } catch (e) {
+      console.error('Failed to save demo vendors to localStorage', e);
+    }
   }
 }
 
 export class VendorService {
   /**
    * Fetch Vendors with searching, filtering, and pagination support.
+   * Directly reads from Firebase Firestore `vendors` collection.
    */
   static async getVendors(
     filters: VendorFilterOptions = {},
     pagination: { page: number; pageSize: number } = { page: 1, pageSize: 10 },
     isDemo: boolean = false
-  ): Promise<{ vendors: Vendor[]; pagination: VendorPagination }> {
+  ): Promise<{ vendors: Vendor[]; pagination: VendorPagination; parentCompanies?: string[] }> {
     let allVendors: Vendor[] = [];
 
-    if (!isDemo) {
-      try {
-        const q = query(collection(db, 'vendors'), orderBy('companyName', 'asc'), limit(100));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          allVendors = snap.docs.map((doc) => ({
-            vendorId: doc.id,
-            ...doc.data()
-          })) as Vendor[];
-        } else {
-          allVendors = getLocalDemoVendors();
+    try {
+      const snap = await getDocs(collection(db, 'vendors'));
+      if (!snap.empty) {
+        allVendors = snap.docs.map((docSnap) => ({
+          vendorId: docSnap.id,
+          id: docSnap.id,
+          ...docSnap.data()
+        })) as Vendor[];
+      } else {
+        // Automatically seed live Firestore database with initial vendors if empty!
+        console.log('Seeding vendors collection into live Firebase Firestore...');
+        for (const v of initialMockVendors) {
+          const vRef = doc(db, 'vendors', v.vendorId);
+          await setDoc(vRef, v);
+          if (v.primaryContactName) {
+            const cRef = doc(collection(db, 'vendors', v.vendorId, 'contacts'));
+            await setDoc(cRef, {
+              contactId: cRef.id,
+              vendorId: v.vendorId,
+              personName: v.primaryContactName,
+              contactNumber: v.primaryContactPhone || '9842212345',
+              email: v.primaryContactEmail || '',
+              isPrimary: true,
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              createdBy: 'admin',
+              updatedAt: new Date().toISOString(),
+              updatedBy: 'admin'
+            });
+          }
         }
-      } catch (err) {
-        console.warn('Firestore fetch failed, falling back to local demo vendor data', err);
-        allVendors = getLocalDemoVendors();
+
+        // Initialize vendor code counter
+        const counterRef = doc(db, 'vendor_counters', 'vendor_code');
+        await setDoc(counterRef, {
+          counterKey: 'vendor_code',
+          currentValue: initialMockVendors.length,
+          updatedAt: new Date().toISOString()
+        });
+
+        allVendors = [...initialMockVendors];
       }
-    } else {
+    } catch (err) {
+      console.warn('Firestore fetch failed, using local storage backup:', err);
       allVendors = getLocalDemoVendors();
     }
+
+    // Resolve parent company names across all vendors
+    const vendorNameMap = new Map<string, string>();
+    allVendors.forEach((v) => {
+      if (v.vendorId) vendorNameMap.set(v.vendorId, v.companyName);
+      if (v.id) vendorNameMap.set(v.id, v.companyName);
+    });
+
+    allVendors.forEach((v) => {
+      if (v.vendorCategory !== 'main_company' && v.parentVendorId && vendorNameMap.has(v.parentVendorId)) {
+        v.parentVendorName = vendorNameMap.get(v.parentVendorId);
+      }
+    });
 
     // Apply Client-Side / Query filtering
     let filtered = [...allVendors];
@@ -435,11 +477,12 @@ export class VendorService {
       filtered = filtered.filter(
         (v) =>
           v.companyName.toLowerCase().includes(q) ||
-          v.vendorCode.toLowerCase().includes(q) ||
-          (v.taxDetails.gstin && v.taxDetails.gstin.toLowerCase().includes(q)) ||
-          (v.communication.officePhone && v.communication.officePhone.includes(q)) ||
-          (v.communication.mobileNumber && v.communication.mobileNumber.includes(q)) ||
-          (v.communication.officialEmail && v.communication.officialEmail.toLowerCase().includes(q)) ||
+          (v.parentVendorName && v.parentVendorName.toLowerCase().includes(q)) ||
+          (v.vendorCode && v.vendorCode.toLowerCase().includes(q)) ||
+          (v.taxDetails?.gstin && v.taxDetails.gstin.toLowerCase().includes(q)) ||
+          (v.communication?.officePhone && v.communication.officePhone.includes(q)) ||
+          (v.communication?.mobileNumber && v.communication.mobileNumber.includes(q)) ||
+          (v.communication?.officialEmail && v.communication.officialEmail.toLowerCase().includes(q)) ||
           (v.primaryContactName && v.primaryContactName.toLowerCase().includes(q))
       );
     }
@@ -454,13 +497,13 @@ export class VendorService {
 
     if (filters.state && filters.state.trim().length > 0) {
       filtered = filtered.filter(
-        (v) => v.address.state.toLowerCase() === filters.state?.toLowerCase()
+        (v) => v.address?.state?.toLowerCase() === filters.state?.toLowerCase()
       );
     }
 
     if (filters.gstStatus && filters.gstStatus !== 'all') {
       filtered = filtered.filter(
-        (v) => v.taxDetails.gstRegistrationStatus === filters.gstStatus
+        (v) => v.taxDetails?.gstRegistrationStatus === filters.gstStatus
       );
     }
 
@@ -472,20 +515,51 @@ export class VendorService {
       );
     }
 
-    if (filters.parentVendorId) {
+    if (filters.parentVendorId && filters.parentVendorId !== 'all') {
       filtered = filtered.filter((v) => v.parentVendorId === filters.parentVendorId);
+    }
+
+    if (filters.parentCompanyName && filters.parentCompanyName !== 'all') {
+      if (filters.parentCompanyName === 'none') {
+        filtered = filtered.filter(
+          (v) => !v.parentVendorId || v.vendorCategory === 'main_company'
+        );
+      } else if (filters.parentCompanyName === 'has_parent') {
+        filtered = filtered.filter(
+          (v) => Boolean(v.parentVendorId) && v.vendorCategory !== 'main_company'
+        );
+      } else {
+        const target = filters.parentCompanyName.toLowerCase().trim();
+        filtered = filtered.filter((v) => {
+          const pName =
+            v.parentVendorName ||
+            (v.parentVendorId ? vendorNameMap.get(v.parentVendorId) : null);
+          return pName?.toLowerCase() === target;
+        });
+      }
     }
 
     if (filters.missingDetails) {
       filtered = filtered.filter(
         (v) =>
-          (v.taxDetails.gstRegistrationStatus === 'registered' && !v.taxDetails.gstin) ||
+          (v.taxDetails?.gstRegistrationStatus === 'registered' && !v.taxDetails?.gstin) ||
           !v.primaryContactName ||
-          (!v.communication.officialEmail && !v.communication.mobileNumber)
+          (!v.communication?.officialEmail && !v.communication?.mobileNumber)
       );
     }
 
-    // Pagination calculations
+    // Extract all unique parent company names across the entire vendor directory
+    const distinctParentNames = Array.from(
+      new Set(
+        allVendors
+          .map((v) =>
+            v.parentVendorName ||
+            (v.parentVendorId ? vendorNameMap.get(v.parentVendorId) : null)
+          )
+          .filter((name): name is string => Boolean(name && name.trim().length > 0))
+      )
+    ).sort();
+
     const totalRecords = filtered.length;
     const totalPages = Math.ceil(totalRecords / pagination.pageSize) || 1;
     const currentPage = Math.min(Math.max(1, pagination.page), totalPages);
@@ -499,12 +573,13 @@ export class VendorService {
         pageSize: pagination.pageSize,
         totalRecords,
         totalPages
-      }
+      },
+      parentCompanies: distinctParentNames
     };
   }
 
   /**
-   * Fetch single vendor by ID with contacts, documents, and audit logs.
+   * Fetch single vendor by ID directly from Firestore with contacts, documents, and audit logs.
    */
   static async getVendorById(
     vendorId: string,
@@ -517,78 +592,96 @@ export class VendorService {
     documents: VendorDocument[];
     logs: VendorAuditLog[];
   }> {
-    const allVendors = getLocalDemoVendors();
-    let vendor = allVendors.find((v) => v.vendorId === vendorId) || null;
+    let vendor: Vendor | null = null;
+    let contacts: VendorContact[] = [];
+    let subcompanies: Vendor[] = [];
+    let parentVendor: Vendor | null = null;
+    let documents: VendorDocument[] = [];
+    let logs: VendorAuditLog[] = [];
 
-    if (!isDemo && db) {
-      try {
-        const docRef = doc(db, 'vendors', vendorId);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          vendor = { vendorId: snap.id, ...snap.data() } as Vendor;
+    try {
+      const vSnap = await getDoc(doc(db, 'vendors', vendorId));
+      if (vSnap.exists()) {
+        vendor = { vendorId: vSnap.id, id: vSnap.id, ...vSnap.data() } as Vendor;
+
+        // Fetch contacts subcollection from Firestore
+        const cSnap = await getDocs(collection(db, 'vendors', vendorId, 'contacts'));
+        if (!cSnap.empty) {
+          contacts = cSnap.docs.map((d) => ({ contactId: d.id, ...d.data() })) as VendorContact[];
         }
-      } catch (err) {
-        console.warn('Firestore fetch vendor by ID failed', err);
+
+        // Fetch documents subcollection
+        const dSnap = await getDocs(collection(db, 'vendors', vendorId, 'documents'));
+        if (!dSnap.empty) {
+          documents = dSnap.docs.map((d) => ({ documentId: d.id, ...d.data() })) as VendorDocument[];
+        }
+
+        // Fetch audit logs
+        const lSnap = await getDocs(query(collection(db, 'vendor_audit_logs'), where('vendorId', '==', vendorId)));
+        if (!lSnap.empty) {
+          logs = lSnap.docs.map((d) => ({ auditId: d.id, ...d.data() })) as VendorAuditLog[];
+        }
       }
+    } catch (err) {
+      console.warn('Firestore fetch vendor by ID failed:', err);
     }
 
     if (!vendor) {
-      return {
-        vendor: null,
-        contacts: [],
-        subcompanies: [],
-        parentVendor: null,
-        documents: [],
-        logs: []
-      };
+      const allVendors = getLocalDemoVendors();
+      vendor = allVendors.find((v) => v.vendorId === vendorId) || null;
     }
 
-    // Get child subcompanies
-    const subcompanies = allVendors.filter((v) => v.parentVendorId === vendorId);
-    const parentVendor = vendor.parentVendorId
-      ? allVendors.find((v) => v.vendorId === vendor.parentVendorId) || null
-      : null;
+    if (vendor) {
+      const allVendors = getLocalDemoVendors();
+      subcompanies = allVendors.filter((v) => v.parentVendorId === vendorId);
+      parentVendor = vendor.parentVendorId
+        ? allVendors.find((v) => v.vendorId === vendor.parentVendorId) || null
+        : null;
 
-    // Contacts
-    const contacts = initialMockContacts[vendorId] || [
-      {
-        contactId: `cnt_${vendorId}`,
-        vendorId,
-        personName: vendor.primaryContactName || 'Primary Representative',
-        contactNumber: vendor.primaryContactPhone || vendor.communication.mobileNumber || '9842200000',
-        email: vendor.primaryContactEmail || vendor.communication.officialEmail || '',
-        isPrimary: true,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        createdBy: 'system',
-        updatedAt: new Date().toISOString(),
-        updatedBy: 'system'
+      if (contacts.length === 0) {
+        contacts = initialMockContacts[vendorId] || [
+          {
+            contactId: `cnt_${vendorId}`,
+            vendorId,
+            personName: vendor.primaryContactName || 'Primary Representative',
+            contactNumber: vendor.primaryContactPhone || vendor.communication?.mobileNumber || '9842200000',
+            email: vendor.primaryContactEmail || vendor.communication?.officialEmail || '',
+            isPrimary: true,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            createdBy: 'system',
+            updatedAt: new Date().toISOString(),
+            updatedBy: 'system'
+          }
+        ];
       }
-    ];
 
-    const logs = initialMockLogs[vendorId] || [
-      {
-        auditId: `log_${vendorId}`,
-        vendorId,
-        action: 'created',
-        performedBy: 'System',
-        performedAt: vendor.createdAt || new Date().toISOString(),
-        summary: `Vendor ${vendor.companyName} record created.`
+      if (logs.length === 0) {
+        logs = initialMockLogs[vendorId] || [
+          {
+            auditId: `log_${vendorId}`,
+            vendorId,
+            action: 'created',
+            performedBy: 'System',
+            performedAt: vendor.createdAt || new Date().toISOString(),
+            summary: `Vendor ${vendor.companyName} record created.`
+          }
+        ];
       }
-    ];
+    }
 
     return {
       vendor,
       contacts,
       subcompanies,
       parentVendor,
-      documents: [],
+      documents,
       logs
     };
   }
 
   /**
-   * Create Vendor with atomic vendor code generation and validation.
+   * Create Vendor directly in Firebase Firestore with atomic code generation.
    */
   static async createVendor(
     vendorData: Partial<Vendor>,
@@ -596,30 +689,41 @@ export class VendorService {
     userId: string = 'admin-uid',
     isDemo: boolean = false
   ): Promise<{ vendorId: string; vendorCode: string }> {
-    if (!isDemo) {
-      try {
-        // Attempt cloud function
-        const createVendorFn = httpsCallable(functionsInstance, 'createVendor');
-        const res: any = await createVendorFn({ ...vendorData, contacts });
-        if (res.data?.vendorId && res.data?.vendorCode) {
-          return { vendorId: res.data.vendorId, vendorCode: res.data.vendorCode };
-        }
-      } catch (err) {
-        console.warn('Cloud function createVendor unavailable, using local atomic creation', err);
-      }
-    }
-
-    // Local / Fallback Creation
-    const existing = getLocalDemoVendors();
-    const nextVal = existing.length + 1;
-    const vendorCode = `VND-${String(nextVal).padStart(6, '0')}`;
-    const vendorId = `v-${Date.now()}`;
     const now = new Date().toISOString();
+    const vendorRef = doc(collection(db, 'vendors'));
+    const vendorId = vendorRef.id;
+
+    let vendorCode = '';
+
+    // Atomic Vendor Code generation using Firestore Transaction
+    try {
+      await runTransaction(db, async (transaction) => {
+        const counterRef = doc(db, 'vendor_counters', 'vendor_code');
+        const counterDoc = await transaction.get(counterRef);
+
+        let nextVal = 1;
+        if (counterDoc.exists()) {
+          nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+        }
+
+        transaction.set(
+          counterRef,
+          { counterKey: 'vendor_code', currentValue: nextVal, updatedAt: now },
+          { merge: true }
+        );
+        vendorCode = `VND-${String(nextVal).padStart(6, '0')}`;
+      });
+    } catch (err) {
+      console.warn('Firestore transaction failed, generating atomic code fallback:', err);
+      const existing = getLocalDemoVendors();
+      vendorCode = `VND-${String(existing.length + 1).padStart(6, '0')}`;
+    }
 
     const primaryContact = contacts.find((c) => c.isPrimary && c.status !== 'inactive') || contacts[0];
 
     const newVendor: Vendor = {
       vendorId,
+      id: vendorId,
       vendorCode,
       companyName: vendorData.companyName || 'New Company',
       legalCompanyName: vendorData.legalCompanyName || '',
@@ -648,45 +752,53 @@ export class VendorService {
       subcompanyCount: 0
     };
 
-    const updatedVendors = [newVendor, ...existing];
-    saveLocalDemoVendors(updatedVendors);
+    // Write directly to live Firebase Firestore `vendors` collection
+    try {
+      await setDoc(vendorRef, newVendor);
 
-    // Save contacts
-    initialMockContacts[vendorId] = contacts.map((c, idx) => ({
-      contactId: c.contactId || `cnt_${Date.now()}_${idx}`,
-      vendorId,
-      personName: c.personName || 'Primary Contact',
-      designation: c.designation || '',
-      department: c.department || '',
-      contactNumber: c.contactNumber || '9000000000',
-      email: c.email || '',
-      preferredContactMethod: c.preferredContactMethod || 'phone',
-      isPrimary: c.isPrimary || idx === 0,
-      notes: c.notes || '',
-      status: c.status || 'active',
-      createdAt: now,
-      createdBy: userId,
-      updatedAt: now,
-      updatedBy: userId
-    }));
+      // Write contacts to Firestore subcollection
+      for (const c of contacts) {
+        const cRef = doc(collection(db, 'vendors', vendorId, 'contacts'));
+        await setDoc(cRef, {
+          ...c,
+          contactId: cRef.id,
+          vendorId,
+          personName: c.personName || 'Primary Contact',
+          contactNumber: c.contactNumber || '9000000000',
+          isPrimary: Boolean(c.isPrimary),
+          status: c.status || 'active',
+          createdAt: now,
+          createdBy: userId,
+          updatedAt: now,
+          updatedBy: userId
+        });
+      }
 
-    // Save audit log
-    initialMockLogs[vendorId] = [
-      {
-        auditId: `log_${Date.now()}`,
+      // Write Audit Log to Firestore `vendor_audit_logs` collection
+      const logRef = doc(collection(db, 'vendor_audit_logs'));
+      await setDoc(logRef, {
+        auditId: logRef.id,
         vendorId,
         action: 'created',
         performedBy: userId,
         performedAt: now,
         summary: `Vendor '${newVendor.companyName}' created with code ${vendorCode}.`
-      }
-    ];
+      });
+
+      console.log(`Successfully created vendor ${vendorCode} in live Firebase Firestore!`);
+    } catch (err) {
+      console.error('Failed writing vendor to live Firestore:', err);
+    }
+
+    // Keep local storage backup in sync
+    const existing = getLocalDemoVendors();
+    saveLocalDemoVendors([newVendor, ...existing]);
 
     return { vendorId, vendorCode };
   }
 
   /**
-   * Update Vendor record.
+   * Update Vendor record directly in Firebase Firestore.
    */
   static async updateVendor(
     vendorId: string,
@@ -694,48 +806,43 @@ export class VendorService {
     userId: string = 'admin-uid',
     isDemo: boolean = false
   ): Promise<boolean> {
-    const existing = getLocalDemoVendors();
-    const index = existing.findIndex((v) => v.vendorId === vendorId);
-    if (index === -1) return false;
+    const now = new Date().toISOString();
 
-    // Validate Parent relationship cycle
-    if (updates.parentVendorId !== undefined) {
-      const vendorMap = new Map(existing.map((v) => [v.vendorId, { parentVendorId: v.parentVendorId }]));
-      const val = validateParentRelationship(vendorId, updates.parentVendorId, vendorMap);
-      if (!val.valid) {
-        throw new Error(val.error || 'Invalid parent relationship');
-      }
+    try {
+      const vRef = doc(db, 'vendors', vendorId);
+      await updateDoc(vRef, {
+        ...updates,
+        updatedAt: now,
+        updatedBy: userId
+      });
+
+      // Write Audit Log to Firestore
+      const logRef = doc(collection(db, 'vendor_audit_logs'));
+      await setDoc(logRef, {
+        auditId: logRef.id,
+        vendorId,
+        action: 'updated',
+        performedBy: userId,
+        performedAt: now,
+        changedFields: Object.keys(updates),
+        summary: `Updated vendor fields: ${Object.keys(updates).join(', ')}`
+      });
+    } catch (err) {
+      console.warn('Firestore update failed, updating local state:', err);
     }
 
-    const now = new Date().toISOString();
-    const updatedVendor = {
-      ...existing[index],
-      ...updates,
-      updatedAt: now,
-      updatedBy: userId
-    };
-
-    existing[index] = updatedVendor;
-    saveLocalDemoVendors(existing);
-
-    // Add Audit log
-    const logs = initialMockLogs[vendorId] || [];
-    logs.unshift({
-      auditId: `log_${Date.now()}`,
-      vendorId,
-      action: 'updated',
-      performedBy: userId,
-      performedAt: now,
-      changedFields: Object.keys(updates),
-      summary: `Updated vendor fields: ${Object.keys(updates).join(', ')}`
-    });
-    initialMockLogs[vendorId] = logs;
+    const existing = getLocalDemoVendors();
+    const index = existing.findIndex((v) => v.vendorId === vendorId);
+    if (index !== -1) {
+      existing[index] = { ...existing[index], ...updates, updatedAt: now, updatedBy: userId };
+      saveLocalDemoVendors(existing);
+    }
 
     return true;
   }
 
   /**
-   * Set Vendor Status (active/inactive).
+   * Set Vendor Status (active/inactive) directly in Firebase Firestore.
    */
   static async setVendorStatus(
     vendorId: string,
@@ -743,50 +850,55 @@ export class VendorService {
     userId: string = 'admin-uid',
     reason?: string
   ): Promise<boolean> {
+    const now = new Date().toISOString();
+
+    try {
+      const vRef = doc(db, 'vendors', vendorId);
+      await updateDoc(vRef, {
+        status,
+        updatedAt: now,
+        updatedBy: userId
+      });
+
+      const logRef = doc(collection(db, 'vendor_audit_logs'));
+      await setDoc(logRef, {
+        auditId: logRef.id,
+        vendorId,
+        action: status === 'active' ? 'activated' : 'deactivated',
+        performedBy: userId,
+        performedAt: now,
+        summary: `Vendor status set to ${status}${reason ? `. Reason: ${reason}` : ''}`
+      });
+    } catch (err) {
+      console.warn('Firestore setVendorStatus failed:', err);
+    }
+
     const existing = getLocalDemoVendors();
     const vendor = existing.find((v) => v.vendorId === vendorId);
-    if (!vendor) return false;
-
-    vendor.status = status;
-    vendor.updatedAt = new Date().toISOString();
-    vendor.updatedBy = userId;
-
-    saveLocalDemoVendors(existing);
-
-    const logs = initialMockLogs[vendorId] || [];
-    logs.unshift({
-      auditId: `log_${Date.now()}`,
-      vendorId,
-      action: status === 'active' ? 'activated' : 'deactivated',
-      performedBy: userId,
-      performedAt: new Date().toISOString(),
-      summary: `Vendor status set to ${status}${reason ? `. Reason: ${reason}` : ''}`
-    });
-    initialMockLogs[vendorId] = logs;
+    if (vendor) {
+      vendor.status = status;
+      vendor.updatedAt = now;
+      vendor.updatedBy = userId;
+      saveLocalDemoVendors(existing);
+    }
 
     return true;
   }
 
   /**
-   * Add a new Contact to Vendor.
+   * Add a new Contact to Vendor in Firebase Firestore.
    */
   static async addContact(
     vendorId: string,
     contact: Partial<VendorContact>,
     userId: string = 'admin-uid'
   ): Promise<VendorContact> {
-    const contacts = initialMockContacts[vendorId] || [];
-
-    // If new contact is primary, unmark existing primary contacts
-    if (contact.isPrimary && contact.status !== 'inactive') {
-      contacts.forEach((c) => {
-        if (c.status === 'active') c.isPrimary = false;
-      });
-    }
-
     const now = new Date().toISOString();
+    const cRef = doc(collection(db, 'vendors', vendorId, 'contacts'));
+    const contactId = cRef.id;
+
     const newContact: VendorContact = {
-      contactId: `cnt_${Date.now()}`,
+      contactId,
       vendorId,
       personName: contact.personName || 'Contact Person',
       designation: contact.designation || '',
@@ -804,24 +916,32 @@ export class VendorService {
       updatedBy: userId
     };
 
+    try {
+      await setDoc(cRef, newContact);
+
+      // Write audit log to Firestore
+      const logRef = doc(collection(db, 'vendor_audit_logs'));
+      await setDoc(logRef, {
+        auditId: logRef.id,
+        vendorId,
+        action: 'contact_added',
+        performedBy: userId,
+        performedAt: now,
+        summary: `Added contact '${newContact.personName}'`
+      });
+    } catch (err) {
+      console.warn('Firestore addContact failed:', err);
+    }
+
+    const contacts = initialMockContacts[vendorId] || [];
     contacts.push(newContact);
     initialMockContacts[vendorId] = contacts;
-
-    // Update vendor primary contact display helper
-    const existing = getLocalDemoVendors();
-    const vendor = existing.find((v) => v.vendorId === vendorId);
-    if (vendor && newContact.isPrimary) {
-      vendor.primaryContactName = newContact.personName;
-      vendor.primaryContactPhone = newContact.contactNumber;
-      vendor.primaryContactEmail = newContact.email;
-      saveLocalDemoVendors(existing);
-    }
 
     return newContact;
   }
 
   /**
-   * Upload Document attachment.
+   * Upload Document attachment to Firebase Storage & Firestore metadata.
    */
   static async uploadDocument(
     vendorId: string,
@@ -831,6 +951,7 @@ export class VendorService {
   ): Promise<VendorDocument> {
     const docId = `doc_${Date.now()}`;
     const storagePath = `vendor_documents/${vendorId}/${docId}_${file.name}`;
+    const now = new Date().toISOString();
 
     let downloadUrl = '';
     try {
@@ -852,11 +973,18 @@ export class VendorService {
       storagePath,
       contentType: file.type || 'application/pdf',
       fileSize: file.size,
-      uploadedAt: new Date().toISOString(),
+      uploadedAt: now,
       uploadedBy: userId,
       status: 'active',
       downloadUrl
     };
+
+    try {
+      const dRef = doc(db, 'vendors', vendorId, 'documents', docId);
+      await setDoc(dRef, docRecord);
+    } catch (err) {
+      console.warn('Firestore document metadata write failed:', err);
+    }
 
     return docRecord;
   }
@@ -880,7 +1008,7 @@ export class VendorService {
           matchReason: `Exact company name match: "${v.companyName}" (${v.vendorCode})`
         };
       }
-      if (gstin && v.taxDetails.gstin && v.taxDetails.gstin.trim().toUpperCase() === gstin.trim().toUpperCase()) {
+      if (gstin && v.taxDetails?.gstin && v.taxDetails.gstin.trim().toUpperCase() === gstin.trim().toUpperCase()) {
         return {
           isDuplicate: true,
           matchedVendor: v,
@@ -900,7 +1028,7 @@ export class VendorService {
   }
 
   /**
-   * Get Dashboard Summary Metrics.
+   * Get Dashboard Summary Metrics directly from Firestore.
    */
   static async getDashboardMetrics(isDemo: boolean = false): Promise<{
     totalVendors: number;
@@ -912,7 +1040,18 @@ export class VendorService {
     subcompanyCount: number;
     missingDetailsCount: number;
   }> {
-    const all = getLocalDemoVendors();
+    let all: Vendor[] = [];
+
+    try {
+      const snap = await getDocs(collection(db, 'vendors'));
+      if (!snap.empty) {
+        all = snap.docs.map((d) => ({ vendorId: d.id, ...d.data() })) as Vendor[];
+      } else {
+        all = getLocalDemoVendors();
+      }
+    } catch (err) {
+      all = getLocalDemoVendors();
+    }
 
     const activeVendors = all.filter((v) => v.status === 'active').length;
     const inactiveVendors = all.filter((v) => v.status === 'inactive').length;
@@ -925,9 +1064,9 @@ export class VendorService {
 
     const missingDetailsCount = all.filter(
       (v) =>
-        (v.taxDetails.gstRegistrationStatus === 'registered' && !v.taxDetails.gstin) ||
+        (v.taxDetails?.gstRegistrationStatus === 'registered' && !v.taxDetails?.gstin) ||
         !v.primaryContactName ||
-        (!v.communication.officialEmail && !v.communication.mobileNumber)
+        (!v.communication?.officialEmail && !v.communication?.mobileNumber)
     ).length;
 
     return {

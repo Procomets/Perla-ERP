@@ -23,6 +23,8 @@ import { ExpensesPage } from './pages/expenses/ExpensesPage';
 import { VendorMasterPage } from './pages/masters/VendorMasterPage';
 import { ItemMasterPage } from './pages/masters/ItemMasterPage';
 import { UsersPage } from './pages/users/UsersPage';
+import { EmployeeMasterPage } from './pages/employees/EmployeeMasterPage';
+import { SalarySheetPage } from './pages/salary/SalarySheetPage';
 
 // Initial Mock Data
 import {
@@ -55,6 +57,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   purchases: { title: 'Raw Material & Firewood Purchases', subtitle: 'Supplier receipts, deliveries, and weighbridge records' },
   attendance: { title: 'Employee Attendance', subtitle: 'Shift attendance and overtime hours' },
   salary: { title: 'Employee Salary', subtitle: 'Salary calculation and payment status' },
+  employees: { title: 'Employee Master', subtitle: 'Manage employee directory, wages, documents, and roles' },
   eb: { title: 'EB Electricity Expenses', subtitle: 'Utility meter readings and monthly cost breakdown' },
   transport: { title: 'Transport Freight Expenses', subtitle: 'Logistics costs linked to customer delivery challans' },
   vendors: { title: 'Vendor Directory Master', subtitle: 'Directory of customers, suppliers, and subcontractors' },
@@ -109,7 +112,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
         <main className="flex-1 overflow-y-auto bg-[#F8F9FA]">
           <div className="max-w-7xl mx-auto p-6 md:p-8">
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
-            {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} onAddPo={props.onAddPo} />}
+            {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} />}
             {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} />}
             {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} onAddOutward={props.onAddOutward} />}
             {moduleId === 'statement' && (
@@ -134,7 +137,9 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
             {moduleId === 'chemical' && <ChemicalEntryPage entries={props.chemicalEntries} pos={props.pos} onAddEntry={props.onAddChemicalEntry} />}
             {moduleId === 'warehouse' && <WarehousePage inventory={props.inventory} />}
             {moduleId === 'purchases' && <PurchasesPage />}
+            {moduleId === 'employees' && <EmployeeMasterPage />}
             {moduleId === 'attendance' && <AttendancePage employees={props.employees} />}
+            {moduleId === 'salary' && <SalarySheetPage />}
             {moduleId === 'eb' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
             {moduleId === 'transport' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
             {moduleId === 'vendors' && <VendorMasterPage />}

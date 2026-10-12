@@ -34,9 +34,11 @@ export const VendorMasterContainer: React.FC = () => {
     status: 'all',
     state: '',
     gstStatus: 'all',
-    hasSubcompany: 'all'
+    hasSubcompany: 'all',
+    parentCompanyName: 'all'
   });
 
+  const [parentCompanies, setParentCompanies] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Load vendors list
@@ -50,6 +52,9 @@ export const VendorMasterContainer: React.FC = () => {
       );
       setVendors(vendorsResult.vendors);
       setPagination(vendorsResult.pagination);
+      if (vendorsResult.parentCompanies && vendorsResult.parentCompanies.length > 0) {
+        setParentCompanies(vendorsResult.parentCompanies);
+      }
     } catch (err) {
       console.error('Error loading vendor master data:', err);
     } finally {
@@ -94,6 +99,7 @@ export const VendorMasterContainer: React.FC = () => {
       {currentView === 'list' && (
         <VendorList
           vendors={vendors}
+          parentCompanies={parentCompanies}
           pagination={pagination}
           filters={filters}
           onFilterChange={(newFilters) => {

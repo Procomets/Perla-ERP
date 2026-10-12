@@ -73,6 +73,61 @@ service cloud.firestore {
       allow write: if false; // Atomic updates strictly handled by server Cloud Functions
     }
 
+    // Purchase Orders Collection
+    match /purchase_orders/{poId} {
+      allow read: if isAuthenticated();
+
+      // Only Admin and Manager can create and update purchase orders
+      allow create: if isAuthorizedUser()
+                    && request.resource.data.poNumber != null
+                    && request.resource.data.customerId != null;
+
+      allow update: if isAuthorizedUser()
+                    && request.resource.data.poNumber == resource.data.poNumber
+                    && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if isAdmin() && resource.data.status == 'draft';
+    }
+
+    // Purchase Order Counters (Server-only write)
+    match /purchase_order_counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Atomic updates strictly handled by server Cloud Functions
+    }
+
+    // Purchase Order Audit Logs (Immutable, Server-only write)
+    match /purchase_order_audit_logs/{auditId} {
+      allow read: if isAuthorizedUser();
+      allow write: if false; // Only Cloud Functions / Admin SDK can write audit logs
+    }
+
+    // Purchase Order Amendments
+    match /purchase_order_amendments/{amendmentId} {
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Employee Master Collection
+    match /employeeMaster/{empId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // Attendance Collection
+    match /attendance/{attendanceId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // General Settings Collection
+    match /generalSettings/{settingId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Salary Sheets Collection
+    match /salarySheets/{salarySheetId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Default deny all other collections unless explicitly matched
     match /{document=**} {
       allow read, write: if isAuthenticated() && isAdmin();

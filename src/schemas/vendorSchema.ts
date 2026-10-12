@@ -65,7 +65,7 @@ export const vendorFinancialDetailsSchema = z.object({
     '45_days',
     '60_days',
     'custom'
-  ]),
+  ]).optional().default('30_days'),
   customPaymentDays: z.number().min(1).optional(),
   creditLimit: z.number().min(0).optional(),
   openingBalance: z.number().optional(),

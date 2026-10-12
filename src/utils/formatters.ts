@@ -6,17 +6,37 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-export function formatDate(dateString: string): string {
-  if (!dateString) return '-';
+export function formatDate(val: any): string {
+  if (!val) return '-';
   try {
-    const d = new Date(dateString);
+    let d: Date;
+    if (typeof val === 'object') {
+      if (typeof val.toDate === 'function') {
+        d = val.toDate();
+      } else if (typeof val.seconds === 'number') {
+        d = new Date(val.seconds * 1000 + (val.nanoseconds || 0) / 1000000);
+      } else if (val instanceof Date) {
+        d = val;
+      } else {
+        return '-';
+      }
+    } else if (typeof val === 'number') {
+      d = new Date(val);
+    } else if (typeof val === 'string') {
+      d = new Date(val);
+    } else {
+      return '-';
+    }
+
+    if (isNaN(d.getTime())) return '-';
+
     return new Intl.DateTimeFormat('en-IN', {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
     }).format(d);
   } catch {
-    return dateString;
+    return '-';
   }
 }
 

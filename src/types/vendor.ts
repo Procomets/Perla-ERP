@@ -126,6 +126,7 @@ export interface Vendor {
   primaryContactPhone?: string;
   primaryContactEmail?: string;
   subcompanyCount?: number;
+  parentVendorName?: string;
 }
 
 export interface VendorContact {
@@ -200,6 +201,7 @@ export interface VendorFilterOptions {
   startDate?: string;
   endDate?: string;
   parentVendorId?: string;
+  parentCompanyName?: string;
 }
 
 export interface VendorPagination {
