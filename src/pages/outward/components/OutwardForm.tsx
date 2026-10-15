@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PurchaseOrder } from '../../../types/po';
 import { Vendor } from '../../../types/vendor';
+import { InwardEntry } from '../../../types/inward';
 import { OutwardEntry, OutwardBalancesResponse } from '../../../types/outward';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -23,6 +24,7 @@ import {
 interface OutwardFormProps {
   pos: PurchaseOrder[];
   vendors: Vendor[];
+  inwards?: InwardEntry[];
   initialOutward?: OutwardEntry | null;
   onSaveDraft: (data: any) => Promise<void>;
   onPostOutward: (data: any) => Promise<void>;
@@ -33,22 +35,67 @@ interface OutwardFormProps {
 export const OutwardForm: React.FC<OutwardFormProps> = ({
   pos,
   vendors,
+  inwards = [],
   initialOutward,
   onSaveDraft,
   onPostOutward,
   onCancel,
   isSaving
 }) => {
-  // Filter eligible POs: exclude cancelled or rejected POs
+  // Map of total cumulative inward received quantity by PO ID and PO Number
+  const poInwardQtyMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const inw of inwards || []) {
+      if (inw.status && inw.status !== 'posted') continue;
+      let inwTotal = 0;
+      for (const line of inw.lines || []) {
+        inwTotal += Number(line.receivedQty) || 0;
+      }
+      if (inw.poId) {
+        map[inw.poId] = (map[inw.poId] || 0) + inwTotal;
+      }
+      if (inw.poNumberSnapshot || inw.poNumber) {
+        const num = inw.poNumberSnapshot || inw.poNumber || '';
+        map[num] = (map[num] || 0) + inwTotal;
+      }
+    }
+    return map;
+  }, [inwards]);
+
+  // Filter eligible POs: ONLY show POs that have existing inward received quantity > 0!
   const eligiblePos = useMemo(() => {
     return pos.filter((p) => {
       const s = String(p.status || '').toLowerCase();
-      return (
-        s !== 'cancelled' &&
-        s !== 'rejected'
-      );
+      if (s === 'cancelled' || s === 'rejected') return false;
+
+      const inwQty =
+        (poInwardQtyMap[p.id] || 0) +
+        (poInwardQtyMap[p.poId || ''] || 0) +
+        (poInwardQtyMap[p.poNumber || ''] || 0);
+
+      // Must have existing inward received quantity
+      return inwQty > 0 || (initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId));
     });
-  }, [pos]);
+  }, [pos, poInwardQtyMap, initialOutward]);
+
+  // Active Customer vendors: ONLY show companies that have existing inward received quantity (at least one eligible PO with inward > 0)
+  const eligibleCustomers = useMemo(() => {
+    return vendors.filter((v) => {
+      const isCust = v.vendorType === 'customer' || v.vendorType === 'both';
+      if (!isCust) return false;
+
+      // Must have at least one eligible PO with existing inward received quantity
+      const hasInwardPO = eligiblePos.some(
+        (p) =>
+          p.customerId === v.id ||
+          p.customerId === v.vendorId ||
+          p.customerVendorId === v.id ||
+          p.customerVendorId === v.vendorId
+      );
+
+      return hasInwardPO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId));
+    });
+  }, [vendors, eligiblePos, initialOutward]);
 
   // Active Customer selection
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
@@ -94,11 +141,6 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Active customer vendors
-  const eligibleCustomers = useMemo(() => {
-    return vendors.filter((v) => v.vendorType === 'customer' || v.vendorType === 'both');
-  }, [vendors]);
-
   // Active transporters
   const eligibleTransporters = useMemo(() => {
     return vendors.filter(
@@ -112,16 +154,14 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
   // Find currently selected PO
   const activePo = useMemo(() => {
-    return pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
-  }, [pos, selectedPoId]);
+    return eligiblePos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
+  }, [eligiblePos, selectedPoId]);
 
-  // Find eligible subcontractors for the selected customer
+  // Find eligible subcontractors: ONLY show the selected parent's subcompany/subcontractor!
   const eligibleSubcontractors = useMemo(() => {
     if (!selectedCustomerId) return [];
     return vendors.filter(
-      (v) =>
-        v.parentVendorId === selectedCustomerId ||
-        (v.vendorCategory === 'subcontractor' || v.vendorCategory === 'subcompany')
+      (v) => v.parentVendorId === selectedCustomerId
     );
   }, [vendors, selectedCustomerId]);
 
@@ -464,7 +504,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search customer by name or code..."
             groups={customerOptionGroups}
             onSelect={handleSelectCustomer}
-            helperText="Matches active customer vendor records"
+            helperText="Only shows companies with existing inward received garments"
           />
 
           {/* Subcontractor / Subcompany */}
@@ -484,7 +524,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-slate-400 mt-1">If dispatched via a subcontractor unit</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {eligibleSubcontractors.length > 0
+                ? `Only showing subcompanies of selected customer (${eligibleSubcontractors.length} found)`
+                : 'No subcompany registered under selected customer'}
+            </p>
           </div>
 
           {/* Purchase Order Selection */}
@@ -496,7 +540,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search by PO Number or Style No..."
             groups={poOptionGroups}
             onSelect={handleSelectPO}
-            helperText="Supports PO number, style number & cross-company discovery"
+            helperText="Only shows POs with existing inward received quantity"
           />
         </div>
 

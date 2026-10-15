@@ -15,6 +15,7 @@ interface OutwardPageProps {
 
 export const OutwardPage: React.FC<OutwardPageProps> = ({
   pos,
+  inwards,
   outwards,
   vendors,
   onAddOutward
@@ -22,6 +23,7 @@ export const OutwardPage: React.FC<OutwardPageProps> = ({
   return (
     <OutwardContainer
       initialPOs={pos}
+      initialInwards={inwards}
       initialOutwards={outwards}
       initialVendors={vendors}
       onAddOutward={onAddOutward}

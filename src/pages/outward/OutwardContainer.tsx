@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PurchaseOrder } from '../../types/po';
 import { Vendor } from '../../types/vendor';
+import { InwardEntry } from '../../types/inward';
 import {
   OutwardEntry,
   OutwardFilterOptions,
@@ -9,6 +10,7 @@ import {
   OutwardAuditLog
 } from '../../types/outward';
 import { OutwardService } from '../../services/outwardService';
+import { InwardService } from '../../services/inwardService';
 import { POService } from '../../services/poService';
 import { VendorService } from '../../services/vendorService';
 import { useAuth } from '../../context/AuthContext';
@@ -22,6 +24,7 @@ import { Button } from '../../components/ui/Button';
 
 interface OutwardContainerProps {
   initialPOs?: PurchaseOrder[];
+  initialInwards?: InwardEntry[];
   initialOutwards?: OutwardEntry[];
   initialVendors?: Vendor[];
   onAddOutward?: (newOutward: OutwardEntry) => void;
@@ -29,6 +32,7 @@ interface OutwardContainerProps {
 
 export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   initialPOs,
+  initialInwards,
   initialOutwards,
   initialVendors,
   onAddOutward
@@ -43,6 +47,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   // Data States
   const [outwards, setOutwards] = useState<OutwardEntry[]>(initialOutwards || []);
+  const [inwards, setInwards] = useState<InwardEntry[]>(initialInwards || []);
   const [pos, setPos] = useState<PurchaseOrder[]>(initialPOs || []);
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors || []);
   const [pagination, setPagination] = useState<OutwardPagination>({
@@ -109,6 +114,12 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
       const vResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode);
       if (vResult.vendors && vResult.vendors.length > 0) {
         setVendors(vResult.vendors);
+      }
+
+      // 5. Fetch latest posted Inward receipts
+      const inwResult = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemoMode);
+      if (inwResult.inwards && inwResult.inwards.length > 0) {
+        setInwards(inwResult.inwards);
       }
     } catch (err) {
       console.error('Failed to load outward data:', err);
@@ -339,6 +350,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         <OutwardForm
           pos={pos}
           vendors={vendors}
+          inwards={inwards}
           initialOutward={currentView === 'edit' ? selectedOutwardDetails.outward : null}
           onSaveDraft={handleSaveDraft}
           onPostOutward={handlePostOutward}

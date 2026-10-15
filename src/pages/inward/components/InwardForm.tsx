@@ -97,13 +97,11 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     return pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
   }, [pos, selectedPoId]);
 
-  // Find eligible subcontractors for the selected customer
+  // Find eligible subcontractors for the selected customer: strictly parent's subcompany
   const eligibleSubcontractors = useMemo(() => {
     if (!selectedCustomerId) return [];
     return vendors.filter(
-      (v) =>
-        v.parentVendorId === selectedCustomerId ||
-        (v.vendorCategory === 'subcontractor' || v.vendorCategory === 'subcompany')
+      (v) => v.parentVendorId === selectedCustomerId
     );
   }, [vendors, selectedCustomerId]);
 
