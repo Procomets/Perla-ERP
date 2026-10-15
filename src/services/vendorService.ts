@@ -26,6 +26,31 @@ import {
 } from '../types/vendor';
 import { validateParentRelationship } from '../schemas/vendorSchema';
 
+/**
+ * Recursively removes undefined fields from objects/arrays so Firestore never throws unsupported field value error.
+ */
+export function cleanFirestoreData<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => cleanFirestoreData(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    if (obj instanceof Date || typeof (obj as any).toDate === 'function') {
+      return obj;
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
 // Seed initial mock data for automatic live Firestore creation
 export const initialMockVendors: Vendor[] = [
   {
@@ -412,11 +437,16 @@ export class VendorService {
     try {
       const snap = await getDocs(collection(db, 'vendors'));
       if (!snap.empty) {
-        allVendors = snap.docs.map((docSnap) => ({
-          vendorId: docSnap.id,
-          id: docSnap.id,
-          ...docSnap.data()
-        })) as Vendor[];
+        allVendors = (snap.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const docId = docSnap.id;
+          return {
+            ...data,
+            id: docId,
+            vendorId: data.vendorId || docId,
+            docId
+          };
+        }) as unknown) as Vendor[];
       } else {
         // Automatically seed live Firestore database with initial vendors if empty!
         console.log('Seeding vendors collection into live Firebase Firestore...');
@@ -547,6 +577,9 @@ export class VendorService {
           (!v.communication?.officialEmail && !v.communication?.mobileNumber)
       );
     }
+
+    // Sort by latest created first
+    filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
     // Extract all unique parent company names across the entire vendor directory
     const distinctParentNames = Array.from(
@@ -695,7 +728,7 @@ export class VendorService {
 
     let vendorCode = '';
 
-    // Atomic Vendor Code generation using Firestore Transaction
+    // Atomic Vendor Code generation using Firestore Transaction with safe fallback
     try {
       await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, 'vendor_counters', 'vendor_code');
@@ -714,9 +747,15 @@ export class VendorService {
         vendorCode = `VND-${String(nextVal).padStart(6, '0')}`;
       });
     } catch (err) {
-      console.warn('Firestore transaction failed, generating atomic code fallback:', err);
-      const existing = getLocalDemoVendors();
-      vendorCode = `VND-${String(existing.length + 1).padStart(6, '0')}`;
+      console.warn('Firestore counter transaction failed, falling back to counting vendor docs:', err);
+      try {
+        const snap = await getDocs(collection(db, 'vendors'));
+        const nextNumber = snap.size + 1;
+        vendorCode = `VND-${String(nextNumber).padStart(6, '0')}`;
+      } catch {
+        const existing = getLocalDemoVendors();
+        vendorCode = `VND-${String(existing.length + 1).padStart(6, '0')}`;
+      }
     }
 
     const primaryContact = contacts.find((c) => c.isPrimary && c.status !== 'inactive') || contacts[0];
@@ -752,42 +791,52 @@ export class VendorService {
       subcompanyCount: 0
     };
 
-    // Write directly to live Firebase Firestore `vendors` collection
+    // 1. Primary write to live Firebase Firestore `vendors` collection
     try {
-      await setDoc(vendorRef, newVendor);
+      const cleanedVendor = cleanFirestoreData(newVendor);
+      await setDoc(vendorRef, cleanedVendor);
+      console.log(`Successfully created vendor ${vendorCode} (ID: ${vendorId}) in live Firebase Firestore!`);
+    } catch (err: any) {
+      console.error('Failed writing vendor to live Firestore:', err);
+      throw new Error(`Failed to save vendor to Firestore: ${err?.message || err}`);
+    }
 
-      // Write contacts to Firestore subcollection
-      for (const c of contacts) {
+    // 2. Write contacts to Firestore subcollection (isolated try/catch so subcollection won't block vendor creation)
+    try {
+      const validContacts = contacts.filter((c) => c.personName?.trim() || c.contactNumber?.trim());
+      for (const c of validContacts) {
         const cRef = doc(collection(db, 'vendors', vendorId, 'contacts'));
-        await setDoc(cRef, {
+        await setDoc(cRef, cleanFirestoreData({
           ...c,
           contactId: cRef.id,
           vendorId,
-          personName: c.personName || 'Primary Contact',
-          contactNumber: c.contactNumber || '9000000000',
+          personName: c.personName?.trim() || 'Primary Contact',
+          contactNumber: c.contactNumber?.trim() || '',
           isPrimary: Boolean(c.isPrimary),
           status: c.status || 'active',
           createdAt: now,
           createdBy: userId,
           updatedAt: now,
           updatedBy: userId
-        });
+        }));
       }
+    } catch (contactErr) {
+      console.warn('Could not write vendor contacts subcollection to Firestore:', contactErr);
+    }
 
-      // Write Audit Log to Firestore `vendor_audit_logs` collection
+    // 3. Write Audit Log to Firestore `vendor_audit_logs` collection (isolated try/catch)
+    try {
       const logRef = doc(collection(db, 'vendor_audit_logs'));
-      await setDoc(logRef, {
+      await setDoc(logRef, cleanFirestoreData({
         auditId: logRef.id,
         vendorId,
         action: 'created',
         performedBy: userId,
         performedAt: now,
         summary: `Vendor '${newVendor.companyName}' created with code ${vendorCode}.`
-      });
-
-      console.log(`Successfully created vendor ${vendorCode} in live Firebase Firestore!`);
-    } catch (err) {
-      console.error('Failed writing vendor to live Firestore:', err);
+      }));
+    } catch (logErr) {
+      console.warn('Could not write vendor audit log to Firestore:', logErr);
     }
 
     // Keep local storage backup in sync
@@ -808,17 +857,23 @@ export class VendorService {
   ): Promise<boolean> {
     const now = new Date().toISOString();
 
+    // 1. Update Vendor in Firestore
     try {
       const vRef = doc(db, 'vendors', vendorId);
-      await updateDoc(vRef, {
+      await updateDoc(vRef, cleanFirestoreData({
         ...updates,
         updatedAt: now,
         updatedBy: userId
-      });
+      }));
+    } catch (err) {
+      console.error('Firestore update failed:', err);
+      throw new Error(`Failed to update vendor in Firestore: ${(err as any)?.message || err}`);
+    }
 
-      // Write Audit Log to Firestore
+    // 2. Write Audit Log to Firestore (isolated try/catch)
+    try {
       const logRef = doc(collection(db, 'vendor_audit_logs'));
-      await setDoc(logRef, {
+      await setDoc(logRef, cleanFirestoreData({
         auditId: logRef.id,
         vendorId,
         action: 'updated',
@@ -826,9 +881,9 @@ export class VendorService {
         performedAt: now,
         changedFields: Object.keys(updates),
         summary: `Updated vendor fields: ${Object.keys(updates).join(', ')}`
-      });
-    } catch (err) {
-      console.warn('Firestore update failed, updating local state:', err);
+      }));
+    } catch (logErr) {
+      console.warn('Could not write update audit log to Firestore:', logErr);
     }
 
     const existing = getLocalDemoVendors();

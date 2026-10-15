@@ -22,12 +22,13 @@ export function calculateStatementSummaries(
 
   pos.forEach((po) => {
     po.lines.forEach((line) => {
-      // Calculate cumulative inward for this line
+      // Calculate cumulative inward for this line (posted entries only)
       let totalInward = 0;
       inwards.forEach((inEntry) => {
-        if (inEntry.poId === po.id || inEntry.poNumber === po.poNumber) {
+        const isPosted = !inEntry.status || inEntry.status === 'posted';
+        if (isPosted && (inEntry.poId === po.id || inEntry.poNumber === po.poNumber)) {
           inEntry.lines.forEach((inLine) => {
-            if (inLine.poLineId === line.lineId || inLine.colour === line.colourName) {
+            if (inLine.poLineId === line.lineId || inLine.colour === line.colourName || inLine.colourNameSnapshot === line.colourName) {
               totalInward += Number(inLine.receivedQty) || 0;
             }
           });

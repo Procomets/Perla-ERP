@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   Filter,
@@ -16,7 +16,12 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
-  Calendar
+  Calendar,
+  Trash2,
+  AlertTriangle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import {
   PurchaseOrder,
@@ -46,10 +51,25 @@ interface POListProps {
   onApprovePO: (poId: string) => void;
   onRejectPO: (poId: string) => void;
   onCancelPO: (poId: string) => void;
+  onRevokeApprovalPO?: (poId: string, reason?: string) => void;
+  onDeletePO?: (poId: string) => void;
   onPrintPO: (poId: string) => void;
   onAddNewPO: () => void;
   canManage: boolean; // Admin or Manager
+  isAdmin?: boolean; // Admin only
 }
+
+export type POSortField =
+  | 'poNumber'
+  | 'customerName'
+  | 'processCategory'
+  | 'styleNo'
+  | 'orderDate'
+  | 'totalQuantity'
+  | 'totalAmount'
+  | 'status';
+
+export type SortDirection = 'asc' | 'desc' | null;
 
 export const POList: React.FC<POListProps> = ({
   pos,
@@ -62,22 +82,70 @@ export const POList: React.FC<POListProps> = ({
   onEditPO,
   onSubmitPO,
   onApprovePO,
+  onRevokeApprovalPO,
   onRejectPO,
   onCancelPO,
+  onDeletePO,
   onPrintPO,
   onAddNewPO,
-  canManage
+  canManage,
+  isAdmin
 }) => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
 
-  // Eligible customer vendors
+  // Eligible customer vendors (Main company customers only)
   const eligibleCustomers = vendors.filter(
     (v) =>
-      v.vendorType === 'customer' ||
-      v.vendorType === 'both' ||
-      v.roles?.includes('Customer') ||
-      v.roles?.includes('Both')
+      (!v.vendorCategory || v.vendorCategory === 'main_company') &&
+      (v.vendorType === 'customer' ||
+        v.vendorType === 'both' ||
+        v.roles?.includes('Customer') ||
+        v.roles?.includes('Both'))
   );
+
+  // Dynamic list of all statuses present in data plus standard PO lifecycle statuses
+  const dynamicStatusOptions = useMemo(() => {
+    const statusMap = new Map<string, string>();
+
+    // Standard PO statuses
+    const standardStatuses = [
+      { key: 'draft', label: 'Draft' },
+      { key: 'submitted', label: 'Submitted' },
+      { key: 'approved', label: 'Approved' },
+      { key: 'in_progress', label: 'In Progress' },
+      { key: 'partially_received', label: 'Partially Received' },
+      { key: 'fully_received', label: 'Fully Received' },
+      { key: 'completed', label: 'Completed' },
+      { key: 'rejected', label: 'Rejected' },
+      { key: 'cancelled', label: 'Cancelled' }
+    ];
+
+    standardStatuses.forEach(({ key, label }) => {
+      statusMap.set(key.toLowerCase(), label);
+    });
+
+    // Dynamically collect any statuses appearing in the PO data
+    pos.forEach((p) => {
+      if (p.status) {
+        const raw = String(p.status).trim();
+        const key = raw.toLowerCase();
+        if (!statusMap.has(key)) {
+          const formatted = raw
+            .replace(/_/g, ' ')
+            .split(' ')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+          statusMap.set(key, formatted);
+        }
+      }
+    });
+
+    return Array.from(statusMap.entries()).map(([value, label]) => ({
+      value,
+      label
+    }));
+  }, [pos]);
 
   const handleResetFilters = () => {
     onFilterChange({
@@ -98,17 +166,142 @@ export const POList: React.FC<POListProps> = ({
     Boolean(filters.startDate) ||
     Boolean(filters.endDate);
 
+  // 3-State Column Sorting (asc -> desc -> unsort)
+  const [sortField, setSortField] = useState<POSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: POSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else if (sortDirection === 'desc') {
+      setSortField(null);
+      setSortDirection(null);
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedPOs = useMemo(() => {
+    if (!sortField || !sortDirection) {
+      return pos;
+    }
+
+    const mult = sortDirection === 'desc' ? -1 : 1;
+    return [...pos].sort((a, b) => {
+      switch (sortField) {
+        case 'poNumber':
+          return (
+            (a.poNumber || '').localeCompare(b.poNumber || '', undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            }) * mult
+          );
+        case 'customerName':
+          return (
+            (a.customerName || '').localeCompare(b.customerName || '') * mult
+          );
+        case 'processCategory':
+          return (
+            (a.processCategory || '').localeCompare(b.processCategory || '') * mult
+          );
+        case 'styleNo': {
+          const aStyle = `${a.styleNo || a.styleNumber || ''} ${a.itemName || ''}`;
+          const bStyle = `${b.styleNo || b.styleNumber || ''} ${b.itemName || ''}`;
+          return aStyle.localeCompare(bStyle) * mult;
+        }
+        case 'orderDate': {
+          const aDate = a.orderDate ? new Date(a.orderDate).getTime() : 0;
+          const bDate = b.orderDate ? new Date(b.orderDate).getTime() : 0;
+          return (aDate - bDate) * mult;
+        }
+        case 'totalQuantity':
+          return (
+            ((Number(a.totalQuantity) || 0) - (Number(b.totalQuantity) || 0)) * mult
+          );
+        case 'totalAmount':
+          return (
+            ((Number(a.totalAmount) || 0) - (Number(b.totalAmount) || 0)) * mult
+          );
+        case 'status':
+          return (a.status || '').localeCompare(b.status || '') * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [pos, sortField, sortDirection]);
+
+  const renderSortIcon = (field: POSortField) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-100 text-[#1F4E79] shadow-2xs">
+            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+      if (sortDirection === 'desc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-100 text-[#1F4E79] shadow-2xs">
+            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+    }
+    return (
+      <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+        <ArrowUpDown className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
+      </span>
+    );
+  };
+
+  const getSortTooltip = (field: POSortField, label: string) => {
+    if (sortField !== field || !sortDirection) {
+      return `Click to sort ${label} ascending`;
+    }
+    if (sortDirection === 'asc') {
+      return `Currently sorted ascending. Click to sort descending`;
+    }
+    return `Currently sorted descending. Click to unsort`;
+  };
+
+  const getSortColumnLabel = (field: POSortField) => {
+    switch (field) {
+      case 'poNumber':
+        return 'PO Number';
+      case 'customerName':
+        return 'Customer';
+      case 'processCategory':
+        return 'Process';
+      case 'styleNo':
+        return 'Style & Item';
+      case 'orderDate':
+        return 'Order Date';
+      case 'totalQuantity':
+        return 'Total Qty';
+      case 'totalAmount':
+        return 'Value (₹)';
+      case 'status':
+        return 'Status';
+      default:
+        return field;
+    }
+  };
+
   const renderQuantityDisplay = (po: PurchaseOrder) => {
     const pcs = po.totalQtyByUnit?.piece || 0;
     const kgs = po.totalQtyByUnit?.kg || 0;
 
     if (pcs > 0 && kgs > 0) {
       return (
-        <div>
+        <div className="text-right">
           <div className="font-semibold text-slate-800">
             {formatQuantity(pcs, 'piece')}
           </div>
-          <div className="text-[11px] text-slate-500">
+          <div className="text-[11px] text-slate-500 font-mono">
             {formatQuantity(kgs, 'kg')}
           </div>
         </div>
@@ -117,7 +310,7 @@ export const POList: React.FC<POListProps> = ({
 
     if (kgs > 0) {
       return (
-        <span className="font-semibold text-slate-800">
+        <span className="font-semibold text-slate-800 font-mono">
           {formatQuantity(kgs, 'kg')}
         </span>
       );
@@ -126,7 +319,7 @@ export const POList: React.FC<POListProps> = ({
     const total = pcs > 0 ? pcs : po.totalQuantity || 0;
     const unit = po.colourLines[0]?.unit || 'piece';
     return (
-      <span className="font-semibold text-slate-800">
+      <span className="font-semibold text-slate-800 font-mono">
         {formatQuantity(total, unit)}
       </span>
     );
@@ -169,9 +362,9 @@ export const POList: React.FC<POListProps> = ({
               <option value="dyeing">Dyeing</option>
             </select>
 
-            {/* Status Filter */}
+            {/* Dynamic Status Filter */}
             <select
-              value={filters.status || 'all'}
+              value={(filters.status || 'all').toLowerCase()}
               onChange={(e) =>
                 onFilterChange({
                   ...filters,
@@ -181,12 +374,11 @@ export const POList: React.FC<POListProps> = ({
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:border-[#1F4E79]"
             >
               <option value="all">All Statuses</option>
-              <option value="draft">Draft</option>
-              <option value="submitted">Submitted</option>
-              <option value="approved">Approved</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              {dynamicStatusOptions.map((st) => (
+                <option key={st.value} value={st.value}>
+                  {st.label}
+                </option>
+              ))}
             </select>
 
             {/* Customer Filter */}
@@ -287,27 +479,157 @@ export const POList: React.FC<POListProps> = ({
         )}
       </div>
 
-      {/* Purchase Orders Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      {/* Active Sort Banner (if sorted) */}
+      {sortField && sortDirection && (
+        <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-[#1F4E79]">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">
+              Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSortField(null);
+              setSortDirection(null);
+            }}
+            className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+          >
+            Clear Sort
+          </button>
+        </div>
+      )}
+
+      {/* Purchase Orders Table - Actual Grid with Vertical & Horizontal Borders */}
+      <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full border-collapse text-xs border border-slate-200">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-4">PO Number</th>
-                <th className="py-3 px-4">Customer</th>
-                <th className="py-3 px-4">Process</th>
-                <th className="py-3 px-4">Style & Item</th>
-                <th className="py-3 px-4">Order Date</th>
-                <th className="py-3 px-4">Total Qty</th>
-                <th className="py-3 px-4 text-right">Value (₹)</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+              <tr className="bg-slate-100/90 text-slate-700 uppercase tracking-wider font-bold text-[11px] border-b-2 border-slate-300">
+                {/* 1. PO Number - Left */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'poNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('poNumber')}
+                  title={getSortTooltip('poNumber', 'PO Number')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>PO Number</span>
+                    {renderSortIcon('poNumber')}
+                  </div>
+                </th>
+
+                {/* 2. Customer - Left */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'customerName' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('customerName')}
+                  title={getSortTooltip('customerName', 'Customer')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>Customer</span>
+                    {renderSortIcon('customerName')}
+                  </div>
+                </th>
+
+                {/* 3. Process - Center */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'processCategory' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('processCategory')}
+                  title={getSortTooltip('processCategory', 'Process Category')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Process</span>
+                    {renderSortIcon('processCategory')}
+                  </div>
+                </th>
+
+                {/* 4. Style & Item - Left */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'styleNo' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('styleNo')}
+                  title={getSortTooltip('styleNo', 'Style & Item')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>Style & Item</span>
+                    {renderSortIcon('styleNo')}
+                  </div>
+                </th>
+
+                {/* 5. Order Date - Center */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'orderDate' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('orderDate')}
+                  title={getSortTooltip('orderDate', 'Order Date')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Order Date</span>
+                    {renderSortIcon('orderDate')}
+                  </div>
+                </th>
+
+                {/* 6. Total Qty - Right */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'totalQuantity' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('totalQuantity')}
+                  title={getSortTooltip('totalQuantity', 'Total Quantity')}
+                >
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span>Total Qty</span>
+                    {renderSortIcon('totalQuantity')}
+                  </div>
+                </th>
+
+                {/* 7. Value - Right */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'totalAmount' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('totalAmount')}
+                  title={getSortTooltip('totalAmount', 'Value')}
+                >
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span>Value (₹)</span>
+                    {renderSortIcon('totalAmount')}
+                  </div>
+                </th>
+
+                {/* 8. Status - Center */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'status' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('status')}
+                  title={getSortTooltip('status', 'Status')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Status</span>
+                    {renderSortIcon('status')}
+                  </div>
+                </th>
+
+                {/* 9. Actions - Center */}
+                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-center whitespace-nowrap bg-slate-100/90 text-slate-700">
+                  <div className="flex items-center justify-center">
+                    <span>Actions</span>
+                  </div>
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {pos.length === 0 ? (
+            <tbody className="divide-y divide-slate-200">
+              {sortedPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400 border-b border-slate-200">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <div className="p-3 rounded-full bg-slate-50 text-slate-400">
                         <Layers className="w-6 h-6" />
@@ -335,27 +657,31 @@ export const POList: React.FC<POListProps> = ({
                   </td>
                 </tr>
               ) : (
-                pos.map((po) => {
+                sortedPOs.map((po) => {
                   const statusLower = po.status.toLowerCase();
                   const isDraft =
-                    statusLower === 'draft';
-                  const isSubmitted =
-                    statusLower === 'submitted';
+                    statusLower === 'draft' || statusLower === 'submitted';
                   const isApproved =
                     statusLower === 'approved';
                   const isCancelled =
-                    statusLower === 'cancelled';
+                    statusLower === 'cancelled' || statusLower === 'rejected';
 
                   return (
                     <tr
                       key={po.id || po.poId}
-                      className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                      className="even:bg-slate-50/60 hover:bg-blue-50/50 transition-colors group cursor-pointer border-b border-slate-200"
                       onClick={() => onViewPO(po.id || po.poId)}
                     >
-                      {/* PO Number */}
-                      <td className="py-3.5 px-4 font-bold text-[#1F4E79] whitespace-nowrap">
+                      {/* PO Number - Left */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 font-bold whitespace-nowrap align-middle text-left">
                         <div className="flex items-center gap-1.5">
-                          <span>{po.poNumber}</span>
+                          {po.poNumber === 'PO/PENDING' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              PO/PENDING
+                            </span>
+                          ) : (
+                            <span className="text-[#1F4E79] font-mono">{po.poNumber}</span>
+                          )}
                           {po.revision && po.revision > 1 && (
                             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                               R{po.revision}
@@ -364,33 +690,40 @@ export const POList: React.FC<POListProps> = ({
                         </div>
                       </td>
 
-                      {/* Customer */}
-                      <td className="py-3.5 px-4 font-medium text-slate-900 max-w-[200px] truncate">
+                      {/* Customer - Left */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left">
                         <div>
-                          <div className="truncate">{po.customerName}</div>
-                          {po.customerCode && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {po.customerCode}
-                            </span>
-                          )}
+                          <div className="truncate font-semibold">{po.customerName}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            {po.customerCode && (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {po.customerCode}
+                              </span>
+                            )}
+                            {(po.subcontractorName || po.subcompanyName) && (
+                              <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-normal truncate max-w-[150px]">
+                                {po.subcontractorType === 'subcompany' ? 'Sub' : 'Subcon'}: {po.subcontractorName || po.subcompanyName}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
-                      {/* Process Category */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      {/* Process Category - Center */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap text-center align-middle">
                         <span
                           className={`px-2 py-0.5 rounded-md text-[11px] font-semibold capitalize ${
                             po.processCategory.toLowerCase() === 'washing'
-                              ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                              : 'bg-purple-50 text-purple-700 border border-purple-100'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-purple-50 text-purple-700 border border-purple-200'
                           }`}
                         >
                           {po.processCategory}
                         </span>
                       </td>
 
-                      {/* Style & Item */}
-                      <td className="py-3.5 px-4 max-w-[180px] truncate">
+                      {/* Style & Item - Left */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 max-w-[180px] truncate align-middle text-left">
                         <div className="font-semibold text-slate-800 truncate">
                           {po.styleNo || po.styleNumber}
                         </div>
@@ -399,110 +732,92 @@ export const POList: React.FC<POListProps> = ({
                         </div>
                       </td>
 
-                      {/* Order Date */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-slate-600">
+                      {/* Order Date - Center */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap text-slate-600 text-center align-middle font-medium">
                         {formatDate(po.orderDate)}
                       </td>
 
-                      {/* Total Qty */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      {/* Total Qty - Right */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap text-right align-middle font-medium">
                         {renderQuantityDisplay(po)}
                       </td>
 
-                      {/* Total Amount */}
-                      <td className="py-3.5 px-4 text-right font-black text-slate-900 whitespace-nowrap">
+                      {/* Total Amount - Right */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 text-right font-black text-slate-900 whitespace-nowrap align-middle font-mono">
                         {formatCurrency(po.totalAmount)}
                       </td>
 
-                      {/* Status */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                      {/* Status - Center */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 text-center whitespace-nowrap align-middle">
                         <StatusChip status={po.status} />
                       </td>
 
-                      {/* Actions */}
+                      {/* Actions - Center */}
                       <td
-                        className="py-3.5 px-4 text-right whitespace-nowrap"
+                        className="py-2.5 px-3.5 text-center whitespace-nowrap align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center justify-end gap-1">
-                          {/* View details */}
-                          <button
-                            type="button"
-                            onClick={() => onViewPO(po.id || po.poId)}
-                            className="p-1.5 rounded-md text-slate-500 hover:text-[#1F4E79] hover:bg-[#EEF5FB] transition-colors cursor-pointer"
-                            title="View PO Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {isDraft ? (
+                            <>
+                              {/* DRAFT Status: ONLY Accept and Reject buttons */}
+                              <button
+                                type="button"
+                                onClick={() => onApprovePO(po.id || po.poId)}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onRejectPO(po.id || po.poId)}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* 1. View */}
+                              <button
+                                type="button"
+                                onClick={() => onViewPO(po.id || po.poId)}
+                                className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
+                              >
+                                View
+                              </button>
 
-                          {/* Print */}
-                          <button
-                            type="button"
-                            onClick={() => onPrintPO(po.id || po.poId)}
-                            className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                            title="Print Work Order"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
+                              {/* 2. Edit */}
+                              {canManage && !isCancelled && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditPO(po.id || po.poId)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              )}
 
-                          {/* Edit Draft */}
-                          {canManage && isDraft && (
-                            <button
-                              type="button"
-                              onClick={() => onEditPO(po.id || po.poId)}
-                              className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                              title="Edit Draft"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          )}
+                              {/* 3. Delete (Admin only) */}
+                              {isAdmin && onDeletePO && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPoToDelete(po)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              )}
 
-                          {/* Submit Draft */}
-                          {canManage && isDraft && (
-                            <button
-                              type="button"
-                              onClick={() => onSubmitPO(po.id || po.poId)}
-                              className="p-1.5 rounded-md text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
-                              title="Submit for Approval"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Approve (if submitted or draft) */}
-                          {canManage && (isSubmitted || isDraft) && (
-                            <button
-                              type="button"
-                              onClick={() => onApprovePO(po.id || po.poId)}
-                              className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-                              title="Approve PO"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Reject (if submitted) */}
-                          {canManage && isSubmitted && (
-                            <button
-                              type="button"
-                              onClick={() => onRejectPO(po.id || po.poId)}
-                              className="p-1.5 rounded-md text-rose-500 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Reject PO"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Cancel PO */}
-                          {canManage && !isCancelled && (
-                            <button
-                              type="button"
-                              onClick={() => onCancelPO(po.id || po.poId)}
-                              className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Cancel PO"
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
+                              {/* 4. Print */}
+                              <button
+                                type="button"
+                                onClick={() => onPrintPO(po.id || po.poId)}
+                                className="px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded transition-colors"
+                              >
+                                Print
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -560,6 +875,67 @@ export const POList: React.FC<POListProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Popup Card */}
+      {poToDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setPoToDelete(null)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Delete Permanently?
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {poToDelete.poNumber}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-3 space-y-1 text-xs text-rose-800">
+              <div className="flex items-center gap-1.5 font-semibold text-rose-900">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Confirm Permanent Deletion</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                This action will permanently delete purchase order <strong className="font-bold text-rose-950">{poToDelete.poNumber}</strong> ({poToDelete.customerName}) from the database. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPoToDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  if (onDeletePO && poToDelete) {
+                    const idToDelete = poToDelete.id || poToDelete.poId;
+                    setPoToDelete(null);
+                    onDeletePO(idToDelete);
+                  }
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs"
+              >
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

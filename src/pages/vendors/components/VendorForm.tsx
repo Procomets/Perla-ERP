@@ -1,16 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Search,
+  ChevronDown,
+  Check,
+  X,
+  Building2
+} from 'lucide-react';
 import {
   Vendor,
   VendorContact,
   VendorType,
   VendorCategory,
   GSTRegistrationStatus,
-  PreferredPaymentMethod,
-  PreferredContactMethod,
-  DocumentType
+  PreferredPaymentMethod
 } from '../../../types/vendor';
 import {
-  vendorInputSchema,
   gstinRegex,
   panRegex,
   ifscRegex
@@ -41,6 +45,49 @@ export const VendorForm: React.FC<VendorFormProps> = ({
   const [vendorType, setVendorType] = useState<VendorType>(initialVendor?.vendorType || 'customer');
   const [vendorCategory, setVendorCategory] = useState<VendorCategory>(initialVendor?.vendorCategory || 'main_company');
   const [parentVendorId, setParentVendorId] = useState<string | null>(initialVendor?.parentVendorId || null);
+  const [parentSearchQuery, setParentSearchQuery] = useState('');
+  const [isParentDropdownOpen, setIsParentDropdownOpen] = useState(false);
+  const parentDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close parent company dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (parentDropdownRef.current && !parentDropdownRef.current.contains(e.target as Node)) {
+        setIsParentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter ONLY Main Companies (excluding the current vendor if editing)
+  const mainCompanyVendors = useMemo(() => {
+    return existingVendors.filter((v) => {
+      if (initialVendor?.vendorId && v.vendorId === initialVendor.vendorId) {
+        return false;
+      }
+      const cat = (v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
+      return cat === 'main_company';
+    });
+  }, [existingVendors, initialVendor]);
+
+  // Filter main companies by search term (company name, vendor code, legal name)
+  const filteredParentCompanies = useMemo(() => {
+    if (!parentSearchQuery.trim()) return mainCompanyVendors;
+    const q = parentSearchQuery.toLowerCase();
+    return mainCompanyVendors.filter((v) => {
+      const nameMatch = v.companyName?.toLowerCase().includes(q);
+      const codeMatch = v.vendorCode?.toLowerCase().includes(q);
+      const legalMatch = v.legalCompanyName?.toLowerCase().includes(q);
+      return nameMatch || codeMatch || legalMatch;
+    });
+  }, [mainCompanyVendors, parentSearchQuery]);
+
+  // Selected parent company object
+  const selectedParentVendor = useMemo(() => {
+    return mainCompanyVendors.find((v) => v.vendorId === parentVendorId);
+  }, [mainCompanyVendors, parentVendorId]);
+
   const [businessDescription, setBusinessDescription] = useState(initialVendor?.businessDescription || '');
   const [status, setStatus] = useState<'active' | 'inactive'>(initialVendor?.status || 'active');
 
@@ -192,12 +239,18 @@ export const VendorForm: React.FC<VendorFormProps> = ({
   const validateForm = (): boolean => {
     const errs: Record<string, string> = {};
 
-    if (!companyName.trim()) errs.companyName = 'Company Name is required.';
-    if (!addressLine1.trim()) errs.addressLine1 = 'Address Line 1 is required.';
-    if (!state.trim()) errs.state = 'State is required.';
+    if (!companyName.trim()) {
+      errs.companyName = 'Company Name is required.';
+    }
 
-    if (gstRegistrationStatus === 'registered' || gstRegistrationStatus === 'composition') {
-      if (gstin && !gstinRegex.test(gstin.trim().toUpperCase())) {
+    if (gstRegistrationStatus === 'registered') {
+      if (!gstin || !gstin.trim()) {
+        errs.gstin = 'GSTIN is mandatory when GST Registration Status is Registered Regular.';
+      } else if (!gstinRegex.test(gstin.trim().toUpperCase())) {
+        errs.gstin = 'Invalid GSTIN format. Standard Indian GSTIN is 15 alphanumeric characters (e.g. 33AAAAA0000A1Z5).';
+      }
+    } else if (gstin && gstin.trim().length > 0) {
+      if (!gstinRegex.test(gstin.trim().toUpperCase())) {
         errs.gstin = 'Invalid GSTIN format. Standard Indian GSTIN is 15 alphanumeric characters (e.g. 33AAAAA0000A1Z5).';
       }
     }
@@ -210,19 +263,29 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       errs.ifscCode = 'Invalid IFSC Code format (e.g. SBIN0001234).';
     }
 
-    if (contacts.length > 0) {
-      contacts.forEach((c, idx) => {
+    // Only validate contacts if any field is partially filled
+    contacts.forEach((c, idx) => {
+      const hasAnyField = Boolean(c.personName?.trim() || c.contactNumber?.trim() || c.email?.trim());
+      if (hasAnyField) {
         if (!c.personName?.trim()) {
           errs[`contact_${idx}_name`] = `Contact #${idx + 1} Person Name is required.`;
         }
         if (!c.contactNumber?.trim()) {
           errs[`contact_${idx}_phone`] = `Contact #${idx + 1} Phone Number is required.`;
         }
-      });
+      }
+    });
+
+    if (Object.keys(errs).length > 0) {
+      const messages = Object.values(errs).slice(0, 3).join(' • ');
+      errs.submit = `Please fill required fields: ${messages}`;
+      setErrors(errs);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return false;
     }
 
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+    setErrors({});
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent, isAddAnother: boolean = false) => {
@@ -230,7 +293,9 @@ export const VendorForm: React.FC<VendorFormProps> = ({
     if (!validateForm()) return;
 
     setIsSubmitting(true);
+    setErrors({});
     try {
+      const validContacts = contacts.filter((c) => c.personName?.trim() || c.contactNumber?.trim());
       const payload: Partial<Vendor> = {
         companyName: companyName.trim(),
         legalCompanyName: legalCompanyName.trim() || undefined,
@@ -239,11 +304,11 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         parentVendorId: vendorCategory === 'main_company' ? null : (parentVendorId || null),
         businessDescription: businessDescription.trim() || undefined,
         address: {
-          addressLine1: addressLine1.trim(),
+          addressLine1: addressLine1.trim() || 'N/A',
           addressLine2: addressLine2.trim() || undefined,
-          city: city.trim() || undefined,
+          city: city.trim() || 'Coimbatore',
           district: district.trim() || undefined,
-          state: state.trim(),
+          state: state.trim() || 'Tamil Nadu',
           pinCode: pinCode.trim() || undefined,
           country: country.trim() || 'India',
           gstStateCode: gstStateCode.trim() || undefined
@@ -281,7 +346,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         status
       };
 
-      await onSave(payload, contacts, isAddAnother);
+      await onSave(payload, validContacts, isAddAnother);
     } catch (error: any) {
       setErrors({ submit: error?.message || 'Failed to save vendor record.' });
     } finally {
@@ -309,7 +374,7 @@ export const VendorForm: React.FC<VendorFormProps> = ({
   };
 
   return (
-    <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6 pb-12">
+    <form onSubmit={(e) => handleSubmit(e, false)} noValidate className="space-y-6 pb-12">
       {/* Header Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div>
@@ -441,24 +506,145 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
           {/* Parent Company Selection - Only shown if Vendor Category is other than Main Company */}
           {vendorCategory !== 'main_company' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Parent Company
-              </label>
-              <select
-                value={parentVendorId || ''}
-                onChange={(e) => setParentVendorId(e.target.value || null)}
-                className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
+            <div ref={parentDropdownRef} className="relative">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Parent Company
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Main Companies Only</span>
+              </div>
+
+              {/* Selector Trigger Button */}
+              <div
+                onClick={() => setIsParentDropdownOpen((prev) => !prev)}
+                className={`w-full bg-white border ${
+                  isParentDropdownOpen ? 'border-[#1F4E79] ring-2 ring-[#1F4E79]/20' : 'border-slate-300'
+                } rounded-xl p-2.5 text-sm font-medium flex items-center justify-between cursor-pointer transition`}
               >
-                <option value="">Select Parent Company</option>
-                {existingVendors
-                  .filter((v) => v.vendorId !== initialVendor?.vendorId)
-                  .map((v) => (
-                    <option key={v.vendorId} value={v.vendorId}>
-                      {v.companyName} ({v.vendorCode})
-                    </option>
-                  ))}
-              </select>
+                <div className="flex items-center gap-2 truncate">
+                  <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                  {selectedParentVendor ? (
+                    <span className="text-slate-900 truncate">
+                      {selectedParentVendor.companyName}{' '}
+                      <span className="text-xs text-slate-400 font-mono">({selectedParentVendor.vendorCode})</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">Select Parent Company</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {parentVendorId && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setParentVendorId(null);
+                        setParentSearchQuery('');
+                      }}
+                      className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition cursor-pointer"
+                      title="Clear Parent Company"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-400 transition-transform duration-150 ${
+                      isParentDropdownOpen ? 'rotate-180 text-[#1F4E79]' : ''
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Dropdown Popover */}
+              {isParentDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  {/* Search input in dropdown */}
+                  <div className="p-2 border-b border-slate-100 bg-slate-50/70">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Search main company name or code..."
+                        value={parentSearchQuery}
+                        onChange={(e) => setParentSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                      />
+                      {parentSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setParentSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Company List */}
+                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 text-xs">
+                    {/* Option to clear / no parent */}
+                    <div
+                      onClick={() => {
+                        setParentVendorId(null);
+                        setIsParentDropdownOpen(false);
+                        setParentSearchQuery('');
+                      }}
+                      className={`p-2.5 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-slate-500 italic ${
+                        !parentVendorId ? 'bg-slate-50 text-slate-900 font-semibold' : ''
+                      }`}
+                    >
+                      <span>No Parent Company</span>
+                      {!parentVendorId && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                    </div>
+
+                    {filteredParentCompanies.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        {mainCompanyVendors.length === 0
+                          ? 'No vendors found with category: Main Company'
+                          : `No main companies match "${parentSearchQuery}"`}
+                      </div>
+                    ) : (
+                      filteredParentCompanies.map((v) => {
+                        const isSelected = parentVendorId === v.vendorId;
+                        return (
+                          <div
+                            key={v.vendorId}
+                            onClick={() => {
+                              setParentVendorId(v.vendorId);
+                              setIsParentDropdownOpen(false);
+                              setParentSearchQuery('');
+                            }}
+                            className={`p-2.5 hover:bg-blue-50/60 cursor-pointer flex items-center justify-between transition ${
+                              isSelected ? 'bg-blue-50/80 font-semibold' : ''
+                            }`}
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="text-slate-900 font-medium truncate flex items-center gap-1.5">
+                                <span>{v.companyName}</span>
+                                <span className="font-mono text-[10px] text-slate-400">({v.vendorCode})</span>
+                              </div>
+                              {v.legalCompanyName && v.legalCompanyName !== v.companyName && (
+                                <p className="text-[10px] text-slate-400 truncate">{v.legalCompanyName}</p>
+                              )}
+                            </div>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 ml-2" />}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Dropdown Footer */}
+                  <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>
+                      Showing {filteredParentCompanies.length} of {mainCompanyVendors.length} Main Companies
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -502,11 +688,10 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Address Line 1 <span className="text-rose-600">*</span>
+              Address Line 1
             </label>
             <input
               type="text"
-              required
               placeholder="Door No, Street Name, Industrial Area"
               value={addressLine1}
               onChange={(e) => setAddressLine1(e.target.value)}
@@ -604,20 +789,36 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[#1F4E79]">
           <h3 className="font-bold text-base">Section 3 — Tax and Registration Details</h3>
-          <span className="text-xs bg-purple-50 text-purple-800 px-2.5 py-1 rounded-full border border-purple-200">
-            Unregistered Vendors Allowed
-          </span>
+          {gstRegistrationStatus === 'registered' ? (
+            <span className="text-xs bg-amber-50 text-amber-800 px-2.5 py-1 rounded-full border border-amber-200 font-medium">
+              GSTIN Mandatory for Registered
+            </span>
+          ) : (
+            <span className="text-xs bg-purple-50 text-purple-800 px-2.5 py-1 rounded-full border border-purple-200">
+              Unregistered Vendors Allowed (GSTIN Optional)
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              GST Registration Status
+              GST Registration Status <span className="text-rose-600">*</span>
             </label>
             <select
               value={gstRegistrationStatus}
-              onChange={(e) => setGstRegistrationStatus(e.target.value as GSTRegistrationStatus)}
-              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium"
+              onChange={(e) => {
+                const newStatus = e.target.value as GSTRegistrationStatus;
+                setGstRegistrationStatus(newStatus);
+                if (newStatus !== 'registered' && errors.gstin && (!gstin || gstin.trim().length === 0)) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.gstin;
+                    return next;
+                  });
+                }
+              }}
+              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="registered">Registered Regular</option>
               <option value="unregistered">Unregistered Vendor</option>
@@ -628,16 +829,32 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              GSTIN {gstRegistrationStatus === 'registered' && <span className="text-rose-600">*</span>}
+              GSTIN {gstRegistrationStatus === 'registered' ? (
+                <span className="text-rose-600">*</span>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-normal lowercase">(optional)</span>
+              )}
             </label>
             <input
               type="text"
-              placeholder="33AAAAA0000A1Z5"
+              placeholder={gstRegistrationStatus === 'registered' ? "33AAAAA0000A1Z5 (Mandatory)" : "33AAAAA0000A1Z5 (Optional)"}
               value={gstin}
-              onChange={(e) => setGstin(e.target.value.toUpperCase())}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase();
+                setGstin(val);
+                if (errors.gstin) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.gstin;
+                    return next;
+                  });
+                }
+              }}
+              className={`w-full bg-slate-50 border rounded-xl p-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:bg-white ${
+                errors.gstin ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-300 focus:ring-blue-500'
+              }`}
             />
-            {errors.gstin && <p className="text-rose-600 text-[11px] mt-1">{errors.gstin}</p>}
+            {errors.gstin && <p className="text-rose-600 text-[11px] mt-1 font-medium">{errors.gstin}</p>}
           </div>
 
           <div>
@@ -1041,7 +1258,12 @@ export const VendorForm: React.FC<VendorFormProps> = ({
       </div>
 
       {/* Form Action Buttons Bar */}
-      <div className="sticky bottom-4 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-300 shadow-lg flex flex-wrap items-center justify-between gap-3">
+      <div className="sticky bottom-4 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-300 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+        {errors.submit && (
+          <div className="w-full sm:w-auto px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-lg">
+            {errors.submit}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"

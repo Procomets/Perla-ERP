@@ -1,17 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Plus,
   Trash2,
   Save,
   Send,
+  CheckCircle2,
   Building,
   Layers,
   Calendar,
   AlertCircle,
   FileCheck2,
-  Info
+  Info,
+  Palette,
+  Network,
+  X,
+  Sparkles
 } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
+import { ColourItem } from '../../../types/colourMaster';
+import { ColourMasterService } from '../../../services/colourMasterService';
+import { ProcessItem } from '../../../types/processMaster';
+import { ProcessMasterService } from '../../../services/processMasterService';
+import { VendorService } from '../../../services/vendorService';
 import {
   PurchaseOrder,
   POColourLine,
@@ -34,10 +45,11 @@ interface POFormProps {
   vendors: Vendor[];
   onSave: (
     poData: Partial<PurchaseOrder>,
-    status: 'draft' | 'submitted'
+    status: 'draft' | 'approved' | string
   ) => Promise<void>;
   onCancel: () => void;
   isSaving: boolean;
+  isAdmin?: boolean;
 }
 
 export const POForm: React.FC<POFormProps> = ({
@@ -45,21 +57,271 @@ export const POForm: React.FC<POFormProps> = ({
   vendors,
   onSave,
   onCancel,
-  isSaving
+  isSaving,
+  isAdmin
 }) => {
-  // Filter active eligible customer vendors
-  const eligibleCustomers = vendors.filter(
-    (v) =>
-      v.vendorType === 'customer' ||
-      v.vendorType === 'both' ||
-      v.roles?.includes('Customer') ||
-      v.roles?.includes('Both')
-  );
+  const { activeRole, user } = useAuth();
+  const isUserAdmin =
+    isAdmin ??
+    (activeRole === 'Admin' ||
+      (user as any)?.role === 'Admin' ||
+      (user as any)?.role === 'admin');
+  const [allVendors, setAllVendors] = useState<Vendor[]>(() => {
+    return (vendors || []).map((v) => ({
+      ...v,
+      vendorId: v.vendorId || v.id || v.vendorCode || v.companyName,
+      id: v.id || v.vendorId || v.vendorCode || v.companyName
+    }));
+  });
+
+  // Load latest live vendors directly from Vendor Master
+  useEffect(() => {
+    let isMounted = true;
+    async function refreshVendors() {
+      try {
+        const res = await VendorService.getVendors({}, { page: 1, pageSize: 500 });
+        if (isMounted && res.vendors && res.vendors.length > 0) {
+          const normalized = res.vendors.map((v) => ({
+            ...v,
+            vendorId: v.vendorId || v.id || v.vendorCode || v.companyName,
+            id: v.id || v.vendorId || v.vendorCode || v.companyName
+          }));
+          setAllVendors(normalized);
+        }
+      } catch (err) {
+        console.warn('Could not refresh vendor master list:', err);
+      }
+    }
+    refreshVendors();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Filter strictly: Company Category: main_company, Vendor Type: customer / both
+  const eligibleCustomers = useMemo(() => {
+    return allVendors.filter((v) => {
+      const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
+      const isMainCompany = cat === 'main_company' || !cat;
+      const vType = String(v.vendorType || '').toLowerCase();
+      const isCustomer =
+        vType === 'customer' ||
+        vType === 'both' ||
+        v.roles?.includes('Customer') ||
+        v.roles?.includes('Both');
+      return isMainCompany && isCustomer;
+    });
+  }, [allVendors]);
 
   // Form State
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
-    initialPO?.customerId || initialPO?.customerVendorId || eligibleCustomers[0]?.vendorId || eligibleCustomers[0]?.id || ''
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(() => {
+    if (initialPO?.customerId) return initialPO.customerId;
+    if (initialPO?.customerVendorId) return initialPO.customerVendorId;
+    if (eligibleCustomers[0]) {
+      return (
+        eligibleCustomers[0].vendorId ||
+        eligibleCustomers[0].id ||
+        eligibleCustomers[0].vendorCode ||
+        ''
+      );
+    }
+    return '';
+  });
+
+  // Clean string helper for case & symbol insensitive matching
+  const cleanStr = (s: any): string => {
+    if (!s) return '';
+    return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  };
+
+  // Selected customer snapshot - guaranteed never null when eligibleCustomers has items
+  const selectedCustomer = useMemo(() => {
+    if (eligibleCustomers.length === 0) return null;
+    if (!selectedCustomerId) return eligibleCustomers[0];
+
+    const target = selectedCustomerId.toLowerCase().trim();
+    const targetClean = cleanStr(selectedCustomerId);
+
+    return (
+      eligibleCustomers.find((c) => {
+        const vId = c.vendorId ? String(c.vendorId).toLowerCase().trim() : '';
+        const id = c.id ? String(c.id).toLowerCase().trim() : '';
+        const code = c.vendorCode ? String(c.vendorCode).toLowerCase().trim() : '';
+        const name = c.companyName ? String(c.companyName).toLowerCase().trim() : '';
+        return (
+          vId === target ||
+          id === target ||
+          code === target ||
+          name === target ||
+          cleanStr(vId) === targetClean ||
+          cleanStr(id) === targetClean ||
+          cleanStr(code) === targetClean ||
+          cleanStr(name) === targetClean
+        );
+      }) ||
+      allVendors.find((c) => {
+        const vId = c.vendorId ? String(c.vendorId).toLowerCase().trim() : '';
+        const id = c.id ? String(c.id).toLowerCase().trim() : '';
+        const code = c.vendorCode ? String(c.vendorCode).toLowerCase().trim() : '';
+        const name = c.companyName ? String(c.companyName).toLowerCase().trim() : '';
+        return (
+          vId === target ||
+          id === target ||
+          code === target ||
+          name === target ||
+          cleanStr(vId) === targetClean ||
+          cleanStr(id) === targetClean ||
+          cleanStr(code) === targetClean ||
+          cleanStr(name) === targetClean
+        );
+      }) ||
+      eligibleCustomers[0]
+    );
+  }, [eligibleCustomers, allVendors, selectedCustomerId]);
+
+  // Ensure selectedCustomerId is valid
+  useEffect(() => {
+    if (!selectedCustomerId && eligibleCustomers.length > 0) {
+      setSelectedCustomerId(
+        eligibleCustomers[0].vendorId ||
+          eligibleCustomers[0].id ||
+          eligibleCustomers[0].vendorCode ||
+          ''
+      );
+    }
+  }, [eligibleCustomers, selectedCustomerId]);
+
+  // Subcontractor / Subcompany Unit toggle state: 'none' | 'subcontractor' | 'subcompany'
+  const [unitType, setUnitType] = useState<'none' | 'subcontractor' | 'subcompany'>(() => {
+    if (initialPO?.subcontractorType === 'subcompany') return 'subcompany';
+    if (initialPO?.subcontractorType === 'subcontractor' || initialPO?.subcontractorId) return 'subcontractor';
+    return 'none';
+  });
+
+  const [selectedSubUnitId, setSelectedSubUnitId] = useState<string>(
+    initialPO?.subcontractorId || initialPO?.subcompanyId || ''
   );
+
+  // Find ALL child vendors belonging to the selected main company
+  const respectiveUnits = useMemo(() => {
+    if (!selectedCustomer) return [];
+
+    const targetIdentifiers = new Set<string>();
+    const addId = (val: any) => {
+      if (!val) return;
+      const str = String(val).trim().toLowerCase();
+      if (str) targetIdentifiers.add(str);
+      const cleaned = cleanStr(val);
+      if (cleaned) targetIdentifiers.add(cleaned);
+      // Extract numbers from code e.g. VND-000006 -> "000006", "6"
+      const match = String(val).match(/\d+/);
+      if (match) {
+        targetIdentifiers.add(match[0]);
+        targetIdentifiers.add(String(parseInt(match[0], 10)));
+      }
+    };
+
+    addId(selectedCustomerId);
+    addId(selectedCustomer.vendorId);
+    addId(selectedCustomer.id);
+    addId(selectedCustomer.vendorCode);
+    addId(selectedCustomer.companyName);
+    addId(selectedCustomer.legalCompanyName);
+
+    return allVendors.filter((v) => {
+      // Main company itself is not its own child
+      const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
+      if (cat === 'main_company') return false;
+
+      // Cannot be the same vendor as the selected customer
+      const vKey = cleanStr(v.vendorId || v.id || v.vendorCode || v.companyName);
+      const cKey = cleanStr(selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode || selectedCustomer.companyName);
+      if (vKey && cKey && vKey === cKey) return false;
+
+      // Check all parent reference fields
+      const pFields = [
+        v.parentVendorId,
+        (v as any).parentCompany,
+        (v as any).parentVendorName,
+        (v as any).parentId,
+        (v as any).parentCustomerId,
+        (v as any).parentCode,
+        (v as any).parentVendorCode,
+        (v as any).parent,
+        (v as any).mainCompany,
+        (v as any).mainCompanyId,
+        (v as any).mainCompanyName
+      ];
+
+      for (const p of pFields) {
+        if (!p) continue;
+        const pStr = String(p).trim().toLowerCase();
+        const pClean = cleanStr(p);
+        if (targetIdentifiers.has(pStr) || targetIdentifiers.has(pClean)) {
+          return true;
+        }
+        const match = String(p).match(/\d+/);
+        if (match && (targetIdentifiers.has(match[0]) || targetIdentifiers.has(String(parseInt(match[0], 10))))) {
+          return true;
+        }
+      }
+
+      // Also check if company name matches e.g. "Procomets Unit A" or "Procomets Subcontractor"
+      if (selectedCustomer.companyName) {
+        const cClean = cleanStr(selectedCustomer.companyName);
+        const vClean = cleanStr(v.companyName);
+        if (cClean.length >= 4 && vClean.includes(cClean)) {
+          return true;
+        }
+      }
+
+      return false;
+    });
+  }, [allVendors, selectedCustomerId, selectedCustomer]);
+
+  // Respective Subcontractors of this Main Company
+  const respectiveSubcontractors = useMemo(() => {
+    return respectiveUnits.filter((v) => {
+      const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
+      // Subcontractor, supplier, jobwork, or any linked child not strictly a subcompany
+      return cat === 'subcontractor' || cat === 'supplier' || cat === 'jobwork' || cat !== 'subcompany';
+    });
+  }, [respectiveUnits]);
+
+  // Respective Subcompanies of this Main Company
+  const respectiveSubcompanies = useMemo(() => {
+    return respectiveUnits.filter((v) => {
+      const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
+      // Subcompany, or any linked child not strictly a subcontractor
+      return cat === 'subcompany' || cat === 'sub_company' || cat !== 'subcontractor';
+    });
+  }, [respectiveUnits]);
+
+  const activeSubUnitList = unitType === 'subcontractor' ? respectiveSubcontractors : respectiveSubcompanies;
+
+  const selectedSubUnit = useMemo(() => {
+    if (!selectedSubUnitId) return null;
+    return allVendors.find((v) => (v.vendorId || v.id) === selectedSubUnitId) || null;
+  }, [allVendors, selectedSubUnitId]);
+
+  // When customer changes, verify if selectedSubUnitId belongs to new customer
+  useEffect(() => {
+    if (unitType === 'none') {
+      setSelectedSubUnitId('');
+      return;
+    }
+    const currentList = unitType === 'subcontractor' ? respectiveSubcontractors : respectiveSubcompanies;
+    const isCurrentStillRespective = currentList.some(
+      (u) => (u.vendorId || u.id) === selectedSubUnitId
+    );
+    if (!isCurrentStillRespective) {
+      if (currentList.length > 0) {
+        setSelectedSubUnitId(currentList[0].vendorId || currentList[0].id || '');
+      } else {
+        setSelectedSubUnitId('');
+      }
+    }
+  }, [selectedCustomerId, unitType, respectiveSubcontractors, respectiveSubcompanies]);
   const [processCategory, setProcessCategory] = useState<ProcessCategory>(
     initialPO?.processCategory || 'washing'
   );
@@ -94,8 +356,9 @@ export const POForm: React.FC<POFormProps> = ({
         {
           id: `pol_${Date.now()}_1`,
           lineId: `pol_${Date.now()}_1`,
-          colourName: 'Indigo Shadow',
-          colourCode: '',
+          colourName: '',
+          colourCode: null,
+          colourId: null,
           processType: 'Softener Wash',
           quantity: 1000,
           unit: 'piece',
@@ -109,11 +372,138 @@ export const POForm: React.FC<POFormProps> = ({
 
   const [lines, setLines] = useState<POColourLine[]>(defaultInitialLines);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [masterColours, setMasterColours] = useState<ColourItem[]>([]);
+  const [masterProcesses, setMasterProcesses] = useState<ProcessItem[]>([]);
 
-  // Selected customer snapshot
-  const selectedCustomer = eligibleCustomers.find(
-    (c) => (c.vendorId || c.id) === selectedCustomerId
-  );
+  // Other Colour Modal State
+  const [isOtherColourModalOpen, setIsOtherColourModalOpen] = useState(false);
+  const [newColourName, setNewColourName] = useState('');
+  const [targetLineIndex, setTargetLineIndex] = useState<number | null>(null);
+  const [isAddingColour, setIsAddingColour] = useState(false);
+
+  // Other Process Modal State
+  const [isOtherProcessModalOpen, setIsOtherProcessModalOpen] = useState(false);
+  const [newProcessModalName, setNewProcessModalName] = useState('');
+  const [targetProcessLineIndex, setTargetProcessLineIndex] = useState<number | null>(null);
+  const [isAddingProcess, setIsAddingProcess] = useState(false);
+
+  // Subscribe to Colour Master from generalSettings
+  useEffect(() => {
+    const unsubscribe = ColourMasterService.subscribeColours((items) => {
+      setMasterColours(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Wash / Process Master from generalSettings
+  useEffect(() => {
+    const unsubscribe = ProcessMasterService.subscribeProcesses((items) => {
+      setMasterProcesses(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleOpenAddOtherProcess = (lineIndex: number) => {
+    setTargetProcessLineIndex(lineIndex);
+    setNewProcessModalName('');
+    setIsOtherProcessModalOpen(true);
+  };
+
+  const handleSaveNewProcess = async () => {
+    const trimmed = newProcessModalName.trim();
+    if (!trimmed) return;
+    if (targetProcessLineIndex === null || !lines[targetProcessLineIndex]) return;
+
+    try {
+      setIsAddingProcess(true);
+      const newProc = await ProcessMasterService.addProcess(
+        trimmed,
+        user?.uid || 'user',
+        processCategory || 'washing'
+      );
+
+      const updated = [...lines];
+      updated[targetProcessLineIndex] = {
+        ...updated[targetProcessLineIndex],
+        processType: newProc.name
+      };
+      setLines(updated);
+      setIsOtherProcessModalOpen(false);
+      setNewProcessModalName('');
+    } catch (err: any) {
+      // If already exists in Process Master, link to it directly
+      const normalized = trimmed.toLowerCase();
+      const existing = masterProcesses.find(
+        (p) => p.normalizedName === normalized || p.name.toLowerCase() === normalized
+      );
+      if (existing) {
+        const updated = [...lines];
+        updated[targetProcessLineIndex] = {
+          ...updated[targetProcessLineIndex],
+          processType: existing.name
+        };
+        setLines(updated);
+        setIsOtherProcessModalOpen(false);
+        setNewProcessModalName('');
+      } else {
+        alert(err.message || 'Failed to save wash/process to Master');
+      }
+    } finally {
+      setIsAddingProcess(false);
+    }
+  };
+
+  const handleOpenAddOther = (lineIndex: number) => {
+    setTargetLineIndex(lineIndex);
+    setNewColourName('');
+    setIsOtherColourModalOpen(true);
+  };
+
+  const handleSaveNewColour = async () => {
+    const trimmed = newColourName.trim();
+    if (!trimmed) return;
+    if (targetLineIndex === null || !lines[targetLineIndex]) return;
+
+    try {
+      setIsAddingColour(true);
+      const newColour = await ColourMasterService.addColour(
+        trimmed,
+        user?.uid || 'user'
+      );
+
+      // Successfully saved to Colour Master Firestore collection
+      const updated = [...lines];
+      updated[targetLineIndex] = {
+        ...updated[targetLineIndex],
+        colourName: newColour.name,
+        colourId: newColour.id
+      };
+      setLines(updated);
+      setIsOtherColourModalOpen(false);
+      setNewColourName('');
+    } catch (err: any) {
+      // If already exists in Colour Master, link to it directly
+      const normalized = trimmed.toLowerCase();
+      const existing = masterColours.find(
+        (c) => c.normalizedName === normalized || c.name.toLowerCase() === normalized
+      );
+      if (existing) {
+        const updated = [...lines];
+        updated[targetLineIndex] = {
+          ...updated[targetLineIndex],
+          colourName: existing.name,
+          colourId: existing.id
+        };
+        setLines(updated);
+        setIsOtherColourModalOpen(false);
+        setNewColourName('');
+      } else {
+        alert(err.message || 'Failed to save colour to Colour Master');
+      }
+    } finally {
+      setIsAddingColour(false);
+    }
+  };
 
   // Add colour row
   const handleAddLine = () => {
@@ -127,7 +517,8 @@ export const POForm: React.FC<POFormProps> = ({
       id: newLineId,
       lineId: newLineId,
       colourName: '',
-      colourCode: '',
+      colourCode: null,
+      colourId: null,
       processType: defaultWash,
       quantity: 500,
       unit: 'piece',
@@ -159,6 +550,17 @@ export const POForm: React.FC<POFormProps> = ({
     const updated = [...lines];
     const item = { ...updated[index], [field]: value };
 
+    // Auto-link colourId from Colour Master when colourName changes
+    if (field === 'colourName') {
+      const trimmed = String(value).trim().toLowerCase();
+      const matched = masterColours.find(
+        (c) => c.name.toLowerCase() === trimmed || c.normalizedName === trimmed
+      );
+      if (matched) {
+        item.colourId = matched.id;
+      }
+    }
+
     // Recompute line amount
     item.lineAmount = calculateLineAmount(item);
     item.amount = item.lineAmount;
@@ -171,13 +573,25 @@ export const POForm: React.FC<POFormProps> = ({
   const totals = calculatePOTotals(lines);
 
   // Form submission handler
-  const handleSubmit = async (targetStatus: 'draft' | 'submitted') => {
+  const handleSubmit = async (targetStatus: 'draft' | 'submitted' | string) => {
     setValidationErrors([]);
 
     const payload = {
       customerId: selectedCustomerId,
+      customerCode: selectedCustomer?.vendorCode || '',
+      customerName: selectedCustomer?.companyName || '',
+      customerCompanyNameSnapshot: selectedCustomer?.companyName || '',
+      // Subcontractor / Subcompany unit assignment
+      subcontractorType: unitType === 'none' ? null : unitType,
+      subcontractorId: unitType !== 'none' && selectedSubUnit ? (selectedSubUnit.vendorId || selectedSubUnit.id) : null,
+      subcontractorCode: unitType !== 'none' && selectedSubUnit ? (selectedSubUnit.vendorCode || null) : null,
+      subcontractorName: unitType !== 'none' && selectedSubUnit ? selectedSubUnit.companyName : null,
+      subcompanyId: unitType === 'subcompany' && selectedSubUnit ? (selectedSubUnit.vendorId || selectedSubUnit.id) : null,
+      subcompanyCode: unitType === 'subcompany' && selectedSubUnit ? (selectedSubUnit.vendorCode || null) : null,
+      subcompanyName: unitType === 'subcompany' && selectedSubUnit ? selectedSubUnit.companyName : null,
       processCategory,
       styleNo: styleNo.trim(),
+      styleNumber: styleNo.trim(),
       itemName: itemName.trim(),
       orderDate,
       deliveryDate: deliveryDate || null,
@@ -186,7 +600,13 @@ export const POForm: React.FC<POFormProps> = ({
       customerInstructions: customerInstructions.trim() || undefined,
       internalRemarks: internalRemarks.trim() || undefined,
       notes: internalRemarks.trim() || undefined,
-      colourLines: lines
+      colourLines: lines.map((l) => ({
+        ...l,
+        colourCode: null,
+        colourId: l.colourId || null,
+        notes: l.notes || null,
+        rateBasis: l.rateBasis === 'per_piece' ? 'perPiece' : l.rateBasis === 'per_kg' ? 'perKg' : l.rateBasis
+      }))
     };
 
     // Validate using Zod schema
@@ -229,24 +649,49 @@ export const POForm: React.FC<POFormProps> = ({
           <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Save className="w-4 h-4" />}
-            onClick={() => handleSubmit('draft')}
-            disabled={isSaving}
-          >
-            Save as Draft
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Send className="w-4 h-4" />}
-            onClick={() => handleSubmit('submitted')}
-            disabled={isSaving}
-          >
-            Submit for Approval
-          </Button>
+          {initialPO ? (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Save className="w-4 h-4" />}
+              onClick={() => handleSubmit(initialPO.status === 'approved' ? 'approved' : 'draft')}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          ) : isUserAdmin ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Save className="w-4 h-4" />}
+                onClick={() => handleSubmit('draft')}
+                disabled={isSaving}
+              >
+                Save as Draft
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<CheckCircle2 className="w-4 h-4" />}
+                onClick={() => handleSubmit('approved')}
+                disabled={isSaving}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Approve & Save PO
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Save className="w-4 h-4" />}
+              onClick={() => handleSubmit('draft')}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save as Draft'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -275,28 +720,41 @@ export const POForm: React.FC<POFormProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Customer Selection */}
+          {/* Customer Selection: Strictly Main Company Customers */}
           <div className="md:col-span-1 space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Customer Company <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                Customer Company <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium">Main Companies Only</span>
+            </div>
             <select
-              value={selectedCustomerId}
+              value={selectedCustomer ? (selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode) : selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
               required
             >
-              {eligibleCustomers.map((c) => (
-                <option key={c.vendorId || c.id} value={c.vendorId || c.id}>
-                  {c.companyName} ({c.vendorCode || 'Client'})
-                </option>
-              ))}
+              {eligibleCustomers.length === 0 ? (
+                <option value="">No Main Company Customers Found</option>
+              ) : (
+                eligibleCustomers.map((c) => {
+                  const val = c.vendorId || c.id || c.vendorCode || c.companyName;
+                  return (
+                    <option key={val} value={val}>
+                      {c.companyName} ({c.vendorCode || 'Client'})
+                    </option>
+                  );
+                })
+              )}
             </select>
 
             {selectedCustomer && (
               <div className="mt-2 p-2.5 rounded-lg bg-[#EEF5FB] border border-[#BDD7EE] text-[11px] text-slate-700 space-y-1">
-                <div className="font-semibold text-[#1F4E79]">
-                  {selectedCustomer.companyName}
+                <div className="font-semibold text-[#1F4E79] flex items-center justify-between">
+                  <span>{selectedCustomer.companyName}</span>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 font-mono px-1.5 py-0.5 rounded font-medium">
+                    Main Company
+                  </span>
                 </div>
                 <div className="text-slate-500">
                   Code: <span className="font-mono">{selectedCustomer.vendorCode}</span> •{' '}
@@ -351,7 +809,7 @@ export const POForm: React.FC<POFormProps> = ({
               Style Number <span className="text-rose-500">*</span>
             </label>
             <Input
-              placeholder="e.g. 2467 or APX-DENIM-9021"
+              placeholder="e.g. 7777 / SKT-DENIM-9021"
               value={styleNo}
               onChange={(e) => setStyleNo(e.target.value)}
               required
@@ -369,7 +827,7 @@ export const POForm: React.FC<POFormProps> = ({
               Item Name / Description <span className="text-rose-500">*</span>
             </label>
             <Input
-              placeholder="e.g. Men's Denim Shirt, Shoe, etc."
+              placeholder="e.g. Denim Shirts / Men's Twill Jeans"
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
               required
@@ -401,16 +859,153 @@ export const POForm: React.FC<POFormProps> = ({
             />
           </div>
         </div>
+
+        {/* Subcontractor or Subcompany Toggle Section */}
+        <div className="pt-4 border-t border-slate-100 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-blue-100 text-blue-800 rounded-lg">
+                <Network className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Order Processing Unit
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Select whether this order is fulfilled direct, or assigned to a linked Subcontractor or Subcompany
+                </span>
+              </div>
+            </div>
+
+            {/* 3-way Toggle: Direct (Main Company) | Subcontractor | Subcompany */}
+            <div className="inline-flex p-1 bg-white rounded-xl border border-slate-200 shadow-2xs shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setUnitType('none');
+                  setSelectedSubUnitId('');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  unitType === 'none'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                Direct (Main Company)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnitType('subcontractor');
+                  if (respectiveSubcontractors.length > 0) {
+                    setSelectedSubUnitId(respectiveSubcontractors[0].vendorId || respectiveSubcontractors[0].id || '');
+                  } else {
+                    setSelectedSubUnitId('');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  unitType === 'subcontractor'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                Subcontractor
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnitType('subcompany');
+                  if (respectiveSubcompanies.length > 0) {
+                    setSelectedSubUnitId(respectiveSubcompanies[0].vendorId || respectiveSubcompanies[0].id || '');
+                  } else {
+                    setSelectedSubUnitId('');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  unitType === 'subcompany'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                Subcompany
+              </button>
+            </div>
+          </div>
+
+          {/* Subcontractor / Subcompany Selection Dropdown & Card */}
+          {unitType !== 'none' && (
+            <div className="p-4 bg-white rounded-xl border border-blue-200 bg-blue-50/20 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Select {unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'}
+                </label>
+                <span className="text-[11px] text-slate-500">
+                  Respective units of: <strong className="text-[#1F4E79]">{selectedCustomer?.companyName || 'Main Company'}</strong>
+                </span>
+              </div>
+
+              <select
+                value={selectedSubUnitId}
+                onChange={(e) => setSelectedSubUnitId(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
+              >
+                <option value="">
+                  {activeSubUnitList.length === 0
+                    ? `-- No ${unitType === 'subcontractor' ? 'Subcontractors' : 'Subcompanies'} linked to ${selectedCustomer?.companyName || 'Main Company'} --`
+                    : `-- Select ${unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'} --`}
+                </option>
+                {activeSubUnitList.map((u) => (
+                  <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
+                    {u.companyName} ({u.vendorCode || 'Unit'})
+                  </option>
+                ))}
+              </select>
+
+              {/* Unit snapshot */}
+              {selectedSubUnit ? (
+                <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs text-slate-700 space-y-1 shadow-2xs">
+                  <div className="font-bold text-[#1F4E79] flex items-center justify-between">
+                    <span>{selectedSubUnit.companyName}</span>
+                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                      {selectedSubUnit.vendorCode}
+                    </span>
+                  </div>
+                  <div className="text-slate-500 text-[11px]">
+                    Category: <span className="capitalize font-semibold text-slate-700">{selectedSubUnit.vendorCategory?.replace('_', ' ') || unitType}</span> •{' '}
+                    City: {selectedSubUnit.address?.city || 'Tamil Nadu'}
+                  </div>
+                  {selectedSubUnit.taxDetails?.gstin && (
+                    <div className="text-slate-500 font-mono text-[11px]">
+                      GSTIN: {selectedSubUnit.taxDetails.gstin}
+                    </div>
+                  )}
+                </div>
+              ) : activeSubUnitList.length === 0 ? (
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                  No {unitType === 'subcontractor' ? 'subcontractors' : 'subcompanies'} linked to{' '}
+                  <strong>{selectedCustomer?.companyName}</strong> in Vendor Master yet.
+                  To link a unit, set its Category to <em>{unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'}</em> and Parent Company to <em>{selectedCustomer?.companyName}</em> in <strong>Vendor Master</strong>.
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Section 2: Colour-Wise Order Lines */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Layers className="w-4 h-4 text-[#1F4E79]" />
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
               2. Colour-Wise Order Details
             </h3>
+            {masterColours.length > 0 && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#1F4E79] border border-blue-200">
+                <Palette className="w-3 h-3 text-[#1F4E79]" />
+                {masterColours.filter((c) => c.isActive).length} master colours
+              </span>
+            )}
           </div>
           <Button
             type="button"
@@ -460,38 +1055,62 @@ export const POForm: React.FC<POFormProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end">
                   {/* Colour Name */}
                   <div className="md:col-span-1 space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-600">
-                      Colour Name *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Pantone Brunnet"
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-slate-600">
+                        Colour Name *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddOther(idx)}
+                        className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
+                        title="Add a new colour to General Settings > Colour Master"
+                      >
+                        + Other
+                      </button>
+                    </div>
+                    <select
                       value={line.colourName}
-                      onChange={(e) =>
-                        handleLineChange(idx, 'colourName', e.target.value)
-                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__other__') {
+                          handleOpenAddOther(idx);
+                        } else {
+                          const matched = masterColours.find((c) => c.name === val);
+                          const updated = [...lines];
+                          updated[idx] = {
+                            ...updated[idx],
+                            colourName: val,
+                            colourId: matched ? matched.id : null
+                          };
+                          setLines(updated);
+                        }
+                      }}
                       className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
                       required
-                    />
-                  </div>
-
-                  {/* Colour Code */}
-                  <div className="md:col-span-1 space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-600">
-                      Colour Code
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 19-0912"
-                      value={line.colourCode || ''}
-                      onChange={(e) =>
-                        handleLineChange(idx, 'colourCode', e.target.value)
-                      }
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
-                    />
+                    >
+                      <option value="">Select Colour...</option>
+                      {line.colourName &&
+                        !masterColours.some(
+                          (c) => c.name.toLowerCase() === line.colourName.toLowerCase()
+                        ) && (
+                          <option value={line.colourName}>
+                            {line.colourName} (Custom)
+                          </option>
+                        )}
+                      {masterColours
+                        .filter((c) => c.isActive)
+                        .map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      <option value="__other__" className="text-[#1F4E79] font-bold">
+                        + Other (Enter New Colour)...
+                      </option>
+                    </select>
                   </div>
 
                   {/* Wash / Process Type */}
@@ -499,16 +1118,39 @@ export const POForm: React.FC<POFormProps> = ({
                     <label className="text-[11px] font-semibold text-slate-600">
                       Wash / Process *
                     </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Softener Wash"
+                    <select
                       value={line.processType}
-                      onChange={(e) =>
-                        handleLineChange(idx, 'processType', e.target.value)
-                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__other_process__') {
+                          handleOpenAddOtherProcess(idx);
+                        } else {
+                          handleLineChange(idx, 'processType', val);
+                        }
+                      }}
                       className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
                       required
-                    />
+                    >
+                      <option value="">Select Process...</option>
+                      {line.processType &&
+                        !masterProcesses.some(
+                          (p) => p.name.toLowerCase() === line.processType.toLowerCase()
+                        ) && (
+                          <option value={line.processType}>
+                            {line.processType} (Custom)
+                          </option>
+                        )}
+                      {masterProcesses
+                        .filter((p) => p.isActive)
+                        .map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      <option value="__other_process__" className="text-[#1F4E79] font-bold">
+                        + Other (Enter New Process)...
+                      </option>
+                    </select>
                   </div>
 
                   {/* Quantity & Unit */}
@@ -678,77 +1320,203 @@ export const POForm: React.FC<POFormProps> = ({
         </div>
       </div>
 
-      {/* Section 3: Commercial & Operational Instructions */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-          <Info className="w-4 h-4 text-[#1F4E79]" />
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-            3. References & Instructions
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Customer Reference No
-            </label>
-            <Input
-              placeholder="e.g. CUST-WO-2026-90"
-              value={customerReferenceNo}
-              onChange={(e) => setCustomerReferenceNo(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5 md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Customer Processing Instructions
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Special silicone softening ratio, maintain 5% shrink test..."
-              value={customerInstructions}
-              onChange={(e) => setCustomerInstructions(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1.5 pt-2">
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-            Internal Remarks / Notes
-          </label>
-          <textarea
-            rows={2}
-            placeholder="Internal shopfloor comments or routing notes..."
-            value={internalRemarks}
-            onChange={(e) => setInternalRemarks(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
-          />
-        </div>
-      </div>
-
       {/* Bottom Action Footer */}
       <div className="flex items-center justify-end gap-3 pt-3">
         <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
         </Button>
-        <Button
-          variant="secondary"
-          icon={<Save className="w-4 h-4" />}
-          onClick={() => handleSubmit('draft')}
-          disabled={isSaving}
-        >
-          {isSaving ? 'Saving...' : 'Save as Draft'}
-        </Button>
-        <Button
-          variant="primary"
-          icon={<Send className="w-4 h-4" />}
-          onClick={() => handleSubmit('submitted')}
-          disabled={isSaving}
-        >
-          {isSaving ? 'Submitting...' : 'Submit for Approval'}
-        </Button>
+        {initialPO ? (
+          <Button
+            variant="primary"
+            icon={<Save className="w-4 h-4" />}
+            onClick={() => handleSubmit(initialPO.status === 'approved' ? 'approved' : 'draft')}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        ) : isUserAdmin ? (
+          <>
+            <Button
+              variant="secondary"
+              icon={<Save className="w-4 h-4" />}
+              onClick={() => handleSubmit('draft')}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save as Draft'}
+            </Button>
+            <Button
+              variant="primary"
+              icon={<CheckCircle2 className="w-4 h-4" />}
+              onClick={() => handleSubmit('approved')}
+              disabled={isSaving}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isSaving ? 'Approving...' : 'Approve & Save PO'}
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="primary"
+            icon={<Save className="w-4 h-4" />}
+            onClick={() => handleSubmit('draft')}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : 'Save as Draft'}
+          </Button>
+        )}
       </div>
+
+      {/* Add New Colour to General Settings > Colour Master Modal */}
+      {isOtherColourModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 text-[#1F4E79] rounded-lg">
+                  <Palette className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Add New Colour
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Save into General Settings &gt; Colour Master
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOtherColourModalOpen(false);
+                  setNewColourName('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                New Colour Name <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                placeholder="e.g. Lavender, Olive Green, Navy Blue..."
+                value={newColourName}
+                onChange={(e) => setNewColourName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveNewColour();
+                  }
+                }}
+              />
+              <p className="text-[11px] text-slate-400">
+                This colour will be automatically added to the Colour Master collection and selected for Row #{targetLineIndex !== null ? targetLineIndex + 1 : 1}.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsOtherColourModalOpen(false);
+                  setNewColourName('');
+                }}
+                disabled={isAddingColour}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveNewColour}
+                disabled={isAddingColour || !newColourName.trim()}
+              >
+                {isAddingColour ? 'Saving to Master...' : 'Save & Select Colour'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Wash / Process to General Settings > Process Master Modal */}
+      {isOtherProcessModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 text-[#1F4E79] rounded-lg">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Add New Wash / Process
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Save into General Settings &gt; Wash / Process Master
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOtherProcessModalOpen(false);
+                  setNewProcessModalName('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                New Wash / Process Name <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                placeholder="e.g. Acid Wash, Enzyme Bio Wash, Pigment Dyeing..."
+                value={newProcessModalName}
+                onChange={(e) => setNewProcessModalName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveNewProcess();
+                  }
+                }}
+              />
+              <p className="text-[11px] text-slate-400">
+                This process will be automatically saved to the Process Master collection and selected for Row #{targetProcessLineIndex !== null ? targetProcessLineIndex + 1 : 1}.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsOtherProcessModalOpen(false);
+                  setNewProcessModalName('');
+                }}
+                disabled={isAddingProcess}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveNewProcess}
+                disabled={isAddingProcess || !newProcessModalName.trim()}
+              >
+                {isAddingProcess ? 'Saving to Master...' : 'Save & Select Process'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

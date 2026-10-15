@@ -18,7 +18,8 @@ import {
   Home,
   LogOut,
   Shirt,
-  UserCheck
+  UserCheck,
+  Settings
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -67,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, onGoTo
       { id: 'vendors', label: 'Vendor Master', icon: <Building2 className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
       { id: 'items', label: 'Item / Chemical Master', icon: <Package className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
       { id: 'users', label: 'User Management', icon: <Users className="w-4 h-4" />, rolesAllowed: ['Admin'] },
+      { id: 'settings', label: 'General Settings', icon: <Settings className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
     ]
   ];
 

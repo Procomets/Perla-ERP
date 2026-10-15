@@ -18,7 +18,13 @@ interface OutwardPageProps {
 
 export const OutwardPage: React.FC<OutwardPageProps> = ({ pos, inwards, outwards, onAddOutward }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const eligiblePos = pos.filter((p) => inwards.some((inE) => inE.poId === p.id || inE.poNumber === p.poNumber));
+  const eligiblePos = pos.filter((p) =>
+    inwards.some(
+      (inE) =>
+        (!inE.status || inE.status === 'posted') &&
+        (inE.poId === p.id || inE.poNumber === p.poNumber)
+    )
+  );
 
   const [selectedPoId, setSelectedPoId] = useState(eligiblePos[0]?.id || '');
   const [ourDcNo, setOurDcNo] = useState(`DC-PERLA-${1040 + outwards.length + 1}`);
@@ -157,11 +163,20 @@ export const OutwardPage: React.FC<OutwardPageProps> = ({ pos, inwards, outwards
                 </div>
 
                 {activePo.lines.map((line) => {
-                  // Total inward received
+                  // Total inward received (posted receipts only)
                   const totalInward = inwards
-                    .filter((inE) => inE.poId === activePo.id || inE.poNumber === activePo.poNumber)
+                    .filter(
+                      (inE) =>
+                        (!inE.status || inE.status === 'posted') &&
+                        (inE.poId === activePo.id || inE.poNumber === activePo.poNumber)
+                    )
                     .reduce((acc, inE) => {
-                      const match = inE.lines.find((l) => l.poLineId === line.lineId || l.colour === line.colourName);
+                      const match = inE.lines.find(
+                        (l) =>
+                          l.poLineId === line.lineId ||
+                          l.colour === line.colourName ||
+                          l.colourNameSnapshot === line.colourName
+                      );
                       return acc + (match ? match.receivedQty : 0);
                     }, 0);
 

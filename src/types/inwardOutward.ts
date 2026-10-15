@@ -1,29 +1,5 @@
 import { UnitType } from './po';
-
-export interface InwardLine {
-  lineId: string;
-  poLineId: string;
-  colour: string;
-  receivedQty: number;
-  unit: UnitType;
-}
-
-export interface InwardEntry {
-  id: string;
-  entryId: string;
-  poId: string;
-  poNumber: string;
-  styleNo: string;
-  customerId: string;
-  customerName: string;
-  subContractorId?: string;
-  subContractorName?: string;
-  customerDate: string;
-  customerDcNo: string;
-  createdAt: string;
-  createdBy: string;
-  lines: InwardLine[];
-}
+export * from './inward';
 
 export interface OutwardLine {
   lineId: string;

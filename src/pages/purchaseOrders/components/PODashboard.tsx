@@ -2,10 +2,7 @@ import React from 'react';
 import {
   FileText,
   Clock,
-  Send,
   CheckCircle2,
-  PlayCircle,
-  CheckCheck,
   Ban,
   Boxes,
   Weight,
@@ -37,22 +34,13 @@ export const PODashboard: React.FC<PODashboardProps> = ({
       label: 'Draft POs',
       value: metrics.draftPOs,
       icon: Clock,
-      color: 'text-slate-600',
-      bgColor: 'bg-slate-50',
-      borderColor: 'border-slate-200',
-      status: 'draft'
-    },
-    {
-      label: 'Pending Approval',
-      value: metrics.submittedPOs,
-      icon: Send,
       color: 'text-amber-600',
       bgColor: 'bg-amber-50',
       borderColor: 'border-amber-200',
-      status: 'submitted'
+      status: 'draft'
     },
     {
-      label: 'Approved / Active',
+      label: 'Approved POs',
       value: metrics.approvedPOs,
       icon: CheckCircle2,
       color: 'text-emerald-600',
@@ -61,29 +49,20 @@ export const PODashboard: React.FC<PODashboardProps> = ({
       status: 'approved'
     },
     {
-      label: 'In Progress',
-      value: metrics.inProgressPOs,
-      icon: PlayCircle,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      borderColor: 'border-blue-200',
-      status: 'in_progress'
-    },
-    {
-      label: 'Completed',
-      value: metrics.completedPOs,
-      icon: CheckCheck,
-      color: 'text-teal-600',
-      bgColor: 'bg-teal-50',
-      borderColor: 'border-teal-200',
-      status: 'completed'
+      label: 'Cancelled POs',
+      value: metrics.cancelledPOs,
+      icon: Ban,
+      color: 'text-rose-600',
+      bgColor: 'bg-rose-50',
+      borderColor: 'border-rose-200',
+      status: 'cancelled'
     }
   ];
 
   return (
     <div className="space-y-4">
       {/* Primary Status Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {cards.map((c) => {
           const Icon = c.icon;
           return (

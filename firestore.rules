@@ -29,83 +29,86 @@ service cloud.firestore {
       return isAdmin() || isManager();
     }
 
+    // Users Collection
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Vendors Collection
     match /vendors/{vendorId} {
-      // Allow read to Admin, Manager, and Supervisor (with read approval)
-      allow read: if isAuthenticated();
-
-      // Creation & Updates: Only Admin and Manager via authorized Cloud Functions or direct matching write rules
-      allow create: if isAuthorizedUser()
-                    && request.resource.data.vendorCode != null
-                    && !request.resource.data.keys().hasAny(['financialDetails']) || isAuthorizedUser();
-
-      allow update: if isAuthorizedUser()
-                    && request.resource.data.vendorCode == resource.data.vendorCode
-                    && request.resource.data.createdAt == resource.data.createdAt;
-
-      // Prevent hard deletion of vendors (soft deactivation required)
-      allow delete: if isAdmin();
+      allow read, write: if isAuthenticated();
 
       // Contacts Subcollection
       match /contacts/{contactId} {
-        allow read: if isAuthenticated();
-        allow create, update: if isAuthorizedUser();
-        allow delete: if isAdmin();
+        allow read, write: if isAuthenticated();
       }
 
       // Documents Subcollection
       match /documents/{documentId} {
-        allow read: if isAuthorizedUser();
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Vendor Audit Logs
+    match /vendor_audit_logs/{auditId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Vendor Counters
+    match /vendor_counters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Purchase Orders Collection
+    match /purchase_orders/{poId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Purchase Order Counters
+    match /purchase_order_counters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // PO Counters (po_counters)
+    match /po_counters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Purchase Order Audit Logs
+    match /purchase_order_audit_logs/{auditId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Purchase Order Amendments
+    match /purchase_order_amendments/{amendmentId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Inward Entries Collection
+    match /inward_entries/{inwardId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin(); // Admin only delete permission
+
+      // Subcollection: lines
+      match /lines/{lineId} {
+        allow read: if isAuthenticated();
         allow create, update: if isAuthorizedUser();
         allow delete: if isAdmin();
       }
     }
 
-    // Vendor Audit Logs (Immutable, Client Write Prohibited)
-    match /vendor_audit_logs/{auditId} {
-      allow read: if isAuthorizedUser();
-      allow write: if false; // Only Cloud Functions / Admin SDK can write audit logs
-    }
-
-    // Vendor Counters (Client Write Prohibited)
-    match /vendor_counters/{counterId} {
+    // Inward Counters
+    match /inward_counters/{counterId} {
       allow read: if isAuthenticated();
-      allow write: if false; // Atomic updates strictly handled by server Cloud Functions
+      allow write: if isAuthorizedUser();
     }
 
-    // Purchase Orders Collection
-    match /purchase_orders/{poId} {
+    // Inward Audit Logs
+    match /inward_audit_logs/{auditId} {
       allow read: if isAuthenticated();
-
-      // Only Admin and Manager can create and update purchase orders
-      allow create: if isAuthorizedUser()
-                    && request.resource.data.poNumber != null
-                    && request.resource.data.customerId != null;
-
-      allow update: if isAuthorizedUser()
-                    && request.resource.data.poNumber == resource.data.poNumber
-                    && request.resource.data.createdAt == resource.data.createdAt;
-
-      allow delete: if isAdmin() && resource.data.status == 'draft';
-    }
-
-    // Purchase Order Counters (Server-only write)
-    match /purchase_order_counters/{counterId} {
-      allow read: if isAuthenticated();
-      allow write: if false; // Atomic updates strictly handled by server Cloud Functions
-    }
-
-    // Purchase Order Audit Logs (Immutable, Server-only write)
-    match /purchase_order_audit_logs/{auditId} {
-      allow read: if isAuthorizedUser();
-      allow write: if false; // Only Cloud Functions / Admin SDK can write audit logs
-    }
-
-    // Purchase Order Amendments
-    match /purchase_order_amendments/{amendmentId} {
-      allow read: if isAuthorizedUser();
-      allow create, update: if isAuthorizedUser();
-      allow delete: if isAdmin();
+      allow create: if isAuthorizedUser();
+      allow update, delete: if false; // Immutable audit log
     }
 
     // Employee Master Collection
@@ -128,9 +131,9 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // Default deny all other collections unless explicitly matched
+    // Default allow authenticated users
     match /{document=**} {
-      allow read, write: if isAuthenticated() && isAdmin();
+      allow read, write: if isAuthenticated();
     }
   }
 }

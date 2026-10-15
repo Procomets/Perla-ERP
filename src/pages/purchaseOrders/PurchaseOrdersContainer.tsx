@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   PurchaseOrder,
+  POStatus,
   POFilterOptions,
   POPagination,
   POAuditLog,
@@ -33,6 +34,10 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
 }) => {
   const { user, activeRole, isDemoMode } = useAuth();
   const canManage = activeRole === 'Admin' || activeRole === 'Manager';
+  const isAdmin =
+    activeRole === 'Admin' ||
+    (user as any)?.role === 'Admin' ||
+    (user as any)?.role === 'admin';
 
   // Navigation State
   const [currentView, setCurrentView] = useState<
@@ -81,13 +86,13 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
       setPagination(poResult.pagination);
 
 
-      // Load Vendors if not provided
-      if (vendors.length === 0) {
-        const vResult = await VendorService.getVendors(
-          {},
-          { page: 1, pageSize: 100 },
-          isDemoMode
-        );
+      // Load latest live Vendors from Vendor Master
+      const vResult = await VendorService.getVendors(
+        {},
+        { page: 1, pageSize: 500 },
+        isDemoMode
+      );
+      if (vResult.vendors && vResult.vendors.length > 0) {
         setVendors(vResult.vendors);
       }
     } catch (err) {
@@ -127,7 +132,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   // Form Save
   const handleSavePO = async (
     poData: Partial<PurchaseOrder>,
-    targetStatus: 'draft' | 'submitted'
+    targetStatus: POStatus | string
   ) => {
     setIsSaving(true);
     try {
@@ -136,10 +141,12 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         displayName: user?.displayName || 'Authorized User'
       };
 
+      const resolvedStatus = targetStatus as POStatus;
+
       if (currentView === 'edit' && selectedPoId) {
         await POService.updatePurchaseOrder(
           selectedPoId,
-          { ...poData, status: targetStatus },
+          { ...poData, status: resolvedStatus },
           activeUser,
           isDemoMode
         );
@@ -152,7 +159,11 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         }
 
         const newPo = await POService.createPurchaseOrder(
-          { ...poData, status: targetStatus },
+          {
+            ...poData,
+            status: resolvedStatus,
+            poNumber: targetStatus === 'approved' ? undefined : 'PO/PENDING'
+          },
           customer,
           activeUser,
           isDemoMode
@@ -225,11 +236,48 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
     }
   };
 
-  const handleAmendPO = async (poId: string, reason: string) => {
-    // Navigate to edit mode with the amendment flow
-    await loadSinglePO(poId);
-    setCurrentView('edit');
+  const handleRevokeApprovalPO = async (poId: string, reason?: string) => {
+    const activeUser = {
+      uid: user?.uid || 'user-101',
+      displayName: user?.displayName || 'Authorized User'
+    };
+    try {
+      await POService.revokeApprovalPurchaseOrder(
+        poId,
+        reason || 'Approval revoked by authorized manager',
+        activeUser,
+        isDemoMode
+      );
+      await loadData();
+      if (currentView === 'details') {
+        await loadSinglePO(poId);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error revoking PO approval');
+    }
   };
+
+  const handleDeletePO = async (poId: string) => {
+    if (!isAdmin) {
+      alert('Only administrators can delete purchase orders.');
+      return;
+    }
+    const activeUser = {
+      uid: user?.uid || 'user-101',
+      displayName: user?.displayName || 'Admin User'
+    };
+    try {
+      await POService.deletePurchaseOrder(poId, activeUser, isDemoMode);
+      await loadData();
+      if (currentView === 'details') {
+        setCurrentView('list');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error deleting Purchase Order');
+    }
+  };
+
+
 
   const selectedCustomer = vendors.find(
     (v) =>
@@ -256,11 +304,14 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
             onEditPO={handleEditPO}
             onSubmitPO={handleSubmitPO}
             onApprovePO={handleApprovePO}
+            onRevokeApprovalPO={handleRevokeApprovalPO}
             onRejectPO={(poId) => handleRejectPO(poId, 'Rejected by manager')}
             onCancelPO={(poId) => handleCancelPO(poId, 'Cancelled by user')}
+            onDeletePO={handleDeletePO}
             onPrintPO={handlePrintPO}
             onAddNewPO={() => setCurrentView('add')}
             canManage={canManage}
+            isAdmin={isAdmin}
           />
         </div>
       )}
@@ -273,6 +324,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           onSave={handleSavePO}
           onCancel={() => setCurrentView('list')}
           isSaving={isSaving}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -289,13 +341,15 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           onEdit={() => setCurrentView('edit')}
           onSubmit={() => handleSubmitPO(selectedPoDetails.po!.id)}
           onApprove={() => handleApprovePO(selectedPoDetails.po!.id)}
+          onRevokeApproval={() => handleRevokeApprovalPO(selectedPoDetails.po!.id)}
           onReject={(reason) => handleRejectPO(selectedPoDetails.po!.id, reason)}
           onCancelPO={(reason) =>
             handleCancelPO(selectedPoDetails.po!.id, reason)
           }
-          onAmend={(reason) => handleAmendPO(selectedPoDetails.po!.id, reason)}
+          onDeletePO={() => handleDeletePO(selectedPoDetails.po!.id)}
           onPrint={() => setCurrentView('print')}
           canManage={canManage}
+          isAdmin={isAdmin}
         />
       )}
 

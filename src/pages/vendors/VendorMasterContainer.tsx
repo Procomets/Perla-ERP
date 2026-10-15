@@ -12,7 +12,7 @@ import { VendorDetails } from './components/VendorDetails';
 import { useAuth } from '../../context/AuthContext';
 
 export const VendorMasterContainer: React.FC = () => {
-  const { activeRole, isDemoMode } = useAuth();
+  const { user, activeRole, isDemoMode } = useAuth();
 
   // Navigation State - Default to Vendor List directly
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details'>('list');
@@ -72,10 +72,11 @@ export const VendorMasterContainer: React.FC = () => {
     contacts: Partial<VendorContact>[],
     isAddAnother?: boolean
   ) => {
+    const authorId = user?.uid || user?.displayName || activeRole || 'Admin';
     if (currentView === 'edit' && selectedVendorId) {
-      await VendorService.updateVendor(selectedVendorId, vendorData, activeRole);
+      await VendorService.updateVendor(selectedVendorId, vendorData, authorId);
     } else {
-      await VendorService.createVendor(vendorData, contacts, activeRole, isDemoMode);
+      await VendorService.createVendor(vendorData, contacts, authorId, isDemoMode);
     }
 
     await loadData();

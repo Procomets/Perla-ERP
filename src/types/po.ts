@@ -5,18 +5,17 @@ export type POStatus =
   | 'draft'
   | 'submitted'
   | 'approved'
-  | 'rejected'
   | 'in_progress'
-  | 'partially_completed'
+  | 'partially_received'
+  | 'fully_received'
   | 'completed'
   | 'cancelled'
   | 'Draft'
+  | 'Submitted'
   | 'Approved'
   | 'In Progress'
   | 'Completed'
-  | 'Cancelled'
-  | 'Submitted'
-  | 'Rejected';
+  | 'Cancelled';
 
 export type QuantityUnit = 'piece' | 'kg';
 export type UnitType = 'piece' | 'kg';
@@ -34,6 +33,7 @@ export interface POColourLine {
   lineId: string;
   colourName: string;
   colourCode?: string | null;
+  colourId?: string | null;
   itemName?: string;
   processType: string;
   quantity: number;
@@ -62,6 +62,15 @@ export interface PurchaseOrder {
   customerCode?: string;
   customerName: string;
   customerCompanyNameSnapshot?: string;
+
+  // Subcontractor / Subcompany fulfillment unit
+  subcontractorType?: 'subcontractor' | 'subcompany' | null;
+  subcontractorId?: string | null;
+  subcontractorCode?: string | null;
+  subcontractorName?: string | null;
+  subcompanyId?: string | null;
+  subcompanyCode?: string | null;
+  subcompanyName?: string | null;
 
   processCategory: ProcessCategory;
 
@@ -130,7 +139,8 @@ export interface POAuditLog {
     | 'approved'
     | 'rejected'
     | 'cancelled'
-    | 'amended';
+    | 'amended'
+    | 'approval_revoked';
   performedBy: string;
   performedByName?: string;
   performedAt: string;
@@ -174,10 +184,7 @@ export interface POPagination {
 export interface PODashboardMetrics {
   totalPOs: number;
   draftPOs: number;
-  submittedPOs: number;
   approvedPOs: number;
-  inProgressPOs: number;
-  completedPOs: number;
   cancelledPOs: number;
   totalPieces: number;
   totalKg: number;

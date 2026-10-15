@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   XCircle,
   Ban,
-  GitFork,
   Building,
   Layers,
   FileText,
@@ -15,7 +14,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   AlertTriangle,
-  FileCheck2
+  FileCheck2,
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 import {
   PurchaseOrder,
@@ -44,11 +45,14 @@ interface PODetailsProps {
   onEdit: () => void;
   onSubmit: () => void;
   onApprove: () => void;
+  onRevokeApproval?: () => void;
   onReject: (reason: string) => void;
   onCancelPO: (reason: string) => void;
-  onAmend: (reason: string) => void;
+  onDeletePO?: () => void;
+  onAmend?: (reason: string) => void;
   onPrint: () => void;
   canManage: boolean;
+  isAdmin?: boolean;
 }
 
 export const PODetails: React.FC<PODetailsProps> = ({
@@ -62,11 +66,14 @@ export const PODetails: React.FC<PODetailsProps> = ({
   onEdit,
   onSubmit,
   onApprove,
+  onRevokeApproval,
   onReject,
   onCancelPO,
+  onDeletePO,
   onAmend,
   onPrint,
-  canManage
+  canManage,
+  isAdmin
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'audit' | 'downstream'>('overview');
 
@@ -77,14 +84,12 @@ export const PODetails: React.FC<PODetailsProps> = ({
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
 
-  const [isAmendModalOpen, setIsAmendModalOpen] = useState(false);
-  const [amendReason, setAmendReason] = useState('');
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const statusLower = po.status.toLowerCase();
-  const isDraft = statusLower === 'draft';
-  const isSubmitted = statusLower === 'submitted';
+  const isDraft = statusLower === 'draft' || statusLower === 'submitted';
   const isApproved = statusLower === 'approved';
-  const isCancelled = statusLower === 'cancelled';
+  const isCancelled = statusLower === 'cancelled' || statusLower === 'rejected';
 
   // Filter linked inward & outward transactions
   const linkedInwards = inwards.filter(
@@ -109,6 +114,15 @@ export const PODetails: React.FC<PODetailsProps> = ({
     });
   });
 
+  // Check if inward has been taken against this PO
+  const hasInwardTaken =
+    linkedInwards.length > 0 ||
+    totalReceivedQty > 0 ||
+    statusLower === 'partially_received' ||
+    statusLower === 'fully_received' ||
+    statusLower === 'in_progress' ||
+    statusLower === 'completed';
+
   const handleConfirmReject = () => {
     if (!rejectReason.trim()) {
       alert('Please provide a reason for rejecting this Purchase Order.');
@@ -127,15 +141,6 @@ export const PODetails: React.FC<PODetailsProps> = ({
     setIsCancelModalOpen(false);
   };
 
-  const handleConfirmAmend = () => {
-    if (!amendReason.trim()) {
-      alert('Please provide a reason for amending this approved Purchase Order.');
-      return;
-    }
-    onAmend(amendReason.trim());
-    setIsAmendModalOpen(false);
-  };
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* Top Header Card */}
@@ -151,9 +156,15 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </button>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-black text-[#1F4E79] tracking-tight">
-                  {po.poNumber}
-                </h1>
+                {po.poNumber === 'PO/PENDING' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-lg font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    PO/PENDING
+                  </span>
+                ) : (
+                  <h1 className="text-2xl font-black text-[#1F4E79] tracking-tight">
+                    {po.poNumber}
+                  </h1>
+                )}
                 {po.revision && po.revision > 1 && (
                   <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
                     Revision {po.revision}
@@ -179,29 +190,19 @@ export const PODetails: React.FC<PODetailsProps> = ({
               Print / PDF
             </Button>
 
-            {canManage && isDraft && (
+            {canManage && !isCancelled && (
               <Button
                 variant="secondary"
                 size="sm"
                 icon={<Edit className="w-4 h-4" />}
                 onClick={onEdit}
               >
-                Edit Draft
+                Edit PO
               </Button>
             )}
 
-            {canManage && isDraft && (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Send className="w-4 h-4" />}
-                onClick={onSubmit}
-              >
-                Submit for Approval
-              </Button>
-            )}
-
-            {canManage && (isSubmitted || isDraft) && (
+            {/* Approve PO (Admin only, when draft) */}
+            {isAdmin && isDraft && (
               <Button
                 variant="primary"
                 size="sm"
@@ -213,29 +214,41 @@ export const PODetails: React.FC<PODetailsProps> = ({
               </Button>
             )}
 
-            {canManage && isSubmitted && (
+            {/* Cancel Approval (Admin only, when approved and NO inward taken) */}
+            {isAdmin && isApproved && !hasInwardTaken && onRevokeApproval && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<RotateCcw className="w-4 h-4 text-amber-600" />}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Are you sure you want to cancel approval for PO ${po.poNumber || ''}? It will return to Draft status.`
+                    )
+                  ) {
+                    onRevokeApproval();
+                  }
+                }}
+                className="text-amber-700 border-amber-200 hover:bg-amber-50"
+              >
+                Cancel Approval
+              </Button>
+            )}
+
+            {/* Reject PO (Admin only, when draft) */}
+            {isAdmin && isDraft && (
               <Button
                 variant="outline"
                 size="sm"
                 icon={<XCircle className="w-4 h-4 text-rose-500" />}
                 onClick={() => setIsRejectModalOpen(true)}
               >
-                Reject
+                Reject PO
               </Button>
             )}
 
-            {canManage && isApproved && (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<GitFork className="w-4 h-4 text-[#1F4E79]" />}
-                onClick={() => setIsAmendModalOpen(true)}
-              >
-                Amend PO
-              </Button>
-            )}
-
-            {canManage && !isCancelled && (
+            {/* Cancel PO (Admin only, when not cancelled and NO inward taken) */}
+            {isAdmin && !isCancelled && !hasInwardTaken && (
               <Button
                 variant="outline"
                 size="sm"
@@ -243,6 +256,18 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 onClick={() => setIsCancelModalOpen(true)}
               >
                 Cancel PO
+              </Button>
+            )}
+
+            {isAdmin && onDeletePO && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Trash2 className="w-4 h-4 text-rose-500" />}
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="text-rose-600 hover:bg-rose-50 border-rose-200"
+              >
+                Delete PO
               </Button>
             )}
           </div>
@@ -329,6 +354,21 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 {customer?.financialDetails?.paymentTerms && (
                   <div className="text-slate-500 text-[11px]">
                     Payment Terms: {customer.financialDetails.paymentTerms}
+                  </div>
+                )}
+                {(po.subcontractorName || po.subcompanyName) && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-medium">
+                      Assigned {po.subcontractorType === 'subcompany' ? 'Subcompany' : 'Subcontractor'}:
+                    </span>
+                    <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                      {po.subcontractorName || po.subcompanyName}
+                      {(po.subcontractorCode || po.subcompanyCode) && (
+                        <span className="text-slate-500 font-mono text-[10px] ml-1">
+                          ({po.subcontractorCode || po.subcompanyCode})
+                        </span>
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
@@ -836,43 +876,66 @@ export const PODetails: React.FC<PODetailsProps> = ({
         </Modal>
       )}
 
-      {/* Amend Modal */}
-      {isAmendModalOpen && (
-        <Modal
-          isOpen={isAmendModalOpen}
-          onClose={() => setIsAmendModalOpen(false)}
-          title={`Amend Approved Purchase Order: ${po.poNumber}`}
-          maxWidth="md"
+
+
+      {/* Delete Confirmation Popup Card */}
+      {isDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setIsDeleteModalOpen(false)}
         >
-          <div className="space-y-4 text-xs">
-            <p className="text-slate-600">
-              Creating an amendment will snapshot Revision {po.revision || 1} and
-              increment the revision counter to {(po.revision || 1) + 1}. Please
-              state the amendment reason:
-            </p>
-            <textarea
-              rows={3}
-              placeholder="e.g. Customer requested quantity increase for Blue shade..."
-              value={amendReason}
-              onChange={(e) => setAmendReason(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 focus:outline-hidden"
-              required
-            />
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button variant="outline" size="sm" onClick={() => setIsAmendModalOpen(false)}>
+          <div
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Delete Permanently?
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {po.poNumber}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-3 space-y-1 text-xs text-rose-800">
+              <div className="flex items-center gap-1.5 font-semibold text-rose-900">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Confirm Permanent Deletion</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                This action will permanently delete purchase order <strong className="font-bold text-rose-950">{po.poNumber}</strong> ({po.customerName}) from the database. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDeleteModalOpen(false)}
+              >
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 size="sm"
-                icon={<GitFork className="w-4 h-4" />}
-                onClick={handleConfirmAmend}
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  if (onDeletePO) {
+                    onDeletePO();
+                  }
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs"
               >
-                Proceed to Edit (Rev {(po.revision || 1) + 1})
+                Delete Permanently
               </Button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
     </div>
   );

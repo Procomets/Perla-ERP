@@ -30,17 +30,21 @@ export const vendorTaxDetailsSchema = z.object({
   otherRegistrationNumber: z.string().optional()
 }).refine(
   (data) => {
-    if (
-      (data.gstRegistrationStatus === 'registered' ||
-        data.gstRegistrationStatus === 'composition') &&
-      data.gstin
-    ) {
+    if (data.gstRegistrationStatus === 'registered') {
+      return Boolean(
+        data.gstin &&
+          data.gstin.trim().length > 0 &&
+          gstinRegex.test(data.gstin.trim().toUpperCase())
+      );
+    }
+    if (data.gstin && data.gstin.trim().length > 0) {
       return gstinRegex.test(data.gstin.trim().toUpperCase());
     }
     return true;
   },
   {
-    message: 'Invalid GSTIN format. Standard Indian GSTIN format is required (e.g. 33AAAAA0000A1Z5)',
+    message:
+      'GSTIN is mandatory when GST Registration Status is Registered Regular, and must follow standard 15-character format (e.g. 33AAAAA0000A1Z5)',
     path: ['gstin']
   }
 ).refine(

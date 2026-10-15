@@ -25,6 +25,7 @@ import { ItemMasterPage } from './pages/masters/ItemMasterPage';
 import { UsersPage } from './pages/users/UsersPage';
 import { EmployeeMasterPage } from './pages/employees/EmployeeMasterPage';
 import { SalarySheetPage } from './pages/salary/SalarySheetPage';
+import { GeneralSettingsPage } from './pages/settings/GeneralSettingsPage';
 
 // Initial Mock Data
 import {
@@ -62,7 +63,8 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   transport: { title: 'Transport Freight Expenses', subtitle: 'Logistics costs linked to customer delivery challans' },
   vendors: { title: 'Vendor Directory Master', subtitle: 'Directory of customers, suppliers, and subcontractors' },
   items: { title: 'Item & Chemical Master', subtitle: 'Catalog of chemicals, firewood, and packaging materials' },
-  users: { title: 'User Management', subtitle: 'Manage system access, roles, and profiles' }
+  users: { title: 'User Management', subtitle: 'Manage system access, roles, and profiles' },
+  settings: { title: 'General Settings', subtitle: 'Global configurations, colour master catalogue, and operational rules' }
 };
 
 interface ErpLayoutProps {
@@ -145,6 +147,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
             {moduleId === 'vendors' && <VendorMasterPage />}
             {moduleId === 'items' && <ItemMasterPage items={props.inventory} onAddItem={props.onAddItem} />}
             {moduleId === 'users' && <UsersPage />}
+            {moduleId === 'settings' && <GeneralSettingsPage />}
           </div>
         </main>
       </div>

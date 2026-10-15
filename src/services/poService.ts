@@ -5,10 +5,12 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
-  runTransaction
+  runTransaction,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -24,6 +26,7 @@ import {
 } from '../types/po';
 import { calculateLineAmount, calculatePOTotals } from '../schemas/poSchema';
 import { Vendor } from '../types/vendor';
+import { cleanFirestoreData } from './vendorService';
 
 // Initial sample POs for Perla Textiles Processor (including the exact live sample provided by user)
 export const initialMockPurchaseOrders: PurchaseOrder[] = [
@@ -419,11 +422,18 @@ export function normalizePODocument(docId: string, data: any): PurchaseOrder {
   const totals = calculatePOTotals(colourLines);
   const styleNo = data.styleNo || data.styleNumber || '';
 
+  // For draft status, if it was never approved, ensure poNumber is 'PO/PENDING'
+  const isDraftStatus = !data.status || data.status === 'draft' || data.status === 'submitted';
+  let resolvedPoNumber = data.poNumber || 'PO/PENDING';
+  if (isDraftStatus && !data.approvedAt) {
+    resolvedPoNumber = 'PO/PENDING';
+  }
+
   return {
     ...data,
     id: docId,
     poId: docId,
-    poNumber: data.poNumber || 'PO/PENDING',
+    poNumber: resolvedPoNumber,
     customerId: data.customerId || data.customerVendorId || '',
     customerVendorId: data.customerVendorId || data.customerId || '',
     customerCode: data.customerCode || '',
@@ -471,46 +481,107 @@ export function normalizePODocument(docId: string, data: any): PurchaseOrder {
 
 export class POService {
   /**
-   * Generates atomic PO number: PO/YYYY-YY/NNNN
+   * Generates atomic PO number from `po_counters` collection: PO/YYYY-YY/NNNN
+   * Matches Firestore schema:
+   * collection: 'po_counters'
+   * doc: '2026-27' (financial year)
+   * fields: { financialYear: '2026-27', prefix: 'PO/2026-27', lastSequence: number, updatedAt: timestamp }
    */
-  static async generatePONumber(): Promise<string> {
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+  static async generatePONumber(orderDate?: string): Promise<string> {
+    const d = orderDate ? new Date(orderDate) : new Date();
+    const validDate = isNaN(d.getTime()) ? new Date() : d;
+    const month = validDate.getMonth() + 1; // 1 to 12
+    const year = validDate.getFullYear();
     const fyStart = month >= 4 ? year : year - 1;
     const fyEnd = (fyStart + 1) % 100;
     const fyString = `${fyStart}-${String(fyEnd).padStart(2, '0')}`;
-    const counterKey = `po_${fyString}`;
+    const defaultPrefix = `PO/${fyString}`;
+
+    // Inspect existing local/cached POs to discover the current max sequence
+    let maxExistingSeq = 0;
+    try {
+      const existingLocal = getLocalDemoPOs();
+      const seqRegex = new RegExp(`^PO\\/${fyString}\\/(\\d+)$`);
+      for (const p of existingLocal) {
+        const m = p.poNumber?.match(seqRegex);
+        if (m) {
+          const num = parseInt(m[1], 10);
+          if (!isNaN(num) && num > maxExistingSeq) maxExistingSeq = num;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
 
     try {
       let allocatedNumber = '';
+      const counterRef = doc(db, 'po_counters', fyString);
+
       await runTransaction(db, async (transaction) => {
-        const counterRef = doc(db, 'purchase_order_counters', counterKey);
         const counterSnap = await transaction.get(counterRef);
-        let nextVal = 1;
+        let nextSeq = maxExistingSeq + 1;
+        let prefix = defaultPrefix;
+
         if (counterSnap.exists()) {
-          nextVal = (counterSnap.data()?.currentValue || 0) + 1;
+          const data = counterSnap.data();
+          if (data?.prefix) {
+            prefix = data.prefix;
+          }
+          const lastSeq = Number(data?.lastSequence ?? data?.currentValue ?? 0);
+          nextSeq = Math.max(lastSeq, maxExistingSeq) + 1;
         }
+
+        const padded = String(nextSeq).padStart(4, '0');
+        allocatedNumber = `${prefix}/${padded}`;
 
         transaction.set(
           counterRef,
           {
-            counterKey,
-            currentValue: nextVal,
-            updatedAt: new Date().toISOString()
+            financialYear: fyString,
+            prefix: prefix,
+            lastSequence: nextSeq,
+            updatedAt: Timestamp.now()
+          },
+          { merge: true }
+        );
+      });
+
+      return allocatedNumber;
+    } catch (err) {
+      console.warn('Firestore po_counters transaction fallback, attempting direct read/write:', err);
+      try {
+        const counterRef = doc(db, 'po_counters', fyString);
+        const counterSnap = await getDoc(counterRef);
+        let prefix = defaultPrefix;
+        let nextSeq = maxExistingSeq + 1;
+
+        if (counterSnap.exists()) {
+          const data = counterSnap.data();
+          if (data?.prefix) prefix = data.prefix;
+          const lastSeq = Number(data?.lastSequence ?? data?.currentValue ?? 0);
+          nextSeq = Math.max(lastSeq, maxExistingSeq) + 1;
+        }
+
+        const padded = String(nextSeq).padStart(4, '0');
+        const allocatedNumber = `${prefix}/${padded}`;
+
+        await setDoc(
+          counterRef,
+          {
+            financialYear: fyString,
+            prefix: prefix,
+            lastSequence: nextSeq,
+            updatedAt: Timestamp.now()
           },
           { merge: true }
         );
 
-        const padded = String(nextVal).padStart(4, '0');
-        allocatedNumber = `PO/${fyString}/${padded}`;
-      });
-      return allocatedNumber;
-    } catch (err) {
-      console.warn('Firestore counter transaction fallback:', err);
-      const existing = getLocalDemoPOs();
-      const count = existing.length + 1;
-      return `PO/${fyString}/${String(count).padStart(4, '0')}`;
+        return allocatedNumber;
+      } catch (directErr) {
+        console.warn('Direct counter update failed, generating fallback sequence:', directErr);
+        const count = maxExistingSeq + 1;
+        return `${defaultPrefix}/${String(count).padStart(4, '0')}`;
+      }
     }
   }
 
@@ -533,6 +604,7 @@ export class POService {
         const snap = await getDocs(poQuery);
         if (!snap.empty) {
           allPos = snap.docs.map((d) => normalizePODocument(d.id, d.data()));
+          saveLocalDemoPOs(allPos);
         }
       } catch (err) {
         console.warn('Firestore getPurchaseOrders fallback to local store:', err);
@@ -695,7 +767,15 @@ export class POService {
     const poRef = doc(collection(db, 'purchase_orders'));
     const poId = poRef.id;
 
-    const poNumber = await this.generatePONumber();
+    const poStatus = poData.status || 'draft';
+    let poNumber = 'PO/PENDING';
+    if (poStatus === 'approved') {
+      poNumber = (poData.poNumber && poData.poNumber !== 'PO/PENDING' && !poData.poNumber.includes('PENDING'))
+        ? poData.poNumber
+        : await this.generatePONumber(poData.orderDate);
+    } else {
+      poNumber = 'PO/PENDING';
+    }
 
     // Process colour lines with line amounts
     const processedColourLines: POColourLine[] = (
@@ -732,6 +812,13 @@ export class POService {
       customerCode: customer.vendorCode || '',
       customerName: customer.companyName,
       customerCompanyNameSnapshot: customer.companyName,
+      subcontractorType: poData.subcontractorType || null,
+      subcontractorId: poData.subcontractorId || null,
+      subcontractorCode: poData.subcontractorCode || null,
+      subcontractorName: poData.subcontractorName || null,
+      subcompanyId: poData.subcompanyId || null,
+      subcompanyCode: poData.subcompanyCode || null,
+      subcompanyName: poData.subcompanyName || null,
       processCategory: poData.processCategory || 'washing',
       styleNo,
       styleNumber: styleNo,
@@ -749,7 +836,7 @@ export class POService {
       customerReferenceNo: poData.customerReferenceNo || '',
       customerInstructions: poData.customerInstructions || '',
       internalRemarks: poData.internalRemarks || '',
-      notes: poData.notes || '',
+      notes: poData.notes || null,
       status: poData.status || 'draft',
       revision: 1,
       createdBy: user.uid,
@@ -775,9 +862,14 @@ export class POService {
 
     // Save to Firestore if connected
     try {
-      await setDoc(poRef, newPO);
-      const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
-      await setDoc(auditRef, auditEntry);
+      await setDoc(poRef, cleanFirestoreData(newPO));
+      console.log(`Successfully saved PO ${poNumber} to Firestore.`);
+      try {
+        const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
+        await setDoc(auditRef, cleanFirestoreData(auditEntry));
+      } catch (auditErr) {
+        console.warn('Could not write PO audit log:', auditErr);
+      }
     } catch (err) {
       console.warn('Firestore PO create fallback to local demo store:', err);
     }
@@ -824,6 +916,8 @@ export class POService {
           id: lineId,
           lineId,
           colourName: line.colourName || '',
+          colourCode: line.colourCode || null,
+          colourId: line.colourId || null,
           processType: line.processType || 'Softener Wash',
           quantity: Number(line.quantity) || 0,
           unit: line.unit || 'piece',
@@ -858,8 +952,18 @@ export class POService {
       updatedById: user.uid
     };
 
-    // Protect immutable fields
-    merged.poNumber = existing.po.poNumber;
+    // Protect immutable fields or upgrade pending PO number when status is approved
+    let poNumber = existing.po.poNumber;
+    if (merged.status === 'draft') {
+      if (!existing.po.approvedAt || !poNumber || poNumber.includes('PENDING')) {
+        poNumber = 'PO/PENDING';
+      }
+    } else if (merged.status === 'approved') {
+      if (!poNumber || poNumber === 'PO/PENDING' || poNumber.includes('PENDING')) {
+        poNumber = await this.generatePONumber(merged.orderDate);
+      }
+    }
+    merged.poNumber = poNumber;
     merged.createdAt = existing.po.createdAt;
     merged.createdBy = existing.po.createdBy;
 
@@ -875,9 +979,13 @@ export class POService {
     };
 
     try {
-      await updateDoc(doc(db, 'purchase_orders', poId), merged as any);
-      const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
-      await setDoc(auditRef, auditEntry);
+      await updateDoc(doc(db, 'purchase_orders', poId), cleanFirestoreData(merged) as any);
+      try {
+        const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
+        await setDoc(auditRef, cleanFirestoreData(auditEntry));
+      } catch (auditErr) {
+        console.warn('Could not write PO update audit log:', auditErr);
+      }
     } catch (err) {
       console.warn('Firestore updatePurchaseOrder fallback:', err);
     }
@@ -961,6 +1069,7 @@ export class POService {
 
   /**
    * Approve Purchase Order (submitted/draft -> approved)
+   * If the PO currently has 'PO/PENDING' (or no sequential number), generates an official sequence number.
    */
   static async approvePurchaseOrder(
     poId: string,
@@ -971,8 +1080,16 @@ export class POService {
     if (!existing.po) throw new Error('PO not found');
 
     const now = new Date().toISOString();
+
+    // If PO currently has 'PO/PENDING' (or no sequence number), generate official sequential PO number
+    let allocatedPONumber = existing.po.poNumber;
+    if (!allocatedPONumber || allocatedPONumber === 'PO/PENDING' || allocatedPONumber.includes('PENDING')) {
+      allocatedPONumber = await this.generatePONumber(existing.po.orderDate);
+    }
+
     const updated: PurchaseOrder = {
       ...existing.po,
+      poNumber: allocatedPONumber,
       status: 'approved',
       approvedBy: user.uid,
       approvedById: user.uid,
@@ -985,16 +1102,17 @@ export class POService {
     const auditEntry: POAuditLog = {
       auditId: `audit_${Date.now()}`,
       poId,
-      poNumber: updated.poNumber,
+      poNumber: allocatedPONumber,
       action: 'approved',
       performedBy: user.uid,
       performedByName: user.displayName || 'Authorized User',
       performedAt: now,
-      summary: `Purchase Order ${updated.poNumber} approved. Order is open for Inward receipts.`
+      summary: `Purchase Order ${allocatedPONumber} approved. Order is open for Inward receipts.`
     };
 
     try {
       await updateDoc(doc(db, 'purchase_orders', poId), {
+        poNumber: allocatedPONumber,
         status: 'approved',
         approvedBy: user.uid,
         approvedById: user.uid,
@@ -1003,10 +1121,12 @@ export class POService {
         updatedBy: user.uid,
         updatedById: user.uid
       });
-      await setDoc(
-        doc(collection(db, 'purchase_order_audit_logs')),
-        auditEntry
-      );
+      try {
+        const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
+        await setDoc(auditRef, cleanFirestoreData(auditEntry));
+      } catch (auditErr) {
+        console.warn('Could not write PO approve audit log:', auditErr);
+      }
     } catch (e) {
       console.warn('Firestore approve PO fallback:', e);
     }
@@ -1024,7 +1144,74 @@ export class POService {
   }
 
   /**
-   * Reject Purchase Order with reason
+   * Revoke/Cancel Approval of Purchase Order (approved -> draft, Admin only)
+   */
+  static async revokeApprovalPurchaseOrder(
+    poId: string,
+    reason: string = 'Approval cancelled by Admin',
+    user: { uid: string; displayName?: string },
+    isDemo: boolean = false
+  ): Promise<PurchaseOrder> {
+    const existing = await this.getPurchaseOrderById(poId, isDemo);
+    if (!existing.po) throw new Error('PO not found');
+
+    const now = new Date().toISOString();
+    const updated: PurchaseOrder = {
+      ...existing.po,
+      status: 'draft',
+      approvedBy: undefined,
+      approvedById: undefined,
+      approvedAt: undefined,
+      updatedAt: now,
+      updatedBy: user.uid,
+      updatedById: user.uid
+    };
+
+    const auditEntry: POAuditLog = {
+      auditId: `audit_${Date.now()}`,
+      poId,
+      poNumber: updated.poNumber,
+      action: 'approval_revoked',
+      performedBy: user.uid,
+      performedByName: user.displayName || 'Authorized User',
+      performedAt: now,
+      summary: `Approval cancelled for Purchase Order ${updated.poNumber}. Reason: ${reason || 'Cancelled by Admin'}. Status returned to draft.`
+    };
+
+    try {
+      await updateDoc(doc(db, 'purchase_orders', poId), {
+        status: 'draft',
+        approvedBy: null,
+        approvedById: null,
+        approvedAt: null,
+        updatedAt: now,
+        updatedBy: user.uid,
+        updatedById: user.uid
+      });
+      try {
+        const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
+        await setDoc(auditRef, cleanFirestoreData(auditEntry));
+      } catch (auditErr) {
+        console.warn('Could not write PO revoke approval audit log:', auditErr);
+      }
+    } catch (e) {
+      console.warn('Firestore revoke approval fallback:', e);
+    }
+
+    const local = getLocalDemoPOs().map((p) =>
+      p.id === poId || p.poId === poId ? updated : p
+    );
+    saveLocalDemoPOs(local);
+    localDemoAuditLogs[poId] = [
+      ...(localDemoAuditLogs[poId] || []),
+      auditEntry
+    ];
+
+    return updated;
+  }
+
+  /**
+   * Reject Purchase Order with reason (moves to cancelled, Admin only)
    */
   static async rejectPurchaseOrder(
     poId: string,
@@ -1038,11 +1225,15 @@ export class POService {
     const now = new Date().toISOString();
     const updated: PurchaseOrder = {
       ...existing.po,
-      status: 'rejected',
+      status: 'cancelled',
       rejectedBy: user.uid,
       rejectedById: user.uid,
       rejectedAt: now,
       rejectionReason: reason,
+      cancelledBy: user.uid,
+      cancelledById: user.uid,
+      cancelledAt: now,
+      cancellationReason: `Rejected by Admin: ${reason}`,
       updatedAt: now,
       updatedBy: user.uid,
       updatedById: user.uid
@@ -1056,16 +1247,20 @@ export class POService {
       performedBy: user.uid,
       performedByName: user.displayName || 'Authorized User',
       performedAt: now,
-      summary: `Purchase Order ${updated.poNumber} rejected. Reason: ${reason}`
+      summary: `Purchase Order ${updated.poNumber} rejected by Admin. Reason: ${reason}`
     };
 
     try {
       await updateDoc(doc(db, 'purchase_orders', poId), {
-        status: 'rejected',
+        status: 'cancelled',
         rejectedBy: user.uid,
         rejectedById: user.uid,
         rejectedAt: now,
         rejectionReason: reason,
+        cancelledBy: user.uid,
+        cancelledById: user.uid,
+        cancelledAt: now,
+        cancellationReason: `Rejected by Admin: ${reason}`,
         updatedAt: now,
         updatedBy: user.uid,
         updatedById: user.uid
@@ -1176,6 +1371,45 @@ export class POService {
     ];
 
     return updated;
+  }
+
+  /**
+   * Delete Purchase Order permanently (Admin only)
+   */
+  static async deletePurchaseOrder(
+    poId: string,
+    user: { uid: string; displayName?: string },
+    isDemo: boolean = false
+  ): Promise<void> {
+    const existing = await this.getPurchaseOrderById(poId, isDemo);
+    const poNumber = existing?.po?.poNumber || poId;
+
+    try {
+      await deleteDoc(doc(db, 'purchase_orders', poId));
+      try {
+        const auditEntry: POAuditLog = {
+          auditId: `audit_${Date.now()}`,
+          poId,
+          poNumber,
+          action: 'cancelled',
+          performedBy: user.uid,
+          performedByName: user.displayName || 'Admin',
+          performedAt: new Date().toISOString(),
+          summary: `Purchase Order ${poNumber} was permanently deleted by Admin.`
+        };
+        await setDoc(
+          doc(collection(db, 'purchase_order_audit_logs')),
+          cleanFirestoreData(auditEntry)
+        );
+      } catch (auditErr) {
+        console.warn('Could not write PO delete audit log:', auditErr);
+      }
+    } catch (e) {
+      console.warn('Firestore delete PO fallback:', e);
+    }
+
+    const local = getLocalDemoPOs().filter((p) => p.id !== poId && p.poId !== poId);
+    saveLocalDemoPOs(local);
   }
 
   /**
@@ -1303,10 +1537,7 @@ export class POService {
     );
 
     let draftPOs = 0;
-    let submittedPOs = 0;
     let approvedPOs = 0;
-    let inProgressPOs = 0;
-    let completedPOs = 0;
     let cancelledPOs = 0;
     let totalPieces = 0;
     let totalKg = 0;
@@ -1314,13 +1545,9 @@ export class POService {
 
     for (const po of pos) {
       const statusLower = po.status.toLowerCase();
-      if (statusLower === 'draft') draftPOs++;
-      else if (statusLower === 'submitted') submittedPOs++;
-      else if (statusLower === 'approved') approvedPOs++;
-      else if (statusLower === 'in_progress' || statusLower === 'in progress')
-        inProgressPOs++;
-      else if (statusLower === 'completed') completedPOs++;
-      else if (statusLower === 'cancelled') cancelledPOs++;
+      if (statusLower === 'approved') approvedPOs++;
+      else if (statusLower === 'cancelled' || statusLower === 'rejected') cancelledPOs++;
+      else draftPOs++; // draft, submitted, and any other states categorized as Draft
 
       const pcs = po.totalQtyByUnit?.piece || 0;
       const kgs = po.totalQtyByUnit?.kg || 0;
@@ -1332,10 +1559,7 @@ export class POService {
     return {
       totalPOs: pos.length,
       draftPOs,
-      submittedPOs,
       approvedPOs,
-      inProgressPOs,
-      completedPOs,
       cancelledPOs,
       totalPieces,
       totalKg,

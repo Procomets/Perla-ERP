@@ -635,29 +635,33 @@ export const createPurchaseOrder = functions.https.onCall(async (data, context) 
   const poId = poRef.id;
   let poNumber = '';
 
-  // Atomic counter generation
-  await db.runTransaction(async (transaction) => {
-    const counterRef = db.collection('purchase_order_counters').doc(counterKey);
-    const counterDoc = await transaction.get(counterRef);
+  if (status === 'approved') {
+    // Atomic counter generation
+    await db.runTransaction(async (transaction) => {
+      const counterRef = db.collection('purchase_order_counters').doc(counterKey);
+      const counterDoc = await transaction.get(counterRef);
 
-    let nextVal = 1;
-    if (counterDoc.exists) {
-      nextVal = (counterDoc.data()?.currentValue || 0) + 1;
-    }
+      let nextVal = 1;
+      if (counterDoc.exists) {
+        nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+      }
 
-    transaction.set(
-      counterRef,
-      {
-        counterKey,
-        currentValue: nextVal,
-        updatedAt: now
-      },
-      { merge: true }
-    );
+      transaction.set(
+        counterRef,
+        {
+          counterKey,
+          currentValue: nextVal,
+          updatedAt: now
+        },
+        { merge: true }
+      );
 
-    const padded = String(nextVal).padStart(4, '0');
-    poNumber = `PO/${fyString}/${padded}`;
-  });
+      const padded = String(nextVal).padStart(4, '0');
+      poNumber = `PO/${fyString}/${padded}`;
+    });
+  } else {
+    poNumber = 'PO/PENDING';
+  }
 
   const processedColourLines = colourLines.map((line: any, idx: number) => {
     const lineId = line.id || line.lineId || `pol_${Date.now()}_${idx}`;
@@ -893,7 +897,7 @@ export const submitPurchaseOrder = functions.https.onCall(async (data, context) 
 
 // Function 12: approvePurchaseOrder
 export const approvePurchaseOrder = functions.https.onCall(async (data, context) => {
-  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { uid } = await verifyRole(context, ['Admin']);
   const { poId } = data;
 
   if (!poId) {
@@ -916,8 +920,42 @@ export const approvePurchaseOrder = functions.https.onCall(async (data, context)
 
   const now = admin.firestore.Timestamp.now();
 
+  let poNumber = currentPo?.poNumber;
+  if (!poNumber || poNumber === 'PO/PENDING' || String(poNumber).includes('PENDING')) {
+    const orderDateVal = currentPo?.orderDate;
+    const d = orderDateVal ? new Date(orderDateVal) : new Date();
+    const validDate = isNaN(d.getTime()) ? new Date() : d;
+    const month = validDate.getMonth() + 1;
+    const year = validDate.getFullYear();
+    const fyStart = month >= 4 ? year : year - 1;
+    const fyEnd = (fyStart + 1) % 100;
+    const fyString = `${fyStart}-${String(fyEnd).padStart(2, '0')}`;
+    const counterKey = `po_${fyString}`;
+
+    await db.runTransaction(async (transaction) => {
+      const counterRef = db.collection('purchase_order_counters').doc(counterKey);
+      const counterDoc = await transaction.get(counterRef);
+      let nextVal = 1;
+      if (counterDoc.exists) {
+        nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+      }
+      transaction.set(
+        counterRef,
+        {
+          counterKey,
+          currentValue: nextVal,
+          updatedAt: now
+        },
+        { merge: true }
+      );
+      const padded = String(nextVal).padStart(4, '0');
+      poNumber = `PO/${fyString}/${padded}`;
+    });
+  }
+
   const batch = db.batch();
   batch.update(poRef, {
+    poNumber,
     status: 'approved',
     approvedBy: uid,
     approvedById: uid,
@@ -930,21 +968,21 @@ export const approvePurchaseOrder = functions.https.onCall(async (data, context)
   batch.set(auditRef, {
     auditId: auditRef.id,
     poId,
-    poNumber: currentPo.poNumber,
+    poNumber,
     action: 'approved',
     performedBy: uid,
     performedAt: now,
-    summary: `Purchase Order ${currentPo.poNumber} approved by ${uid}. Eligible for Inward receipt workflow.`
+    summary: `Purchase Order ${poNumber} approved by ${uid}. Eligible for Inward receipt workflow.`
   });
 
   await batch.commit();
 
-  return { success: true, poId };
+  return { success: true, poId, poNumber };
 });
 
 // Function 13: rejectPurchaseOrder
 export const rejectPurchaseOrder = functions.https.onCall(async (data, context) => {
-  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { uid } = await verifyRole(context, ['Admin']);
   const { poId, reason } = data;
 
   if (!poId || !reason) {
@@ -965,11 +1003,15 @@ export const rejectPurchaseOrder = functions.https.onCall(async (data, context) 
 
   const batch = db.batch();
   batch.update(poRef, {
-    status: 'rejected',
+    status: 'cancelled',
     rejectionReason: reason,
     rejectedBy: uid,
     rejectedById: uid,
     rejectedAt: now,
+    cancelledBy: uid,
+    cancelledById: uid,
+    cancelledAt: now,
+    cancellationReason: `Rejected by Admin: ${reason}`,
     updatedAt: now,
     updatedBy: uid
   });
@@ -1159,4 +1201,1034 @@ export const amendPurchaseOrder = functions.https.onCall(async (data, context) =
 
   return { success: true, poId, revision: nextRevision };
 });
+
+// ==========================================
+// INWARD RECEIPT CLOUD FUNCTIONS
+// ==========================================
+
+function getInwardFYString(dateInput?: string): string {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const month = validDate.getMonth() + 1;
+  const year = validDate.getFullYear();
+  const fyStart = month >= 4 ? year : year - 1;
+  const fyEnd = (fyStart + 1) % 100;
+  return `${fyStart}-${String(fyEnd).padStart(2, '0')}`;
+}
+
+// Function 16: generateInwardNumber
+export const generateInwardNumber = functions.https.onCall(async (data, context) => {
+  await verifyRole(context, ['Admin', 'Manager']);
+  const { receiptDate } = data || {};
+  const fyString = getInwardFYString(receiptDate);
+  const counterKey = `inward_${fyString}`;
+  const now = admin.firestore.Timestamp.now();
+
+  let inwardNo = '';
+  await db.runTransaction(async (transaction) => {
+    const counterRef = db.collection('inward_counters').doc(counterKey);
+    const counterDoc = await transaction.get(counterRef);
+
+    let nextVal = 1;
+    if (counterDoc.exists) {
+      nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+    }
+
+    transaction.set(
+      counterRef,
+      {
+        counterKey,
+        currentValue: nextVal,
+        financialYear: fyString,
+        updatedAt: now
+      },
+      { merge: true }
+    );
+
+    const padded = String(nextVal).padStart(4, '0');
+    inwardNo = `INW/${fyString}/${padded}`;
+  });
+
+  return { inwardNo, financialYear: fyString };
+});
+
+// Helper: Get cumulative posted inward quantities for a PO
+async function getPOCumulativePostedInward(poId: string, excludeInwardId?: string) {
+  const querySnap = await db
+    .collection('inward_entries')
+    .where('poId', '==', poId)
+    .where('status', '==', 'posted')
+    .get();
+
+  const cumulativeMap: Record<string, number> = {};
+
+  for (const docSnap of querySnap.docs) {
+    if (excludeInwardId && docSnap.id === excludeInwardId) continue;
+    const entryData = docSnap.data();
+    const lines = entryData.lines || [];
+    for (const line of lines) {
+      const lineId = line.poLineId || line.lineId;
+      if (lineId) {
+        cumulativeMap[lineId] = (cumulativeMap[lineId] || 0) + (Number(line.receivedQty) || 0);
+      }
+    }
+  }
+
+  return cumulativeMap;
+}
+
+// Function 17: getEligiblePurchaseOrders
+export const getEligiblePurchaseOrders = functions.https.onCall(async (data, context) => {
+  await verifyRole(context, ['Admin', 'Manager', 'Supervisor']);
+  const { customerId, status } = data || {};
+
+  let poQuery: FirebaseFirestore.Query = db.collection('purchase_orders');
+
+  if (customerId) {
+    poQuery = poQuery.where('customerId', '==', customerId);
+  }
+
+  const snap = await poQuery.get();
+  const eligiblePOs: any[] = [];
+
+  for (const docSnap of snap.docs) {
+    const po = docSnap.data();
+    const poStatus = String(po.status || '').toLowerCase();
+
+    // Ineligible statuses: cancelled, rejected
+    if (poStatus === 'cancelled' || poStatus === 'rejected') {
+      continue;
+    }
+
+    // Must be approved, in_progress, partially_received, or submitted/draft if specifically queried
+    if (status) {
+      if (poStatus !== String(status).toLowerCase()) continue;
+    } else {
+      if (poStatus !== 'approved' && poStatus !== 'in_progress' && poStatus !== 'partially_received') {
+        continue;
+      }
+    }
+
+    // Calculate current cumulative inward for this PO
+    const cumulativeMap = await getPOCumulativePostedInward(docSnap.id);
+    const colourLines = po.colourLines || po.lines || [];
+
+    let totalOrdered = 0;
+    let totalReceived = 0;
+
+    const processedLines = colourLines.map((line: any) => {
+      const lineId = line.id || line.lineId;
+      const ordered = Number(line.quantity) || 0;
+      const prevReceived = cumulativeMap[lineId] || 0;
+      const remaining = Math.max(0, ordered - prevReceived);
+
+      totalOrdered += ordered;
+      totalReceived += prevReceived;
+
+      return {
+        ...line,
+        lineId,
+        orderedQty: ordered,
+        previouslyReceivedQty: prevReceived,
+        remainingOrderQty: remaining,
+        status: prevReceived === 0 ? 'Not Started' : remaining === 0 ? 'Fully Received' : 'Partially Received'
+      };
+    });
+
+    const poProgress =
+      totalReceived === 0 ? 'Not Started' : totalReceived >= totalOrdered ? 'Fully Received' : 'Partially Received';
+
+    eligiblePOs.push({
+      ...po,
+      id: docSnap.id,
+      poId: docSnap.id,
+      colourLines: processedLines,
+      lines: processedLines,
+      totalOrderedQuantity: totalOrdered,
+      totalReceivedQuantity: totalReceived,
+      inwardProgress: poProgress
+    });
+  }
+
+  return { purchaseOrders: eligiblePOs };
+});
+
+// Function 18: getInwardBalances
+export const getInwardBalances = functions.https.onCall(async (data, context) => {
+  await verifyRole(context, ['Admin', 'Manager', 'Supervisor']);
+  const { poId } = data || {};
+
+  if (!poId) {
+    throw new functions.https.HttpsError('invalid-argument', 'poId is required.');
+  }
+
+  const poDoc = await db.collection('purchase_orders').doc(poId).get();
+  if (!poDoc.exists) {
+    throw new functions.https.HttpsError('not-found', `Purchase Order '${poId}' not found.`);
+  }
+
+  const poData = poDoc.data()!;
+  const cumulativeMap = await getPOCumulativePostedInward(poId);
+  const colourLines = poData.colourLines || poData.lines || [];
+
+  const totalsByUnit: Record<string, { ordered: number; previouslyReceived: number; remaining: number }> = {
+    piece: { ordered: 0, previouslyReceived: 0, remaining: 0 },
+    kg: { ordered: 0, previouslyReceived: 0, remaining: 0 }
+  };
+
+  const processedLines = colourLines.map((line: any) => {
+    const lineId = line.id || line.lineId;
+    const ordered = Number(line.quantity) || 0;
+    const prev = cumulativeMap[lineId] || 0;
+    const remaining = Math.max(0, ordered - prev);
+    const unit = line.unit === 'kg' ? 'kg' : 'piece';
+
+    if (totalsByUnit[unit]) {
+      totalsByUnit[unit].ordered += ordered;
+      totalsByUnit[unit].previouslyReceived += prev;
+      totalsByUnit[unit].remaining += remaining;
+    }
+
+    return {
+      poLineId: lineId,
+      colourName: line.colourName || '',
+      colourCode: line.colourCode || null,
+      itemName: line.itemName || poData.itemName || '',
+      processType: line.processType || 'Softener Wash',
+      orderedQty: ordered,
+      unit,
+      previouslyReceivedQty: prev,
+      remainingOrderQty: remaining,
+      currentReceiptQty: 0,
+      cumulativeReceivedQty: prev,
+      balanceAfterReceipt: remaining
+    };
+  });
+
+  return {
+    poId,
+    poNumber: poData.poNumber,
+    customerVendorId: poData.customerId || poData.customerVendorId,
+    customerName: poData.customerName,
+    styleNo: poData.styleNo || poData.styleNumber,
+    itemName: poData.itemName,
+    processCategory: poData.processCategory,
+    lines: processedLines,
+    totalsByUnit
+  };
+});
+
+// Function 19: createInwardDraft
+export const createInwardDraft = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const {
+    poId,
+    customerVendorId,
+    subcontractorVendorId,
+    customerDate,
+    customerDcNo,
+    inwardDate,
+    remarks,
+    lines = []
+  } = data || {};
+
+  if (!poId || !customerVendorId) {
+    throw new functions.https.HttpsError('invalid-argument', 'poId and customerVendorId are required.');
+  }
+
+  // Verify PO
+  const poDoc = await db.collection('purchase_orders').doc(poId).get();
+  if (!poDoc.exists) {
+    throw new functions.https.HttpsError('not-found', `Purchase Order ${poId} not found.`);
+  }
+
+  const poData = poDoc.data()!;
+  const poCustId = poData.customerId || poData.customerVendorId;
+  if (poCustId !== customerVendorId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      `Customer mismatch: Selected customer does not match the customer on Purchase Order ${poData.poNumber}.`
+    );
+  }
+
+  // Get user details
+  let userName = 'Authorized User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Authorized User';
+  }
+
+  // Load subcontractor snapshot if provided
+  let subcontractorNameSnapshot: string | null = null;
+  if (subcontractorVendorId) {
+    const subDoc = await db.collection('vendors').doc(subcontractorVendorId).get();
+    if (subDoc.exists) {
+      subcontractorNameSnapshot = subDoc.data()?.companyName || null;
+    }
+  }
+
+  const now = admin.firestore.Timestamp.now();
+  const inwardRef = db.collection('inward_entries').doc();
+  const inwardId = inwardRef.id;
+
+  const totalQtyByUnit: Record<string, number> = { piece: 0, kg: 0 };
+  let totalQuantity = 0;
+
+  const processedLines = (lines || []).map((l: any, idx: number) => {
+    const qty = Number(l.receivedQty) || 0;
+    const unit = l.unit === 'kg' ? 'kg' : 'piece';
+    totalQtyByUnit[unit] = (totalQtyByUnit[unit] || 0) + qty;
+    totalQuantity += qty;
+
+    return {
+      inwardLineId: l.inwardLineId || `inwl_${inwardId}_${idx}`,
+      lineId: l.inwardLineId || `inwl_${inwardId}_${idx}`,
+      inwardId,
+      poId,
+      poLineId: l.poLineId,
+      colourNameSnapshot: l.colourNameSnapshot || l.colour || '',
+      colour: l.colourNameSnapshot || l.colour || '',
+      colourCodeSnapshot: l.colourCodeSnapshot || null,
+      itemNameSnapshot: l.itemNameSnapshot || poData.itemName || '',
+      washTypeSnapshot: l.washTypeSnapshot || l.processType || 'Softener Wash',
+      processType: l.washTypeSnapshot || l.processType || 'Softener Wash',
+      orderedQtySnapshot: Number(l.orderedQtySnapshot) || 0,
+      unit,
+      previouslyReceivedQtySnapshot: Number(l.previouslyReceivedQtySnapshot) || 0,
+      receivedQty: qty,
+      cumulativeReceivedQtySnapshot: (Number(l.previouslyReceivedQtySnapshot) || 0) + qty,
+      balanceAfterReceiptSnapshot: Math.max(0, (Number(l.orderedQtySnapshot) || 0) - ((Number(l.previouslyReceivedQtySnapshot) || 0) + qty)),
+      createdAt: now
+    };
+  });
+
+  const inwardDoc = {
+    id: inwardId,
+    inwardId,
+    inwardNo: 'INW/DRAFT',
+    entryId: 'INW/DRAFT',
+    poId,
+    poNumberSnapshot: poData.poNumber || '',
+    poNumber: poData.poNumber || '',
+    customerVendorId,
+    customerId: customerVendorId,
+    customerCompanyNameSnapshot: poData.customerName || '',
+    customerName: poData.customerName || '',
+    subcontractorVendorId: subcontractorVendorId || null,
+    subContractorId: subcontractorVendorId || null,
+    subcontractorNameSnapshot,
+    subContractorName: subcontractorNameSnapshot,
+    styleNoSnapshot: poData.styleNo || poData.styleNumber || '',
+    styleNo: poData.styleNo || poData.styleNumber || '',
+    itemNameSnapshot: poData.itemName || '',
+    itemName: poData.itemName || '',
+    processCategorySnapshot: poData.processCategory || 'washing',
+    processCategory: poData.processCategory || 'washing',
+    customerDate: customerDate || now.toDate().toISOString().split('T')[0],
+    customerDcNo: customerDcNo || 'DRAFT-DC',
+    inwardDate: inwardDate || now.toDate().toISOString().split('T')[0],
+    status: 'draft',
+    totalQtyByUnit,
+    totalQuantity,
+    remarks: remarks || '',
+    createdBy: uid,
+    createdByName: userName,
+    createdAt: now,
+    updatedBy: uid,
+    updatedByName: userName,
+    updatedAt: now,
+    lines: processedLines,
+    schemaVersion: 1
+  };
+
+  const batch = db.batch();
+  batch.set(inwardRef, inwardDoc);
+
+  // Save each line to subcollection
+  for (const line of processedLines) {
+    const lineRef = inwardRef.collection('lines').doc(line.inwardLineId);
+    batch.set(lineRef, line);
+  }
+
+  // Audit log
+  const auditRef = db.collection('inward_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    inwardId,
+    inwardNo: 'INW/DRAFT',
+    action: 'created',
+    performedBy: uid,
+    performedByName: userName,
+    performedAt: now,
+    summary: `Inward Receipt draft created for PO ${poData.poNumber} (DC: ${inwardDoc.customerDcNo}).`
+  });
+
+  await batch.commit();
+
+  return { inwardId, inwardNo: 'INW/DRAFT', success: true };
+});
+
+// Function 20: postInwardReceipt (Concurrency-Safe Transaction)
+export const postInwardReceipt = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const {
+    draftInwardId,
+    poId,
+    customerVendorId,
+    subcontractorVendorId,
+    customerDate,
+    customerDcNo,
+    inwardDate,
+    remarks,
+    lines = []
+  } = data || {};
+
+  if (!poId || !customerVendorId || !customerDcNo) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'poId, customerVendorId, and customerDcNo are required to post an inward receipt.'
+    );
+  }
+
+  if (!Array.isArray(lines) || lines.length === 0) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'At least one colour line is required to post an inward receipt.'
+    );
+  }
+
+  // Get user details
+  let userName = 'Authorized User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Authorized User';
+  }
+
+  // Subcontractor name lookup
+  let subcontractorNameSnapshot: string | null = null;
+  if (subcontractorVendorId) {
+    const subDoc = await db.collection('vendors').doc(subcontractorVendorId).get();
+    if (subDoc.exists) {
+      subcontractorNameSnapshot = subDoc.data()?.companyName || null;
+    }
+  }
+
+  const now = admin.firestore.Timestamp.now();
+  const fyString = getInwardFYString(inwardDate || customerDate);
+  const counterKey = `inward_${fyString}`;
+
+  const inwardRef = draftInwardId
+    ? db.collection('inward_entries').doc(draftInwardId)
+    : db.collection('inward_entries').doc();
+  const inwardId = inwardRef.id;
+
+  let assignedInwardNo = '';
+  let updatedPOStatus = 'approved';
+
+  // RUN CONCURRENCY-SAFE FIRESTORE TRANSACTION
+  await db.runTransaction(async (transaction) => {
+    // 1. Authoritative PO check
+    const poRef = db.collection('purchase_orders').doc(poId);
+    const poDoc = await transaction.get(poRef);
+    if (!poDoc.exists) {
+      throw new functions.https.HttpsError('not-found', `Purchase Order ${poId} does not exist.`);
+    }
+
+    const poData = poDoc.data()!;
+    const poCustId = poData.customerId || poData.customerVendorId;
+    if (poCustId !== customerVendorId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Customer mismatch: Selected customer does not match the customer on Purchase Order ${poData.poNumber}.`
+      );
+    }
+
+    const poColourLines = poData.colourLines || poData.lines || [];
+    const poLinesMap = new Map<string, any>();
+    for (const pl of poColourLines) {
+      const plId = pl.id || pl.lineId;
+      poLinesMap.set(plId, pl);
+    }
+
+    // 2. Validate all submitted lines belong to this PO
+    for (const submittedLine of lines) {
+      if (!poLinesMap.has(submittedLine.poLineId)) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          `Submitted line ID '${submittedLine.poLineId}' does not belong to Purchase Order ${poData.poNumber}.`
+        );
+      }
+    }
+
+    // 3. Read all posted receipts for this PO to check remaining balance
+    // Query posted inward receipts
+    const postedReceiptsSnap = await db
+      .collection('inward_entries')
+      .where('poId', '==', poId)
+      .where('status', '==', 'posted')
+      .get();
+
+    const cumulativeMap: Record<string, number> = {};
+    for (const doc of postedReceiptsSnap.docs) {
+      if (doc.id === inwardId) continue; // Skip self if re-posting draft
+      const entryData = doc.data();
+      const existingLines = entryData.lines || [];
+      for (const el of existingLines) {
+        const lid = el.poLineId || el.lineId;
+        cumulativeMap[lid] = (cumulativeMap[lid] || 0) + (Number(el.receivedQty) || 0);
+      }
+    }
+
+    // 4. Over-receipt validation and balance calculations
+    let hasPositiveReceipt = false;
+    const totalQtyByUnit: Record<string, number> = { piece: 0, kg: 0 };
+    let totalQuantity = 0;
+
+    const processedLines = lines.map((l: any, idx: number) => {
+      const poLine = poLinesMap.get(l.poLineId);
+      const orderedQty = Number(poLine.quantity) || 0;
+      const prevQty = cumulativeMap[l.poLineId] || 0;
+      const remainingBeforeThis = Math.max(0, orderedQty - prevQty);
+      const received = Number(l.receivedQty) || 0;
+
+      if (received < 0) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          `Negative quantity received on colour '${poLine.colourName}'. Received quantity must be >= 0.`
+        );
+      }
+
+      if (received > remainingBeforeThis) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `Over-receipt rejected for colour '${poLine.colourName}'. Maximum remaining quantity is ${remainingBeforeThis} ${poLine.unit}, but attempted receipt is ${received} ${poLine.unit}.`
+        );
+      }
+
+      if (received > 0) {
+        hasPositiveReceipt = true;
+      }
+
+      const unit = (poLine.unit === 'kg' ? 'kg' : 'piece') as 'piece' | 'kg';
+      totalQtyByUnit[unit] = (totalQtyByUnit[unit] || 0) + received;
+      totalQuantity += received;
+
+      const newCumulative = prevQty + received;
+      const balanceAfter = Math.max(0, orderedQty - newCumulative);
+
+      return {
+        inwardLineId: l.inwardLineId || `inwl_${inwardId}_${idx}`,
+        lineId: l.inwardLineId || `inwl_${inwardId}_${idx}`,
+        inwardId,
+        poId,
+        poLineId: l.poLineId,
+        colourNameSnapshot: poLine.colourName,
+        colour: poLine.colourName,
+        colourCodeSnapshot: poLine.colourCode || null,
+        itemNameSnapshot: poLine.itemName || poData.itemName,
+        washTypeSnapshot: poLine.processType || 'Softener Wash',
+        processType: poLine.processType || 'Softener Wash',
+        orderedQtySnapshot: orderedQty,
+        unit,
+        previouslyReceivedQtySnapshot: prevQty,
+        receivedQty: received,
+        cumulativeReceivedQtySnapshot: newCumulative,
+        balanceAfterReceiptSnapshot: balanceAfter,
+        createdAt: now
+      };
+    });
+
+    if (!hasPositiveReceipt) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'At least one colour line must have a receipt quantity greater than 0 before posting.'
+      );
+    }
+
+    // 5. Generate collision-safe inward number
+    const counterRef = db.collection('inward_counters').doc(counterKey);
+    const counterDoc = await transaction.get(counterRef);
+
+    let nextVal = 1;
+    if (counterDoc.exists) {
+      nextVal = (counterDoc.data()?.currentValue || 0) + 1;
+    }
+
+    transaction.set(
+      counterRef,
+      {
+        counterKey,
+        currentValue: nextVal,
+        financialYear: fyString,
+        updatedAt: now
+      },
+      { merge: true }
+    );
+
+    const padded = String(nextVal).padStart(4, '0');
+    assignedInwardNo = `INW/${fyString}/${padded}`;
+
+    // 6. Check PO new progress status
+    let allLinesFullyReceived = true;
+    for (const pl of poColourLines) {
+      const plId = pl.id || pl.lineId;
+      const linePrev = cumulativeMap[plId] || 0;
+      const submittedMatch = processedLines.find((plSubmitted: any) => plSubmitted.poLineId === plId);
+      const submittedQty = submittedMatch ? submittedMatch.receivedQty : 0;
+      const totalLineReceived = linePrev + submittedQty;
+      if (totalLineReceived < (Number(pl.quantity) || 0)) {
+        allLinesFullyReceived = false;
+      }
+    }
+
+    updatedPOStatus = allLinesFullyReceived ? 'fully_received' : 'partially_received';
+
+    // 7. Write Inward Header
+    const inwardDoc = {
+      id: inwardId,
+      inwardId,
+      inwardNo: assignedInwardNo,
+      entryId: assignedInwardNo,
+      poId,
+      poNumberSnapshot: poData.poNumber,
+      poNumber: poData.poNumber,
+      customerVendorId,
+      customerId: customerVendorId,
+      customerCompanyNameSnapshot: poData.customerName,
+      customerName: poData.customerName,
+      subcontractorVendorId: subcontractorVendorId || null,
+      subContractorId: subcontractorVendorId || null,
+      subcontractorNameSnapshot,
+      subContractorName: subcontractorNameSnapshot,
+      styleNoSnapshot: poData.styleNo || poData.styleNumber,
+      styleNo: poData.styleNo || poData.styleNumber,
+      itemNameSnapshot: poData.itemName,
+      itemName: poData.itemName,
+      processCategorySnapshot: poData.processCategory || 'washing',
+      processCategory: poData.processCategory || 'washing',
+      customerDate: customerDate || now.toDate().toISOString().split('T')[0],
+      customerDcNo,
+      inwardDate: inwardDate || now.toDate().toISOString().split('T')[0],
+      status: 'posted',
+      totalQtyByUnit,
+      totalQuantity,
+      remarks: remarks || '',
+      createdBy: uid,
+      createdByName: userName,
+      createdAt: now,
+      updatedBy: uid,
+      updatedByName: userName,
+      updatedAt: now,
+      postedBy: uid,
+      postedByName: userName,
+      postedAt: now,
+      lines: processedLines,
+      schemaVersion: 1
+    };
+
+    transaction.set(inwardRef, inwardDoc);
+
+    // Write subcollection lines
+    for (const pline of processedLines) {
+      const subLineRef = inwardRef.collection('lines').doc(pline.inwardLineId);
+      transaction.set(subLineRef, pline);
+    }
+
+    // Update PO progress status
+    transaction.update(poRef, {
+      status: updatedPOStatus,
+      updatedAt: now,
+      updatedBy: uid
+    });
+
+    // Write Audit Log
+    const auditRef = db.collection('inward_audit_logs').doc();
+    transaction.set(auditRef, {
+      auditId: auditRef.id,
+      inwardId,
+      inwardNo: assignedInwardNo,
+      action: 'posted',
+      performedBy: uid,
+      performedByName: userName,
+      performedAt: now,
+      summary: `Inward Receipt ${assignedInwardNo} posted for PO ${poData.poNumber} with DC No '${customerDcNo}'. Total Qty: ${totalQuantity} (${totalQtyByUnit.piece || 0} pcs, ${totalQtyByUnit.kg || 0} kg).`
+    });
+  });
+
+  return {
+    inwardId,
+    inwardNo: assignedInwardNo,
+    poStatus: updatedPOStatus,
+    success: true
+  };
+});
+
+// Function 21: getInwardReceipt
+export const getInwardReceipt = functions.https.onCall(async (data, context) => {
+  await verifyRole(context, ['Admin', 'Manager', 'Supervisor']);
+  const { inwardId } = data || {};
+
+  if (!inwardId) {
+    throw new functions.https.HttpsError('invalid-argument', 'inwardId is required.');
+  }
+
+  const inwardDoc = await db.collection('inward_entries').doc(inwardId).get();
+  if (!inwardDoc.exists) {
+    throw new functions.https.HttpsError('not-found', `Inward Receipt ${inwardId} not found.`);
+  }
+
+  const inwardData = inwardDoc.data()!;
+
+  // Read subcollection lines
+  const linesSnap = await db.collection('inward_entries').doc(inwardId).collection('lines').get();
+  let lines: any[] = [];
+  if (!linesSnap.empty) {
+    lines = linesSnap.docs.map((d) => d.data());
+  } else {
+    lines = inwardData.lines || [];
+  }
+
+  // Read audit logs for this receipt
+  const auditSnap = await db
+    .collection('inward_audit_logs')
+    .where('inwardId', '==', inwardId)
+    .orderBy('performedAt', 'desc')
+    .get();
+  const auditLogs = auditSnap.docs.map((d) => d.data());
+
+  return {
+    inward: {
+      ...inwardData,
+      lines
+    },
+    auditLogs
+  };
+});
+
+// Function 22: listInwardReceipts
+export const listInwardReceipts = functions.https.onCall(async (data, context) => {
+  await verifyRole(context, ['Admin', 'Manager', 'Supervisor']);
+  const {
+    customerId,
+    subcontractorId,
+    poId,
+    status,
+    customerDcNo,
+    startDate,
+    endDate,
+    pageSize = 50
+  } = data || {};
+
+  let q: FirebaseFirestore.Query = db.collection('inward_entries');
+
+  if (customerId) {
+    q = q.where('customerVendorId', '==', customerId);
+  }
+  if (subcontractorId) {
+    q = q.where('subcontractorVendorId', '==', subcontractorId);
+  }
+  if (poId) {
+    q = q.where('poId', '==', poId);
+  }
+  if (status && status !== 'all') {
+    q = q.where('status', '==', status);
+  }
+
+  const snap = await q.get();
+  let results = snap.docs.map((d) => {
+    const dData = d.data();
+    return {
+      ...dData,
+      id: d.id,
+      inwardId: dData.inwardId || d.id
+    };
+  });
+
+  // Client-side date and DC filters if not indexed together
+  if (customerDcNo) {
+    const dcLower = String(customerDcNo).toLowerCase();
+    results = results.filter((r: any) => String(r.customerDcNo || '').toLowerCase().includes(dcLower));
+  }
+  if (startDate) {
+    results = results.filter((r: any) => (r.inwardDate || r.customerDate) >= startDate);
+  }
+  if (endDate) {
+    results = results.filter((r: any) => (r.inwardDate || r.customerDate) <= endDate);
+  }
+
+  // Sort descending by inwardDate / createdAt
+  results.sort((a: any, b: any) => {
+    const dateA = a.inwardDate || a.customerDate || '';
+    const dateB = b.inwardDate || b.customerDate || '';
+    return dateB.localeCompare(dateA);
+  });
+
+  return {
+    inwards: results.slice(0, pageSize),
+    totalCount: results.length
+  };
+});
+
+// Function 23: updateInwardDraft
+export const updateInwardDraft = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { inwardId, updates } = data || {};
+
+  if (!inwardId || !updates) {
+    throw new functions.https.HttpsError('invalid-argument', 'inwardId and updates are required.');
+  }
+
+  const inwardRef = db.collection('inward_entries').doc(inwardId);
+  const inwardSnap = await inwardRef.get();
+  if (!inwardSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Inward Receipt ${inwardId} not found.`);
+  }
+
+  const current = inwardSnap.data()!;
+  if (current.status !== 'draft') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Cannot edit inward receipt with status '${current.status}'. Only drafts can be modified.`
+    );
+  }
+
+  let userName = 'Authorized User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Authorized User';
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const cleanUpdates = {
+    ...updates,
+    updatedAt: now,
+    updatedBy: uid,
+    updatedByName: userName
+  };
+
+  delete cleanUpdates.inwardNo;
+  delete cleanUpdates.status;
+  delete cleanUpdates.createdAt;
+  delete cleanUpdates.createdBy;
+
+  const batch = db.batch();
+  batch.update(inwardRef, cleanUpdates);
+
+  if (updates.lines) {
+    for (const line of updates.lines) {
+      const lineRef = inwardRef.collection('lines').doc(line.inwardLineId || line.lineId);
+      batch.set(lineRef, { ...line, updatedAt: now }, { merge: true });
+    }
+  }
+
+  const auditRef = db.collection('inward_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    inwardId,
+    inwardNo: current.inwardNo,
+    action: 'updated',
+    performedBy: uid,
+    performedByName: userName,
+    performedAt: now,
+    changedFields: Object.keys(updates),
+    summary: `Inward draft ${current.inwardNo} updated.`
+  });
+
+  await batch.commit();
+
+  return { success: true, inwardId };
+});
+
+// Function 24: reverseInwardReceipt (Controlled Authorised Reversal)
+export const reverseInwardReceipt = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin', 'Manager']);
+  const { inwardId, reversalReason } = data || {};
+
+  if (!inwardId || !reversalReason || String(reversalReason).trim().length < 5) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'inwardId and a detailed reversalReason (at least 5 characters) are required.'
+    );
+  }
+
+  const inwardRef = db.collection('inward_entries').doc(inwardId);
+  const inwardSnap = await inwardRef.get();
+  if (!inwardSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Inward Receipt ${inwardId} not found.`);
+  }
+
+  const inwardData = inwardSnap.data()!;
+  if (inwardData.status !== 'posted') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Cannot reverse receipt with status '${inwardData.status}'. Only posted receipts can be reversed.`
+    );
+  }
+
+  const poId = inwardData.poId;
+
+  // OUTWARD DEPENDENCY SAFETY CHECK:
+  // Check if goods received in this inward have already been dispatched in Outward!
+  // Remaining Posted Inward after reversing this receipt must be >= Total Outward Dispatched!
+  const allPostedInwardsSnap = await db
+    .collection('inward_entries')
+    .where('poId', '==', poId)
+    .where('status', '==', 'posted')
+    .get();
+
+  const cumulativePostedMinusThis: Record<string, number> = {};
+  for (const doc of allPostedInwardsSnap.docs) {
+    if (doc.id === inwardId) continue;
+    const lines = doc.data().lines || [];
+    for (const l of lines) {
+      const lid = l.poLineId || l.lineId;
+      cumulativePostedMinusThis[lid] = (cumulativePostedMinusThis[lid] || 0) + (Number(l.receivedQty) || 0);
+    }
+  }
+
+  const outwardSnap = await db.collection('outwards').where('poId', '==', poId).get();
+  const cumulativeOutwardMap: Record<string, number> = {};
+  for (const doc of outwardSnap.docs) {
+    const lines = doc.data().lines || [];
+    for (const l of lines) {
+      const lid = l.poLineId || l.lineId;
+      cumulativeOutwardMap[lid] = (cumulativeOutwardMap[lid] || 0) + (Number(l.dispatchQty) || 0);
+    }
+  }
+
+  for (const thisLine of inwardData.lines || []) {
+    const lid = thisLine.poLineId || thisLine.lineId;
+    const remainingInward = cumulativePostedMinusThis[lid] || 0;
+    const dispatched = cumulativeOutwardMap[lid] || 0;
+    if (remainingInward < dispatched) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        `Cannot reverse Inward Receipt ${inwardData.inwardNo}: ${dispatched} units of '${thisLine.colourNameSnapshot || thisLine.colour}' have already been dispatched in Outward. Reversing this receipt would reduce available stock below dispatched quantity.`
+      );
+    }
+  }
+
+  let userName = 'Authorized User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Authorized User';
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const batch = db.batch();
+  batch.update(inwardRef, {
+    status: 'reversed',
+    reversedBy: uid,
+    reversedByName: userName,
+    reversedAt: now,
+    reversalReason: String(reversalReason).trim(),
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  // Re-evaluate PO status
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const totalRemainingInward = Object.values(cumulativePostedMinusThis).reduce((acc, v) => acc + v, 0);
+  const newPOStatus = totalRemainingInward > 0 ? 'partially_received' : 'approved';
+  batch.update(poRef, {
+    status: newPOStatus,
+    updatedAt: now,
+    updatedBy: uid
+  });
+
+  // Audit log
+  const auditRef = db.collection('inward_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    inwardId,
+    inwardNo: inwardData.inwardNo,
+    action: 'reversed',
+    performedBy: uid,
+    performedByName: userName,
+    performedAt: now,
+    summary: `Inward Receipt ${inwardData.inwardNo} reversed by ${userName}. Reason: ${reversalReason}. PO status reset to ${newPOStatus}.`
+  });
+
+  await batch.commit();
+
+  return { success: true, inwardId, status: 'reversed' };
+});
+
+// Function 25: deleteInwardReceipt (Admin Only)
+export const deleteInwardReceipt = functions.https.onCall(async (data, context) => {
+  const { uid } = await verifyRole(context, ['Admin']);
+  const { inwardId } = data || {};
+
+  if (!inwardId) {
+    throw new functions.https.HttpsError('invalid-argument', 'inwardId is required.');
+  }
+
+  const inwardRef = db.collection('inward_entries').doc(inwardId);
+  const inwardSnap = await inwardRef.get();
+  if (!inwardSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Inward Receipt ${inwardId} not found.`);
+  }
+
+  const inwardData = inwardSnap.data()!;
+  const poId = inwardData.poId;
+
+  // Delete subcollection lines
+  const linesSnap = await inwardRef.collection('lines').get();
+  const batch = db.batch();
+  for (const lineDoc of linesSnap.docs) {
+    batch.delete(lineDoc.ref);
+  }
+
+  // Delete inward header document
+  batch.delete(inwardRef);
+
+  // Recalculate remaining posted inward quantities for this PO to update PO status
+  const remainingInwardsSnap = await db
+    .collection('inward_entries')
+    .where('poId', '==', poId)
+    .where('status', '==', 'posted')
+    .get();
+
+  let hasRemainingPostedInward = false;
+  for (const doc of remainingInwardsSnap.docs) {
+    if (doc.id !== inwardId) {
+      hasRemainingPostedInward = true;
+      break;
+    }
+  }
+
+  const poRef = db.collection('purchase_orders').doc(poId);
+  const newStatus = hasRemainingPostedInward ? 'partially_received' : 'approved';
+  batch.update(poRef, {
+    status: newStatus,
+    updatedAt: admin.firestore.Timestamp.now(),
+    updatedBy: uid
+  });
+
+  // Record audit log
+  let userName = 'Admin User';
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (userDoc.exists) {
+    userName = userDoc.data()?.displayName || userDoc.data()?.name || 'Admin User';
+  }
+
+  const auditRef = db.collection('inward_audit_logs').doc();
+  batch.set(auditRef, {
+    auditId: auditRef.id,
+    inwardId,
+    inwardNo: inwardData.inwardNo || inwardId,
+    action: 'cancelled',
+    performedBy: uid,
+    performedByName: userName,
+    performedAt: admin.firestore.Timestamp.now(),
+    summary: `Inward Receipt ${inwardData.inwardNo || inwardId} deleted by Admin ${userName}.`
+  });
+
+  await batch.commit();
+
+  return { success: true, inwardId };
+});
+
 

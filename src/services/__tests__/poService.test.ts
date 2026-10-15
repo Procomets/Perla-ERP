@@ -237,8 +237,8 @@ export async function runPurchaseOrderTests() {
   );
 
   console.assert(
-    createdPO.poNumber.startsWith('PO/'),
-    `Expected PO number format starting with PO/, got ${createdPO.poNumber}`
+    createdPO.poNumber === 'PO/PENDING',
+    `Expected draft PO number to be PO/PENDING, got ${createdPO.poNumber}`
   );
   console.assert(
     createdPO.status === 'draft',
@@ -322,6 +322,10 @@ export async function runPurchaseOrderTests() {
     approvedPO.status === 'approved',
     `Expected approved status, got ${approvedPO.status}`
   );
+  console.assert(
+    approvedPO.poNumber !== 'PO/PENDING' && /^PO\/\d{4}-\d{2}\/\d{4}$/.test(approvedPO.poNumber),
+    `Expected approved PO to have generated sequential PO number (e.g. PO/YYYY-YY/XXXX), got ${approvedPO.poNumber}`
+  );
 
   // 7. PO Amendment Process for Approved PO
   console.log('Test 7: PO Amendments & Snapshot Versioning');
@@ -387,8 +391,8 @@ export async function runPurchaseOrderTests() {
     true
   );
   console.assert(
-    rejectedPO.status === 'rejected',
-    `Expected rejected status, got ${rejectedPO.status}`
+    rejectedPO.status === 'cancelled',
+    `Expected cancelled status, got ${rejectedPO.status}`
   );
   console.assert(
     rejectedPO.rejectionReason ===
