@@ -116,8 +116,8 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         setVendors(vResult.vendors);
       }
 
-      // 5. Fetch latest posted Inward receipts
-      const inwResult = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemoMode);
+      // 5. Fetch all Inward receipts
+      const inwResult = await InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode);
       if (inwResult.inwards && inwResult.inwards.length > 0) {
         setInwards(inwResult.inwards);
       }

@@ -42,41 +42,60 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   onCancel,
   isSaving
 }) => {
-  // Map of total cumulative inward received quantity by PO ID and PO Number
-  const poInwardQtyMap = useMemo(() => {
-    const map: Record<string, number> = {};
+  // Map of inward entries and received quantities by PO ID and PO Number
+  const poInwardInfo = useMemo(() => {
+    const qtyMap: Record<string, number> = {};
+    const countMap: Record<string, number> = {};
+
     for (const inw of inwards || []) {
-      if (inw.status && inw.status !== 'posted') continue;
-      let inwTotal = 0;
-      for (const line of inw.lines || []) {
-        inwTotal += Number(line.receivedQty) || 0;
+      // Do not count reversed or cancelled inward entries
+      if (inw.status === 'reversed' || inw.status === 'cancelled') continue;
+
+      let inwTotal = Number(inw.totalQuantity) || 0;
+      if (inwTotal === 0 && inw.lines && inw.lines.length > 0) {
+        for (const line of inw.lines) {
+          inwTotal += Number(line.receivedQty) || 0;
+        }
       }
-      if (inw.poId) {
-        map[inw.poId] = (map[inw.poId] || 0) + inwTotal;
-      }
-      if (inw.poNumberSnapshot || inw.poNumber) {
-        const num = inw.poNumberSnapshot || inw.poNumber || '';
-        map[num] = (map[num] || 0) + inwTotal;
+
+      const keys = [inw.poId, inw.poNumberSnapshot, inw.poNumber].filter(Boolean) as string[];
+      for (const k of keys) {
+        qtyMap[k] = (qtyMap[k] || 0) + inwTotal;
+        countMap[k] = (countMap[k] || 0) + 1;
       }
     }
-    return map;
+    return { qtyMap, countMap };
   }, [inwards]);
 
-  // Filter eligible POs: ONLY show POs that have existing inward received quantity > 0!
+  // Filter eligible POs:
+  // Must have at least 1 inward entry OR inward quantity > 0 OR PO status indicates inward received (partially_received or fully_received).
+  // NOTE: It is NOT mandatory to have Balance Qty = 0 (partially received POs are fully eligible!).
   const eligiblePos = useMemo(() => {
     return pos.filter((p) => {
       const s = String(p.status || '').toLowerCase();
       if (s === 'cancelled' || s === 'rejected') return false;
 
-      const inwQty =
-        (poInwardQtyMap[p.id] || 0) +
-        (poInwardQtyMap[p.poId || ''] || 0) +
-        (poInwardQtyMap[p.poNumber || ''] || 0);
+      // 1. Direct status check: PO has received at least 1 inward receipt
+      const hasReceivedStatus = s === 'partially_received' || s === 'fully_received';
 
-      // Must have existing inward received quantity
-      return inwQty > 0 || (initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId));
+      // 2. Count of inward receipts against this PO (at least 1 inward taken)
+      const inwardCount =
+        (poInwardInfo.countMap[p.id] || 0) +
+        (poInwardInfo.countMap[p.poId || ''] || 0) +
+        (poInwardInfo.countMap[p.poNumber || ''] || 0);
+
+      // 3. Total inward received quantity
+      const inwardQty =
+        (poInwardInfo.qtyMap[p.id] || 0) +
+        (poInwardInfo.qtyMap[p.poId || ''] || 0) +
+        (poInwardInfo.qtyMap[p.poNumber || ''] || 0);
+
+      // Show if at least 1 inward is there for the PO (Balance Qty = 0 is NOT mandatory)
+      const hasAtLeastOneInward = hasReceivedStatus || inwardCount > 0 || inwardQty > 0;
+
+      return hasAtLeastOneInward || (initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId));
     });
-  }, [pos, poInwardQtyMap, initialOutward]);
+  }, [pos, poInwardInfo, initialOutward]);
 
   // Active Customer vendors: ONLY show companies that have existing inward received quantity (at least one eligible PO with inward > 0)
   const eligibleCustomers = useMemo(() => {
@@ -154,8 +173,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
   // Find currently selected PO
   const activePo = useMemo(() => {
-    return eligiblePos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
-  }, [eligiblePos, selectedPoId]);
+    return eligiblePos.find((p) => p.id === selectedPoId || p.poId === selectedPoId) || pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
+  }, [eligiblePos, pos, selectedPoId]);
 
   // Find eligible subcontractors: ONLY show the selected parent's subcompany/subcontractor!
   const eligibleSubcontractors = useMemo(() => {
@@ -540,7 +559,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search by PO Number or Style No..."
             groups={poOptionGroups}
             onSelect={handleSelectPO}
-            helperText="Only shows POs with existing inward received quantity"
+            helperText="Shows POs with at least 1 inward (Balance Qty = 0 is not mandatory)"
           />
         </div>
 
