@@ -111,6 +111,33 @@ service cloud.firestore {
       allow update, delete: if false; // Immutable audit log
     }
 
+    // Outward Entries Collection
+    match /outward_entries/{outwardId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin(); // Admin only delete permission for drafts
+
+      // Subcollection: lines
+      match /lines/{lineId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthorizedUser();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Outward Counters
+    match /outward_counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthorizedUser();
+    }
+
+    // Outward Audit Logs (Immutable)
+    match /outward_audit_logs/{auditId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthorizedUser();
+      allow update, delete: if false; // Immutable audit log
+    }
+
     // Employee Master Collection
     match /employeeMaster/{empId} {
       allow read, create, update, delete: if isAuthenticated();

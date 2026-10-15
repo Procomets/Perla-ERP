@@ -35,12 +35,17 @@ export function calculateStatementSummaries(
         }
       });
 
-      // Calculate cumulative outward for this line
+      // Calculate cumulative outward for this line (posted entries only)
       let totalOutward = 0;
       outwards.forEach((outEntry) => {
-        if (outEntry.poId === po.id || outEntry.poNumber === po.poNumber) {
+        const isPosted = !outEntry.status || outEntry.status === 'posted';
+        if (isPosted && (outEntry.poId === po.id || outEntry.poNumber === po.poNumber)) {
           outEntry.lines.forEach((outLine) => {
-            if (outLine.poLineId === line.lineId || outLine.colour === line.colourName) {
+            if (
+              outLine.poLineId === line.lineId ||
+              outLine.colour === line.colourName ||
+              (outLine as any).colourNameSnapshot === line.colourName
+            ) {
               totalOutward += Number(outLine.dispatchQty) || 0;
             }
           });

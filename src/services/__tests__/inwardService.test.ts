@@ -345,10 +345,13 @@ export async function runInwardTests() {
   // Test 8: Statement Module Integration
   // ----------------------------------------------------
   console.log('\n[Test 8] Statement Module Integration & Draft/Reversal Exclusion');
-  const mockOutward: OutwardEntry[] = [
+  const mockOutward: any[] = [
     {
       id: 'out-1',
+      outwardId: 'out-1',
+      outwardNo: 'OUT/2026-27/001',
       entryId: 'OUT/2026-27/001',
+      status: 'posted',
       poId: testPO.id,
       poNumber: testPO.poNumber,
       styleNo: testPO.styleNo,

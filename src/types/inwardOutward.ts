@@ -1,31 +1,6 @@
 import { UnitType } from './po';
 export * from './inward';
-
-export interface OutwardLine {
-  lineId: string;
-  poLineId: string;
-  colour: string;
-  dispatchQty: number;
-  unit: UnitType;
-}
-
-export interface OutwardEntry {
-  id: string;
-  entryId: string;
-  poId: string;
-  poNumber: string;
-  styleNo: string;
-  customerId: string;
-  customerName: string;
-  subContractorId?: string;
-  subContractorName?: string;
-  ourDate: string;
-  ourDcNo: string;
-  vehicleNo?: string;
-  createdAt: string;
-  createdBy: string;
-  lines: OutwardLine[];
-}
+export * from './outward';
 
 export interface StatementColourSummary {
   poId: string;

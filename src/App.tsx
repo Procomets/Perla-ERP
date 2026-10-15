@@ -116,7 +116,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
             {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} />}
             {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} />}
-            {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} onAddOutward={props.onAddOutward} />}
+            {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} vendors={props.vendors} onAddOutward={props.onAddOutward} />}
             {moduleId === 'statement' && (
               <StatementPage
                 pos={props.pos}

@@ -103,6 +103,38 @@
         { "fieldPath": "inwardId", "order": "ASCENDING" },
         { "fieldPath": "performedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "outward_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "outwardDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "outward_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "poId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "outward_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerVendorId", "order": "ASCENDING" },
+        { "fieldPath": "outwardDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "outward_audit_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outwardId", "order": "ASCENDING" },
+        { "fieldPath": "performedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -2231,4 +2231,16 @@ export const deleteInwardReceipt = functions.https.onCall(async (data, context) 
   return { success: true, inwardId };
 });
 
+// Outward Entry Cloud Functions
+export {
+  getEligibleOutwardPurchaseOrders,
+  getOutwardBalances,
+  createOutwardDraft,
+  postOutwardEntry,
+  getOutwardEntry,
+  listOutwardEntries,
+  updateOutwardDraft,
+  reverseOutwardEntry
+} from './outwardFunctions';
+
 

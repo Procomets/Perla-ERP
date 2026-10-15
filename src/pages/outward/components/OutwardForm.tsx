@@ -1,0 +1,834 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { PurchaseOrder } from '../../../types/po';
+import { Vendor } from '../../../types/vendor';
+import { OutwardEntry, OutwardBalancesResponse } from '../../../types/outward';
+import { Button } from '../../../components/ui/Button';
+import { Input } from '../../../components/ui/Input';
+import { formatDate } from '../../../utils/formatters';
+import { OutwardService } from '../../../services/outwardService';
+import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/components/SearchableSelect';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  FileClock,
+  AlertTriangle,
+  Info,
+  Truck,
+  Building,
+  Layers,
+  Calendar,
+  FileText
+} from 'lucide-react';
+
+interface OutwardFormProps {
+  pos: PurchaseOrder[];
+  vendors: Vendor[];
+  initialOutward?: OutwardEntry | null;
+  onSaveDraft: (data: any) => Promise<void>;
+  onPostOutward: (data: any) => Promise<void>;
+  onCancel: () => void;
+  isSaving: boolean;
+}
+
+export const OutwardForm: React.FC<OutwardFormProps> = ({
+  pos,
+  vendors,
+  initialOutward,
+  onSaveDraft,
+  onPostOutward,
+  onCancel,
+  isSaving
+}) => {
+  // Filter eligible POs: exclude cancelled or rejected POs
+  const eligiblePos = useMemo(() => {
+    return pos.filter((p) => {
+      const s = String(p.status || '').toLowerCase();
+      return (
+        s !== 'cancelled' &&
+        s !== 'rejected'
+      );
+    });
+  }, [pos]);
+
+  // Active Customer selection
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
+    initialOutward?.customerVendorId || initialOutward?.customerId || ''
+  );
+
+  // Active PO selection
+  const [selectedPoId, setSelectedPoId] = useState<string>(
+    initialOutward?.poId || ''
+  );
+
+  // Active Subcontractor selection
+  const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string>(
+    initialOutward?.subcontractorVendorId || initialOutward?.subContractorId || ''
+  );
+
+  // Dispatch Details
+  const [outwardDate, setOutwardDate] = useState<string>(
+    initialOutward?.outwardDate || new Date().toISOString().split('T')[0]
+  );
+  const [ourDcNo, setOurDcNo] = useState<string>(
+    initialOutward?.ourDcNo || ''
+  );
+  const [vehicleNumber, setVehicleNumber] = useState<string>(
+    initialOutward?.vehicleNumber || initialOutward?.vehicleNo || ''
+  );
+  const [driverName, setDriverName] = useState<string>(
+    initialOutward?.driverName || ''
+  );
+  const [transporterVendorId, setTransporterVendorId] = useState<string>(
+    initialOutward?.transporterVendorId || ''
+  );
+  const [destination, setDestination] = useState<string>(
+    initialOutward?.destination || ''
+  );
+  const [remarks, setRemarks] = useState<string>(initialOutward?.remarks || '');
+
+  // Dispatch quantity map: { [poLineId]: number }
+  const [dispatchQtyMap, setDispatchQtyMap] = useState<Record<string, number>>({});
+
+  // Balances response
+  const [balances, setBalances] = useState<OutwardBalancesResponse | null>(null);
+  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Active customer vendors
+  const eligibleCustomers = useMemo(() => {
+    return vendors.filter((v) => v.vendorType === 'customer' || v.vendorType === 'both');
+  }, [vendors]);
+
+  // Active transporters
+  const eligibleTransporters = useMemo(() => {
+    return vendors.filter(
+      (v) =>
+        (v as any).vendorCategory === 'transport' ||
+        v.vendorType === 'supplier' ||
+        v.companyName.toLowerCase().includes('transport') ||
+        v.companyName.toLowerCase().includes('logistics')
+    );
+  }, [vendors]);
+
+  // Find currently selected PO
+  const activePo = useMemo(() => {
+    return pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
+  }, [pos, selectedPoId]);
+
+  // Find eligible subcontractors for the selected customer
+  const eligibleSubcontractors = useMemo(() => {
+    if (!selectedCustomerId) return [];
+    return vendors.filter(
+      (v) =>
+        v.parentVendorId === selectedCustomerId ||
+        (v.vendorCategory === 'subcontractor' || v.vendorCategory === 'subcompany')
+    );
+  }, [vendors, selectedCustomerId]);
+
+  // Generate default Our DC Number if empty
+  useEffect(() => {
+    if (!ourDcNo && !initialOutward) {
+      OutwardService.generateOurDcNumber(outwardDate).then((dc) => {
+        setOurDcNo(dc);
+      });
+    }
+  }, [outwardDate, initialOutward]);
+
+  // Load balances when active PO changes
+  useEffect(() => {
+    if (!selectedPoId) {
+      setBalances(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingBalances(true);
+
+    OutwardService.getOutwardBalances(selectedPoId, initialOutward?.id)
+      .then((res) => {
+        if (!isMounted) return;
+        setBalances(res);
+
+        // Prepopulate dispatch quantity from initial outward lines if editing
+        if (initialOutward?.lines && initialOutward.lines.length > 0) {
+          const map: Record<string, number> = {};
+          for (const l of initialOutward.lines) {
+            map[l.poLineId] = Number(l.dispatchQty) || 0;
+          }
+          setDispatchQtyMap(map);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load outward balances:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingBalances(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedPoId, initialOutward]);
+
+  // Customer dropdown groups
+  const customerOptionGroups: SelectOptionGroup[] = useMemo(() => {
+    const list: SelectOption[] = eligibleCustomers.map((c) => ({
+      id: c.id || c.vendorId || '',
+      primaryText: c.companyName,
+      secondaryText: c.vendorCode ? `Code: ${c.vendorCode}` : undefined,
+      badge: c.vendorType === 'both' ? 'Customer & Supplier' : 'Customer',
+      badgeVariant: 'blue',
+      meta: c
+    }));
+
+    return [{ options: list }];
+  }, [eligibleCustomers]);
+
+  // PO dropdown groups with cross-company discovery
+  const poOptionGroups: SelectOptionGroup[] = useMemo(() => {
+    const matchingCurrentCustomer: SelectOption[] = [];
+    const otherCustomers: SelectOption[] = [];
+
+    for (const p of eligiblePos) {
+      const isCurrentCustomer =
+        selectedCustomerId &&
+        (p.customerId === selectedCustomerId || p.customerVendorId === selectedCustomerId);
+
+      const option: SelectOption = {
+        id: p.id,
+        primaryText: p.poNumber,
+        secondaryText: `Style: ${p.styleNo || 'N/A'} • ${p.itemName || 'Garment'} • ${p.customerName || 'Customer'}`,
+        badge: isCurrentCustomer ? 'Current Customer' : p.customerName || 'Other Company',
+        badgeVariant: isCurrentCustomer ? 'emerald' : 'slate',
+        meta: p
+      };
+
+      if (isCurrentCustomer) {
+        matchingCurrentCustomer.push(option);
+      } else {
+        otherCustomers.push(option);
+      }
+    }
+
+    const groups: SelectOptionGroup[] = [];
+    if (matchingCurrentCustomer.length > 0) {
+      groups.push({
+        title: 'Purchase Orders For Selected Company',
+        isHighlighted: true,
+        options: matchingCurrentCustomer
+      });
+    }
+
+    if (otherCustomers.length > 0) {
+      groups.push({
+        title: selectedCustomerId
+          ? 'Purchase Orders From Other Companies (Auto-Switches Company)'
+          : 'All Available Purchase Orders',
+        options: otherCustomers
+      });
+    }
+
+    return groups;
+  }, [eligiblePos, selectedCustomerId]);
+
+  const handleSelectCustomer = (opt: SelectOption) => {
+    setSelectedCustomerId(opt.id);
+    setSelectedSubcontractorId('');
+    if (activePo && activePo.customerId !== opt.id && activePo.customerVendorId !== opt.id) {
+      setSelectedPoId('');
+      setDispatchQtyMap({});
+    }
+    setValidationError(null);
+  };
+
+  const handleSelectPO = (opt: SelectOption) => {
+    const po = opt.meta as PurchaseOrder;
+    if (po) {
+      setSelectedPoId(po.id);
+      if (po.customerId && po.customerId !== selectedCustomerId) {
+        setSelectedCustomerId(po.customerId);
+        setSelectedSubcontractorId('');
+      }
+      setDispatchQtyMap({});
+      setValidationError(null);
+    }
+  };
+
+  const handleDispatchQtyChange = (poLineId: string, value: string) => {
+    const numericValue = value === '' ? 0 : Number(value);
+    if (isNaN(numericValue) || numericValue < 0) return;
+
+    setDispatchQtyMap((prev) => ({
+      ...prev,
+      [poLineId]: numericValue
+    }));
+    setValidationError(null);
+  };
+
+  // Calculate live totals grouped strictly by Unit
+  const liveTotals = useMemo(() => {
+    let pieceDispatched = 0;
+    let kgDispatched = 0;
+    let totalAvailablePieces = 0;
+    let totalAvailableKg = 0;
+
+    if (activePo && balances) {
+      for (const poLine of activePo.lines || []) {
+        const lineId = poLine.lineId;
+        const lineBal = balances.lines[lineId];
+        const disp = Number(dispatchQtyMap[lineId]) || 0;
+        const avail = lineBal ? lineBal.availableForDispatch : 0;
+
+        if (poLine.unit === 'kg') {
+          kgDispatched += disp;
+          totalAvailableKg += avail;
+        } else {
+          pieceDispatched += disp;
+          totalAvailablePieces += avail;
+        }
+      }
+    }
+
+    return {
+      pieceDispatched,
+      kgDispatched: Math.round(kgDispatched * 100) / 100,
+      totalAvailablePieces,
+      totalAvailableKg: Math.round(totalAvailableKg * 100) / 100
+    };
+  }, [activePo, balances, dispatchQtyMap]);
+
+  // Prepare payload
+  const preparePayload = () => {
+    if (!selectedCustomerId) {
+      throw new Error('Please select a Customer / Company.');
+    }
+    if (!selectedPoId || !activePo) {
+      throw new Error('Please select an eligible Purchase Order.');
+    }
+    if (!outwardDate) {
+      throw new Error('Please enter the Outward Dispatch Date.');
+    }
+    if (!ourDcNo.trim()) {
+      throw new Error('Please enter Our Delivery Challan Number.');
+    }
+
+    const lines = (activePo.lines || []).map((poLine) => {
+      const lineBal = balances?.lines[poLine.lineId];
+      const cumInw = lineBal ? lineBal.cumulativeInwardQty : 0;
+      const prevOut = lineBal ? lineBal.cumulativeOutwardQty : 0;
+      const avail = Math.max(0, cumInw - prevOut);
+      const disp = Number(dispatchQtyMap[poLine.lineId]) || 0;
+      const rem = Math.max(0, avail - disp);
+
+      return {
+        poLineId: poLine.lineId,
+        colourNameSnapshot: poLine.colourName,
+        colourCodeSnapshot: poLine.colourCode || null,
+        itemNameSnapshot: activePo.itemName || 'Garments',
+        washTypeSnapshot: poLine.processType || 'Standard Wash',
+        orderedQtySnapshot: Number(poLine.quantity) || 0,
+        unit: poLine.unit || 'piece',
+        cumulativeInwardQtySnapshot: cumInw,
+        previouslyDispatchedQtySnapshot: prevOut,
+        availableForDispatchSnapshot: avail,
+        dispatchQty: disp,
+        remainingAfterDispatchSnapshot: rem
+      };
+    });
+
+    return {
+      customerVendorId: selectedCustomerId,
+      subcontractorVendorId: selectedSubcontractorId || null,
+      poId: selectedPoId,
+      outwardDate,
+      ourDcNo: ourDcNo.trim(),
+      vehicleNumber: vehicleNumber.trim() || undefined,
+      driverName: driverName.trim() || undefined,
+      transporterVendorId: transporterVendorId || null,
+      destination: destination.trim() || undefined,
+      remarks: remarks.trim() || undefined,
+      lines
+    };
+  };
+
+  const handleSaveDraftClick = async () => {
+    try {
+      setValidationError(null);
+      const data = preparePayload();
+      await onSaveDraft(data);
+    } catch (err: any) {
+      setValidationError(err.message || 'Failed to save draft outward entry.');
+    }
+  };
+
+  const handlePostClick = async () => {
+    try {
+      setValidationError(null);
+      const data = preparePayload();
+
+      // Rule 1: Positive dispatch check
+      const hasPositive = data.lines.some((l) => l.dispatchQty > 0);
+      if (!hasPositive) {
+        throw new Error('At least one colour line must have a dispatch quantity greater than 0 before posting.');
+      }
+
+      // Rule 2: Cannot exceed available inward balance
+      for (const line of data.lines) {
+        if (line.dispatchQty > line.availableForDispatchSnapshot) {
+          throw new Error(
+            `Cannot dispatch ${line.dispatchQty} ${line.unit} for "${line.colourNameSnapshot}". Available received balance is only ${line.availableForDispatchSnapshot} ${line.unit}.`
+          );
+        }
+      }
+
+      await onPostOutward(data);
+    } catch (err: any) {
+      setValidationError(err.message || 'Failed to post outward entry.');
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onCancel}
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">
+              {initialOutward ? `Edit Outward Dispatch (${initialOutward.outwardNo})` : 'New Outward Dispatch Entry'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              Record colour-wise dispatches validated against posted received inward balance
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSaveDraftClick}
+            disabled={isSaving}
+            className="text-xs flex items-center gap-1.5 border-slate-300"
+          >
+            <FileClock className="w-3.5 h-3.5" />
+            Save Draft
+          </Button>
+          <Button
+            size="sm"
+            onClick={handlePostClick}
+            disabled={isSaving}
+            className="bg-[#1F4E79] hover:bg-[#163858] text-white text-xs flex items-center gap-1.5 font-semibold"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Validation Alert */}
+      {validationError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3 text-rose-800 text-xs">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Validation Error</p>
+            <p className="mt-0.5 text-rose-700">{validationError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Section 1: Customer & Purchase Order Selection (Relative container to allow dropdown popups) */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-6 relative z-30">
+        <div className="border-b border-slate-100 pb-3 flex items-center gap-2">
+          <Building className="w-4 h-4 text-[#1F4E79]" />
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+            1. Customer & Purchase Order Selection
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Company / Customer */}
+          <SearchableSelect
+            label="Customer / Company"
+            required
+            value={selectedCustomerId}
+            placeholder="Select customer company..."
+            searchPlaceholder="Search customer by name or code..."
+            groups={customerOptionGroups}
+            onSelect={handleSelectCustomer}
+            helperText="Matches active customer vendor records"
+          />
+
+          {/* Subcontractor / Subcompany */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Subcontractor / Subcompany (Optional)
+            </label>
+            <select
+              value={selectedSubcontractorId}
+              onChange={(e) => setSelectedSubcontractorId(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            >
+              <option value="">Direct Dispatch to Customer</option>
+              {eligibleSubcontractors.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.companyName} {sub.vendorCategory ? `(${sub.vendorCategory})` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">If dispatched via a subcontractor unit</p>
+          </div>
+
+          {/* Purchase Order Selection */}
+          <SearchableSelect
+            label="Purchase Order"
+            required
+            value={selectedPoId}
+            placeholder="Select purchase order..."
+            searchPlaceholder="Search by PO Number or Style No..."
+            groups={poOptionGroups}
+            onSelect={handleSelectPO}
+            helperText="Supports PO number, style number & cross-company discovery"
+          />
+        </div>
+
+        {/* PO Read-Only Snapshot Banner */}
+        {activePo && (
+          <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div>
+              <p className="text-slate-400 font-medium">Style Number</p>
+              <p className="font-bold text-slate-900 mt-0.5">{activePo.styleNo || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-slate-400 font-medium">Item Name</p>
+              <p className="font-semibold text-slate-900 mt-0.5">{activePo.itemName || 'Garments'}</p>
+            </div>
+            <div>
+              <p className="text-slate-400 font-medium">Process Category</p>
+              <p className="font-semibold uppercase text-slate-900 mt-0.5">
+                {activePo.processCategory || 'washing'}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400 font-medium">Order Date</p>
+              <p className="font-semibold text-slate-900 mt-0.5">{formatDate(activePo.orderDate)}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Section 2: Delivery Challan & Logistics Information */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-6">
+        <div className="border-b border-slate-100 pb-3 flex items-center gap-2">
+          <Truck className="w-4 h-4 text-[#1F4E79]" />
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+            2. Delivery Challan & Logistics Details
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Outward Dispatch Date */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Outward Dispatch Date <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="date"
+              value={outwardDate}
+              onChange={(e) => setOutwardDate(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Date when garments leave factory</p>
+          </div>
+
+          {/* Our DC Number */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Our DC Number <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. DC-PERLA-1041"
+              value={ourDcNo}
+              onChange={(e) => setOurDcNo(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Internal Delivery Challan Reference</p>
+          </div>
+
+          {/* Vehicle Number */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Vehicle Number (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. TN-22-BA-4512"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Vehicle used for transport</p>
+          </div>
+
+          {/* Driver Name */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Driver Name (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Murugan K."
+              value={driverName}
+              onChange={(e) => setDriverName(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            />
+          </div>
+
+          {/* Transporter / Vendor */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Transporter / Vendor (Optional)
+            </label>
+            <select
+              value={transporterVendorId}
+              onChange={(e) => setTransporterVendorId(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            >
+              <option value="">In-House / Customer Logistics</option>
+              {eligibleTransporters.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.companyName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dispatch Destination */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Dispatch Destination (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Thirumudivakkam to Ambattur"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            />
+          </div>
+        </div>
+
+        {/* Remarks */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Dispatch Remarks / Quality Notes (Optional)
+          </label>
+          <textarea
+            rows={2}
+            placeholder="Add any specific delivery instructions, carton count, or inspection remarks..."
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+          />
+        </div>
+      </div>
+
+      {/* Section 3: Colour-Wise Outward Quantity Table */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-[#1F4E79]" />
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              3. Colour-Wise Outward Quantity Breakdown
+            </h3>
+          </div>
+
+          {/* Summary Badges */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 bg-slate-100 rounded-lg font-medium text-slate-700">
+              Total Dispatch:{' '}
+              <strong className="text-slate-900">
+                {liveTotals.pieceDispatched.toLocaleString()} pcs
+              </strong>
+              {liveTotals.kgDispatched > 0 && (
+                <strong className="text-amber-800 ml-1.5">
+                  / {liveTotals.kgDispatched.toLocaleString()} kg
+                </strong>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {!activePo ? (
+          <div className="p-8 text-center text-xs text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+            Please select a Purchase Order above to load its colour lines and available inward quantities.
+          </div>
+        ) : isLoadingBalances ? (
+          <div className="p-8 text-center text-xs text-slate-400">Loading inward & outward balances...</div>
+        ) : !activePo.lines || activePo.lines.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400">
+            No colour lines found on Purchase Order {activePo.poNumber}.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100/80 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                  <th className="p-2.5 border border-slate-200 text-center w-12">S.No.</th>
+                  <th className="p-2.5 border border-slate-200 min-w-[150px]">Colour</th>
+                  <th className="p-2.5 border border-slate-200">Process</th>
+                  <th className="p-2.5 border border-slate-200 text-right">Ordered Qty</th>
+                  <th className="p-2.5 border border-slate-200 text-center w-16">Unit</th>
+                  <th className="p-2.5 border border-slate-200 text-right">Total Inward</th>
+                  <th className="p-2.5 border border-slate-200 text-right">Prev Dispatched</th>
+                  <th className="p-2.5 border border-slate-200 text-right bg-emerald-50/50 text-emerald-900 font-bold">Available Qty</th>
+                  <th className="p-2.5 border border-slate-200 text-right bg-blue-50/60 text-blue-900 font-bold w-36">Current Dispatch</th>
+                  <th className="p-2.5 border border-slate-200 text-right w-28">Remaining</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {activePo.lines.map((poLine, idx) => {
+                  const lineBal = balances?.lines[poLine.lineId];
+                  const orderedQty = Number(poLine.quantity) || 0;
+                  const cumInward = lineBal ? lineBal.cumulativeInwardQty : 0;
+                  const prevOutward = lineBal ? lineBal.cumulativeOutwardQty : 0;
+                  const available = Math.max(0, cumInward - prevOutward);
+
+                  const dispatchQty = Number(dispatchQtyMap[poLine.lineId]) || 0;
+                  const remaining = Math.max(0, available - dispatchQty);
+                  const isOverDispatch = dispatchQty > available;
+
+                  return (
+                    <tr
+                      key={poLine.lineId}
+                      className={`hover:bg-slate-50/60 transition-colors ${
+                        isOverDispatch ? 'bg-rose-50/40' : ''
+                      }`}
+                    >
+                      {/* S.No */}
+                      <td className="p-2.5 border border-slate-200 text-center text-slate-500 font-medium">
+                        {idx + 1}
+                      </td>
+
+                      {/* Colour */}
+                      <td className="p-2.5 border border-slate-200 font-semibold text-slate-900">
+                        {poLine.colourName}
+                        {poLine.colourCode && (
+                          <span className="block text-[11px] text-slate-400 font-normal">
+                            Code: {poLine.colourCode}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Process */}
+                      <td className="p-2.5 border border-slate-200 text-slate-600">
+                        {poLine.processType || 'Standard Wash'}
+                      </td>
+
+                      {/* Ordered Qty */}
+                      <td className="p-2.5 border border-slate-200 text-right font-medium text-slate-700">
+                        {orderedQty.toLocaleString()}
+                      </td>
+
+                      {/* Unit */}
+                      <td className="p-2.5 border border-slate-200 text-center text-slate-500 font-medium uppercase text-[10px]">
+                        {poLine.unit}
+                      </td>
+
+                      {/* Total Inward */}
+                      <td className="p-2.5 border border-slate-200 text-right font-medium text-slate-700">
+                        {cumInward.toLocaleString()}
+                      </td>
+
+                      {/* Previously Dispatched */}
+                      <td className="p-2.5 border border-slate-200 text-right text-slate-500">
+                        {prevOutward.toLocaleString()}
+                      </td>
+
+                      {/* Available Qty */}
+                      <td className="p-2.5 border border-slate-200 text-right font-bold text-emerald-700 bg-emerald-50/30">
+                        {available.toLocaleString()}
+                      </td>
+
+                      {/* Current Dispatch Input */}
+                      <td className="p-2 border border-slate-200 bg-blue-50/30">
+                        <input
+                          type="number"
+                          min="0"
+                          max={available}
+                          step={poLine.unit === 'kg' ? '0.01' : '1'}
+                          placeholder="0"
+                          value={dispatchQtyMap[poLine.lineId] ?? ''}
+                          onChange={(e) => handleDispatchQtyChange(poLine.lineId, e.target.value)}
+                          disabled={available <= 0}
+                          className={`w-full text-right p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-1 ${
+                            isOverDispatch
+                              ? 'border-rose-400 text-rose-700 bg-rose-50 focus:ring-rose-500'
+                              : available <= 0
+                              ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'border-slate-300 text-slate-900 bg-white focus:ring-[#1F4E79]'
+                          }`}
+                        />
+                        {isOverDispatch && (
+                          <span className="block text-[10px] text-rose-600 font-semibold text-right mt-0.5">
+                            Exceeds available!
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Remaining After Dispatch */}
+                      <td
+                        className={`p-2.5 border border-slate-200 text-right font-semibold ${
+                          remaining === 0 && available > 0
+                            ? 'text-emerald-700'
+                            : 'text-[#1F4E79]'
+                        }`}
+                      >
+                        {remaining.toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Action Buttons */}
+      <div className="flex justify-end items-center gap-3 pt-2">
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
+          Cancel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSaveDraftClick}
+          disabled={isSaving}
+          className="text-xs flex items-center gap-1.5 border-slate-300"
+        >
+          <FileClock className="w-3.5 h-3.5" />
+          Save Draft
+        </Button>
+        <Button
+          size="sm"
+          onClick={handlePostClick}
+          disabled={isSaving}
+          className="bg-[#1F4E79] hover:bg-[#163858] text-white text-xs flex items-center gap-1.5 font-semibold shadow-2xs"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
+        </Button>
+      </div>
+    </div>
+  );
+};

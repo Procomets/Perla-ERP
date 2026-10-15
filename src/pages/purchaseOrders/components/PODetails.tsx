@@ -109,9 +109,11 @@ export const PODetails: React.FC<PODetailsProps> = ({
 
   let totalDispatchedQty = 0;
   linkedOutwards.forEach((outE) => {
-    outE.lines.forEach((l) => {
-      totalDispatchedQty += Number(l.dispatchQty) || 0;
-    });
+    if (!outE.status || outE.status === 'posted') {
+      outE.lines.forEach((l) => {
+        totalDispatchedQty += Number(l.dispatchQty) || 0;
+      });
+    }
   });
 
   // Check if inward has been taken against this PO
@@ -781,7 +783,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
                             {outE.vehicleNo || '-'}
                           </td>
                           <td className="py-3 px-4 text-slate-600">
-                            {formatDate(outE.ourDate)}
+                            {formatDate(outE.outwardDate || outE.ourDate || '')}
                           </td>
                           <td className="py-3 px-4 text-right font-black text-blue-700">
                             {formatQuantity(totalOutward, outE.lines[0]?.unit || 'piece')}
