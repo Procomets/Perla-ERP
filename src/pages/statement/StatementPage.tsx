@@ -1,97 +1,369 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PurchaseOrder } from '../../types/po';
-import { InwardEntry, OutwardEntry, StatementColourSummary } from '../../types/inwardOutward';
-import { calculateStatementSummaries } from '../../utils/calculations';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { Table, Column } from '../../components/ui/Table';
-import { StatusChip } from '../../components/ui/StatusChip';
-import { formatCurrency, formatQuantity } from '../../utils/formatters';
-import { Scale, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Vendor } from '../../types/vendor';
+import { InwardEntry, OutwardEntry } from '../../types/inwardOutward';
+import {
+  StatementDataResponse,
+  InvoiceHistoryItem
+} from '../../types/statement';
+import { StatementService } from '../../services/statementService';
+import { StatementFilters } from './components/StatementFilters';
+import { StatementLedgerTable } from './components/StatementLedgerTable';
+import { ColourReconciliationStrip } from './components/ColourReconciliationStrip';
+import { InvoiceHistoryTable } from './components/InvoiceHistoryTable';
+import { useAuth } from '../../context/AuthContext';
+import { Scale, History, Building2, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface StatementPageProps {
-  pos: PurchaseOrder[];
-  inwards: InwardEntry[];
-  outwards: OutwardEntry[];
-  approvedPoLineIds: string[];
-  invoicedPoLineIds: string[];
-  onApproveForInvoice: (poLineId: string) => void;
+  pos?: PurchaseOrder[];
+  inwards?: InwardEntry[];
+  outwards?: OutwardEntry[];
+  approvedPoLineIds?: string[];
+  invoicedPoLineIds?: string[];
+  onApproveForInvoice?: (poLineId: string) => void;
 }
 
 export const StatementPage: React.FC<StatementPageProps> = ({
-  pos,
-  inwards,
-  outwards,
-  approvedPoLineIds,
-  invoicedPoLineIds,
+  approvedPoLineIds = [],
+  invoicedPoLineIds = [],
   onApproveForInvoice
 }) => {
-  const summaries = calculateStatementSummaries(pos, inwards, outwards, approvedPoLineIds, invoicedPoLineIds);
+  const { user, isDemoMode, activeRole } = useAuth();
+  const canManage = activeRole === 'Admin' || activeRole === 'Manager';
 
-  const columns: Column<StatementColourSummary>[] = [
-    { header: 'PO Number', accessor: 'poNumber', className: 'font-bold text-[#1F4E79]' },
-    { header: 'Style Number', accessor: 'styleNo' },
-    { header: 'Colour Line', accessor: 'colour', className: 'font-bold' },
-    { header: 'Process', accessor: 'processType' },
-    { header: 'Total Inward', accessor: (row) => formatQuantity(row.cumulativeInward, row.unit) },
-    { header: 'Total Outward', accessor: (row) => formatQuantity(row.cumulativeOutward, row.unit) },
-    {
-      header: 'Difference',
-      accessor: (row) => (
-        <span className={`font-bold ${row.difference === 0 && row.cumulativeInward > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-          {formatQuantity(row.difference, row.unit)}
-        </span>
-      )
-    },
-    {
-      header: 'Reconciliation Status',
-      accessor: (row) => {
-        if (row.isInvoiced) return <StatusChip status="Invoiced" variant="slate" />;
-        if (row.isApprovedForInvoice) return <StatusChip status="Approved for Invoice" variant="green" />;
-        if (row.isReadyForInvoice) return <StatusChip status="Ready for Invoice" variant="green" />;
-        return <StatusChip status="In Progress" variant="amber" />;
-      }
-    },
-    {
-      header: 'Action',
-      accessor: (row) => {
-        if (row.isInvoiced) {
-          return <span className="text-[10px] text-slate-400 font-semibold uppercase">Billed</span>;
+  // Navigation tab: Active Statement vs Invoice History
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+
+  // Filter Selection States
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [selectedStyleNo, setSelectedStyleNo] = useState<string>('all');
+  const [selectedItemName, setSelectedItemName] = useState<string>('all');
+  const [selectedPoId, setSelectedPoId] = useState<string>('all');
+
+  // Filter Options
+  const [companies, setCompanies] = useState<Vendor[]>([]);
+  const [styles, setStyles] = useState<string[]>([]);
+  const [items, setItems] = useState<string[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<
+    { id: string; poNumber: string; styleNo: string; itemName: string }[]
+  >([]);
+
+  // Statement Data States
+  const [statementData, setStatementData] = useState<StatementDataResponse | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isApproving, setIsApproving] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Invoice History States
+  const [invoiceHistory, setInvoiceHistory] = useState<InvoiceHistoryItem[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+
+  // 1. Initial Load: Filter Options for Companies
+  useEffect(() => {
+    StatementService.getFilterOptions(undefined, isDemoMode)
+      .then((res) => {
+        setCompanies(res.companies);
+        // Pre-select first company if available to facilitate immediate inspection
+        if (res.companies.length > 0 && !selectedCompanyId) {
+          setSelectedCompanyId(res.companies[0].id || res.companies[0].vendorId || '');
         }
-        if (row.isApprovedForInvoice) {
-          return <span className="text-xs font-bold text-emerald-700 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Approved</span>;
-        }
-        if (row.isReadyForInvoice) {
-          return (
-            <Button
-              size="sm"
-              variant="success"
-              icon={<CheckCircle2 className="w-3.5 h-3.5" />}
-              onClick={() => onApproveForInvoice(row.poLineId)}
-            >
-              Approve to Invoice
-            </Button>
-          );
-        }
-        return <span className="text-xs text-slate-400 font-medium">Awaiting Dispatch</span>;
-      }
+      })
+      .catch((err) => {
+        console.error('Failed to load companies:', err);
+      });
+  }, [isDemoMode]);
+
+  // 2. Cascade load styles, items, and POs when Company changes
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setStyles([]);
+      setItems([]);
+      setPurchaseOrders([]);
+      setStatementData(null);
+      return;
     }
-  ];
+
+    StatementService.getFilterOptions(selectedCompanyId, isDemoMode)
+      .then((res) => {
+        setStyles(res.styles);
+        setItems(res.items);
+        setPurchaseOrders(res.purchaseOrders);
+      })
+      .catch((err) => {
+        console.error('Failed to load company cascade filters:', err);
+      });
+  }, [selectedCompanyId, isDemoMode]);
+
+  // 3. Load Statement Data when filters change
+  const loadStatement = async () => {
+    if (!selectedCompanyId) {
+      setStatementData(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const selectedPO = purchaseOrders.find((p) => p.id === selectedPoId);
+      const data = await StatementService.getStatementData(
+        {
+          companyId: selectedCompanyId,
+          styleNo: selectedStyleNo,
+          itemName: selectedItemName,
+          poId: selectedPoId === 'all' ? undefined : selectedPoId,
+          poNumber: selectedPO?.poNumber
+        },
+        isDemoMode
+      );
+      setStatementData(data);
+    } catch (err: any) {
+      console.error('Failed to generate statement:', err);
+      setError(err.message || 'Failed to generate statement.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStatement();
+  }, [selectedCompanyId, selectedStyleNo, selectedItemName, selectedPoId, isDemoMode]);
+
+  // 4. Load Invoice History
+  const loadInvoiceHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const history = await StatementService.getInvoiceHistory(
+        selectedCompanyId || undefined,
+        isDemoMode
+      );
+      setInvoiceHistory(history);
+    } catch (err) {
+      console.error('Failed to load invoice history:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadInvoiceHistory();
+    }
+  }, [activeTab, selectedCompanyId, isDemoMode]);
+
+  // Filter Reset Handler
+  const handleResetFilters = () => {
+    setSelectedStyleNo('all');
+    setSelectedItemName('all');
+    setSelectedPoId('all');
+  };
+
+  // Explicit Invoice Approval Handler
+  const handleApproveLine = async (poId: string, poLineId: string) => {
+    if (!canManage) {
+      alert('Only Admin and Manager roles are authorized to approve colour lines for invoicing.');
+      return;
+    }
+
+    setIsApproving(true);
+    try {
+      const activeUser = {
+        uid: user?.uid || 'admin-user',
+        displayName: user?.displayName || user?.email?.split('@')[0] || 'Authorized User'
+      };
+
+      await StatementService.approveStatementLineForInvoice(
+        {
+          poId,
+          poLineId,
+          companyId: selectedCompanyId
+        },
+        activeUser,
+        isDemoMode
+      );
+
+      // Trigger callback to parent if supplied
+      if (onApproveForInvoice) {
+        onApproveForInvoice(poLineId);
+      }
+
+      // Refresh statement data to update badges and readiness
+      await loadStatement();
+    } catch (err: any) {
+      throw err;
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // Export CSV Handler
+  const handleExportCsv = () => {
+    if (!statementData) return;
+    try {
+      const csvContent = StatementService.exportStatementToCsv(statementData);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeCompany = statementData.companyName.replace(/[^a-zA-Z0-9]/g, '_');
+      link.setAttribute('href', url);
+      link.setAttribute(
+        'download',
+        `Perla_Statement_${safeCompany}_${new Date().toISOString().split('T')[0]}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to export statement:', err);
+      alert('Failed to generate export file.');
+    }
+  };
+
+  const selectedCompany = companies.find(
+    (c) => c.id === selectedCompanyId || c.vendorId === selectedCompanyId
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-        <h2 className="text-xl font-bold text-[#1F4E79] flex items-center gap-2">
-          <Scale className="w-5 h-5" /> Inward vs Outward Reconciliation Statement
-        </h2>
-        <p className="text-xs text-slate-500">
-          Colour-wise audit ledger. A colour line becomes eligible for invoice approval when total inward quantity equals total outward dispatch quantity.
-        </p>
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* Top Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-[#1F4E79] tracking-tight">Statement</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+              Reconciliation Ledger
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Complete inward and outward transaction audit ledger for customer styles and purchase orders.
+          </p>
+        </div>
+
+        {/* View Switcher Tabs: Active Statement vs Invoice History */}
+        <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200 text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('active')}
+            className={`px-4 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'active'
+                ? 'bg-white text-[#1F4E79] shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Scale className="w-4 h-4 text-[#1F4E79]" />
+            Active Statement
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('history')}
+            className={`px-4 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'history'
+                ? 'bg-white text-[#1F4E79] shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4 text-[#1F4E79]" />
+            Invoice History
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <Table columns={columns} data={summaries} keyExtractor={(row) => `${row.poId}-${row.poLineId}`} />
-      </Card>
+      {/* Top Filter Ribbon (Visible in both views) */}
+      <StatementFilters
+        companies={companies}
+        selectedCompanyId={selectedCompanyId}
+        onSelectCompany={(cid) => {
+          setSelectedCompanyId(cid);
+          setSelectedStyleNo('all');
+          setSelectedItemName('all');
+          setSelectedPoId('all');
+        }}
+        styles={styles}
+        selectedStyleNo={selectedStyleNo}
+        onSelectStyle={setSelectedStyleNo}
+        items={items}
+        selectedItemName={selectedItemName}
+        onSelectItem={setSelectedItemName}
+        purchaseOrders={purchaseOrders}
+        selectedPoId={selectedPoId}
+        onSelectPo={(poId, styleNo) => {
+          setSelectedPoId(poId);
+          if (styleNo) setSelectedStyleNo(styleNo);
+          else if (poId === 'all') setSelectedStyleNo('all');
+        }}
+        onReset={handleResetFilters}
+        onRefresh={loadStatement}
+        onExportCsv={handleExportCsv}
+        isLoading={isLoading}
+        hasData={Boolean(statementData && statementData.hasTransactions)}
+      />
+
+      {/* Error Banner */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-3 shadow-2xs">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+          <div className="flex-1 font-medium">{error}</div>
+          <button
+            onClick={loadStatement}
+            className="text-xs font-bold underline hover:text-rose-950 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* View 1: Active Statement */}
+      {activeTab === 'active' && (
+        <>
+          {!selectedCompanyId ? (
+            <div className="p-16 text-center bg-white rounded-xl border border-dashed border-slate-300 shadow-2xs space-y-3">
+              <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-800">
+                Please select a Customer Company above
+              </h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Select a customer company from the dropdown to load its styles, purchase orders, and side-by-side reconciliation statement.
+              </p>
+            </div>
+          ) : isLoading ? (
+            <div className="p-16 text-center bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="w-8 h-8 border-3 border-[#1F4E79] border-t-transparent rounded-full animate-spin mx-auto"></div>
+              <p className="text-xs text-slate-500 font-semibold">
+                Loading side-by-side reconciliation statement...
+              </p>
+            </div>
+          ) : statementData ? (
+            <div className="space-y-6">
+              {/* 1. Colour-Wise Statement & Invoice Readiness Strip */}
+              <ColourReconciliationStrip
+                colourLines={statementData.colourLines}
+                companyName={statementData.companyName}
+                onApproveLine={handleApproveLine}
+                isApproving={isApproving}
+              />
+
+              {/* 2. Side-by-Side Inward vs Outward Main Ledger Table (Follows reference drawing) */}
+              <StatementLedgerTable
+                inwards={statementData.inwards}
+                outwards={statementData.outwards}
+                unitTotals={statementData.unitTotals}
+                companyName={statementData.companyName}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {/* View 2: Invoice History */}
+      {activeTab === 'history' && (
+        <InvoiceHistoryTable
+          historyItems={invoiceHistory}
+          companyName={selectedCompany?.companyName}
+          onRefresh={loadInvoiceHistory}
+          isLoading={isLoadingHistory}
+        />
+      )}
     </div>
   );
 };

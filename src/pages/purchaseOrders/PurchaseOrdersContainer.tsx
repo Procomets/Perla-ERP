@@ -11,11 +11,14 @@ import { Vendor } from '../../types/vendor';
 import { InwardEntry, OutwardEntry } from '../../types/inwardOutward';
 import { POService } from '../../services/poService';
 import { VendorService } from '../../services/vendorService';
+import { InwardService } from '../../services/inwardService';
+import { OutwardService } from '../../services/outwardService';
 import { POList } from './components/POList';
 import { POForm } from './components/POForm';
 import { PODetails } from './components/PODetails';
 import { POPrintView } from './components/POPrintView';
 import { useAuth } from '../../context/AuthContext';
+import { hasInwardForPO } from '../../utils/calculations';
 
 interface PurchaseOrdersContainerProps {
   initialPOs?: PurchaseOrder[];
@@ -48,6 +51,8 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   // Data States
   const [pos, setPos] = useState<PurchaseOrder[]>(initialPOs || []);
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors || []);
+  const [inwardsList, setInwardsList] = useState<InwardEntry[]>(inwards);
+  const [outwardsList, setOutwardsList] = useState<OutwardEntry[]>(outwards);
   const [pagination, setPagination] = useState<POPagination>({
     page: 1,
     pageSize: 10,
@@ -85,7 +90,6 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
       setPos(poResult.pos);
       setPagination(poResult.pagination);
 
-
       // Load latest live Vendors from Vendor Master
       const vResult = await VendorService.getVendors(
         {},
@@ -94,6 +98,26 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
       );
       if (vResult.vendors && vResult.vendors.length > 0) {
         setVendors(vResult.vendors);
+      }
+
+      // Load latest live Inward receipts
+      const inwResult = await InwardService.getInwardEntries(
+        {},
+        { page: 1, pageSize: 1000 },
+        isDemoMode
+      );
+      if (inwResult.inwards && inwResult.inwards.length > 0) {
+        setInwardsList(inwResult.inwards);
+      }
+
+      // Load latest live Outward dispatches
+      const outResult = await OutwardService.getOutwardEntries(
+        {},
+        { page: 1, pageSize: 1000 },
+        isDemoMode
+      );
+      if (outResult.outwards && outResult.outwards.length > 0) {
+        setOutwardsList(outResult.outwards);
       }
     } catch (err) {
       console.error('Error loading PO data:', err);
@@ -111,6 +135,18 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
     const details = await POService.getPurchaseOrderById(poId, isDemoMode);
     setSelectedPoDetails(details);
     setSelectedPoId(poId);
+
+    // Refresh downstream transactions for this PO view
+    try {
+      const [inwRes, outRes] = await Promise.all([
+        InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode),
+        OutwardService.getOutwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode)
+      ]);
+      if (inwRes.inwards && inwRes.inwards.length > 0) setInwardsList(inwRes.inwards);
+      if (outRes.outwards && outRes.outwards.length > 0) setOutwardsList(outRes.outwards);
+    } catch (e) {
+      console.warn('Failed to refresh downstream records:', e);
+    }
   };
 
   // Handlers for Views
@@ -120,6 +156,11 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   };
 
   const handleEditPO = async (poId: string) => {
+    const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    if (targetPo && hasInwardForPO(targetPo, inwardsList) && !isAdmin) {
+      alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
+      return;
+    }
     await loadSinglePO(poId);
     setCurrentView('edit');
   };
@@ -138,12 +179,19 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
     try {
       const activeUser = {
         uid: user?.uid || 'user-101',
-        displayName: user?.displayName || 'Authorized User'
+        displayName: user?.displayName || 'Authorized User',
+        role: activeRole || (user as any)?.role || (isAdmin ? 'Admin' : 'User')
       };
 
       const resolvedStatus = targetStatus as POStatus;
 
       if (currentView === 'edit' && selectedPoId) {
+        const targetPo = selectedPoDetails.po || pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
+        if (targetPo && hasInwardForPO(targetPo, inwardsList) && !isAdmin) {
+          alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
+          return;
+        }
+
         await POService.updatePurchaseOrder(
           selectedPoId,
           { ...poData, status: resolvedStatus },
@@ -262,9 +310,15 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
       alert('Only administrators can delete purchase orders.');
       return;
     }
+    const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    if (targetPo && hasInwardForPO(targetPo, inwardsList)) {
+      alert(`Cannot delete Purchase Order ${targetPo.poNumber || ''}: Inward entries have already been entered for this PO.`);
+      return;
+    }
     const activeUser = {
       uid: user?.uid || 'user-101',
-      displayName: user?.displayName || 'Admin User'
+      displayName: user?.displayName || 'Admin User',
+      role: activeRole || (user as any)?.role || 'Admin'
     };
     try {
       await POService.deletePurchaseOrder(poId, activeUser, isDemoMode);
@@ -294,6 +348,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           <POList
             pos={pos}
             vendors={vendors}
+            inwards={inwardsList}
             pagination={pagination}
             filters={filters}
             onFilterChange={(newFilters) => setFilters(newFilters)}
@@ -321,6 +376,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         <POForm
           initialPO={currentView === 'edit' ? selectedPoDetails.po : null}
           vendors={vendors}
+          inwards={inwardsList}
           onSave={handleSavePO}
           onCancel={() => setCurrentView('list')}
           isSaving={isSaving}
@@ -335,8 +391,8 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           customer={selectedCustomer}
           logs={selectedPoDetails.logs}
           amendments={selectedPoDetails.amendments}
-          inwards={inwards}
-          outwards={outwards}
+          inwards={inwardsList}
+          outwards={outwardsList}
           onBack={() => setCurrentView('list')}
           onEdit={() => setCurrentView('edit')}
           onSubmit={() => handleSubmitPO(selectedPoDetails.po!.id)}

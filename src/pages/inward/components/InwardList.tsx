@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { InwardEntry, InwardFilterOptions, InwardPagination } from '../../../types/inward';
 import { Vendor } from '../../../types/vendor';
 import { PurchaseOrder } from '../../../types/po';
@@ -7,7 +7,21 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+
+export type InwardSortField =
+  | 'inwardNo'
+  | 'inwardDate'
+  | 'customerDcNo'
+  | 'customerName'
+  | 'poNumber'
+  | 'orderedQty'
+  | 'previousQty'
+  | 'receivedQty'
+  | 'balanceQty'
+  | 'status';
+
+export type SortDirection = 'asc' | 'desc' | null;
 
 interface InwardListProps {
   inwards: InwardEntry[];
@@ -55,6 +69,25 @@ export const InwardList: React.FC<InwardListProps> = ({
     bottom?: number;
     left: number;
   } | null>(null);
+
+  // 3-State Column Sorting (asc -> desc -> unsort/desort)
+  const [sortField, setSortField] = useState<InwardSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: InwardSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else if (sortDirection === 'desc') {
+      setSortField(null);
+      setSortDirection(null);
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
 
   const handleMouseEnter = (
     e: React.MouseEvent<HTMLElement>,
@@ -175,6 +208,133 @@ export const InwardList: React.FC<InwardListProps> = ({
         ))}
       </div>
     );
+  };
+
+  const sortedInwards = useMemo(() => {
+    if (!sortField || !sortDirection) {
+      return inwards;
+    }
+
+    const mult = sortDirection === 'desc' ? -1 : 1;
+    return [...inwards].sort((a, b) => {
+      const qA = getQuantitySummaries(a);
+      const qB = getQuantitySummaries(b);
+
+      switch (sortField) {
+        case 'inwardNo':
+          return (
+            (a.inwardNo || a.entryId || '').localeCompare(b.inwardNo || b.entryId || '', undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            }) * mult
+          );
+        case 'inwardDate': {
+          const dateA = a.inwardDate || a.customerDate ? new Date(a.inwardDate || a.customerDate).getTime() : 0;
+          const dateB = b.inwardDate || b.customerDate ? new Date(b.inwardDate || b.customerDate).getTime() : 0;
+          return (dateA - dateB) * mult;
+        }
+        case 'customerDcNo':
+          return (a.customerDcNo || '').localeCompare(b.customerDcNo || '', undefined, {
+            numeric: true,
+            sensitivity: 'base'
+          }) * mult;
+        case 'customerName': {
+          const nameA = a.customerCompanyNameSnapshot || a.customerName || '';
+          const nameB = b.customerCompanyNameSnapshot || b.customerName || '';
+          return nameA.localeCompare(nameB) * mult;
+        }
+        case 'poNumber': {
+          const poA = a.poNumberSnapshot || a.poNumber || '';
+          const poB = b.poNumberSnapshot || b.poNumber || '';
+          return poA.localeCompare(poB, undefined, { numeric: true, sensitivity: 'base' }) * mult;
+        }
+        case 'orderedQty': {
+          const totA = qA.ordered.piece + qA.ordered.kg;
+          const totB = qB.ordered.piece + qB.ordered.kg;
+          return (totA - totB) * mult;
+        }
+        case 'previousQty': {
+          const totA = qA.prev.piece + qA.prev.kg;
+          const totB = qB.prev.piece + qB.prev.kg;
+          return (totA - totB) * mult;
+        }
+        case 'receivedQty': {
+          const totA = qA.received.piece + qA.received.kg || Number(a.totalQuantity) || 0;
+          const totB = qB.received.piece + qB.received.kg || Number(b.totalQuantity) || 0;
+          return (totA - totB) * mult;
+        }
+        case 'balanceQty': {
+          const totA = qA.balance.piece + qA.balance.kg;
+          const totB = qB.balance.piece + qB.balance.kg;
+          return (totA - totB) * mult;
+        }
+        case 'status':
+          return (a.status || '').localeCompare(b.status || '') * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [inwards, sortField, sortDirection]);
+
+  const renderSortIcon = (field: InwardSortField) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
+            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+      if (sortDirection === 'desc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
+            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+    }
+    return (
+      <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+        <ArrowUpDown className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
+      </span>
+    );
+  };
+
+  const getSortTooltip = (field: InwardSortField, label: string) => {
+    if (sortField !== field || !sortDirection) {
+      return `Click to sort ${label} ascending`;
+    }
+    if (sortDirection === 'asc') {
+      return `Currently sorted ascending. Click to sort descending`;
+    }
+    return `Currently sorted descending. Click to desort`;
+  };
+
+  const getSortColumnLabel = (field: InwardSortField) => {
+    switch (field) {
+      case 'inwardNo':
+        return 'Inward Number';
+      case 'inwardDate':
+        return 'Receipt Date';
+      case 'customerDcNo':
+        return 'Customer DC Number';
+      case 'customerName':
+        return 'Customer / Company';
+      case 'poNumber':
+        return 'PO Number';
+      case 'orderedQty':
+        return 'PO Order Qty';
+      case 'previousQty':
+        return 'Previous Received Qty';
+      case 'receivedQty':
+        return 'Received Qty';
+      case 'balanceQty':
+        return 'Balance Qty';
+      case 'status':
+        return 'Status';
+      default:
+        return '';
+    }
   };
 
   return (
@@ -311,25 +471,178 @@ export const InwardList: React.FC<InwardListProps> = ({
           </div>
         ) : (
           <div>
+            {/* Active Sort / Desort Banner */}
+            {sortField && sortDirection && (
+              <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">
+                    Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortField(null);
+                    setSortDirection(null);
+                  }}
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                  title="Reset to default order"
+                >
+                  Clear / Desort
+                </button>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse border border-slate-300">
                 <thead className="bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
                   <tr>
-                    <th className="p-2.5 border border-slate-300">Inward Number</th>
-                    <th className="p-2.5 border border-slate-300 text-center whitespace-nowrap">Receipt Date</th>
-                    <th className="p-2.5 border border-slate-300">Customer DC Number</th>
-                    <th className="p-2.5 border border-slate-300 min-w-[260px] w-72">Customer / Company</th>
-                    <th className="p-2.5 border border-slate-300 min-w-[170px]">PO Number</th>
-                    <th className="p-2.5 border border-slate-300 text-right">PO Order Qty</th>
-                    <th className="p-2.5 border border-slate-300 text-right">Previous Received Qty</th>
-                    <th className="p-2.5 border border-slate-300 text-right bg-blue-50/50">Received Qty</th>
-                    <th className="p-2.5 border border-slate-300 text-right">Balance Qty</th>
-                    <th className="p-2.5 border border-slate-300 text-center">Status</th>
-                    <th className="p-2.5 border border-slate-300 text-center w-36">Actions</th>
+                    {/* 1. Inward Number */}
+                    <th
+                      className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'inwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('inwardNo')}
+                      title={getSortTooltip('inwardNo', 'Inward Number')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Inward Number</span>
+                        {renderSortIcon('inwardNo')}
+                      </div>
+                    </th>
+
+                    {/* 2. Receipt Date */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'inwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('inwardDate')}
+                      title={getSortTooltip('inwardDate', 'Receipt Date')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <span>Receipt Date</span>
+                        {renderSortIcon('inwardDate')}
+                      </div>
+                    </th>
+
+                    {/* 3. Customer DC Number */}
+                    <th
+                      className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'customerDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('customerDcNo')}
+                      title={getSortTooltip('customerDcNo', 'Customer DC Number')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Customer DC Number</span>
+                        {renderSortIcon('customerDcNo')}
+                      </div>
+                    </th>
+
+                    {/* 4. Customer / Company */}
+                    <th
+                      className={`p-2.5 border border-slate-300 min-w-[260px] w-72 cursor-pointer select-none transition-colors group ${
+                        sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('customerName')}
+                      title={getSortTooltip('customerName', 'Customer / Company')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Customer / Company</span>
+                        {renderSortIcon('customerName')}
+                      </div>
+                    </th>
+
+                    {/* 5. PO Number */}
+                    <th
+                      className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('poNumber')}
+                      title={getSortTooltip('poNumber', 'PO Number')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>PO Number</span>
+                        {renderSortIcon('poNumber')}
+                      </div>
+                    </th>
+
+                    {/* 6. PO Order Qty */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'orderedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('orderedQty')}
+                      title={getSortTooltip('orderedQty', 'PO Order Qty')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>PO Order Qty</span>
+                        {renderSortIcon('orderedQty')}
+                      </div>
+                    </th>
+
+                    {/* 7. Previous Received Qty */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'previousQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('previousQty')}
+                      title={getSortTooltip('previousQty', 'Previous Received Qty')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Previous Received Qty</span>
+                        {renderSortIcon('previousQty')}
+                      </div>
+                    </th>
+
+                    {/* 8. Received Qty */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-right bg-blue-50/50 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'receivedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('receivedQty')}
+                      title={getSortTooltip('receivedQty', 'Received Qty')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Received Qty</span>
+                        {renderSortIcon('receivedQty')}
+                      </div>
+                    </th>
+
+                    {/* 9. Balance Qty */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'balanceQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('balanceQty')}
+                      title={getSortTooltip('balanceQty', 'Balance Qty')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Balance Qty</span>
+                        {renderSortIcon('balanceQty')}
+                      </div>
+                    </th>
+
+                    {/* 10. Status */}
+                    <th
+                      className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('status')}
+                      title={getSortTooltip('status', 'Status')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <span>Status</span>
+                        {renderSortIcon('status')}
+                      </div>
+                    </th>
+
+                    {/* 11. Actions */}
+                    <th className="p-2.5 border border-slate-300 text-center w-36 whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-medium">
-                  {inwards.map((row) => {
+                  {sortedInwards.map((row) => {
                     const q = getQuantitySummaries(row);
 
                     return (

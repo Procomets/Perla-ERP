@@ -2243,4 +2243,23 @@ export {
   reverseOutwardEntry
 } from './outwardFunctions';
 
+// Statement Module Cloud Functions
+export {
+  getStatementFilters,
+  getStatementData,
+  getStatementColourSummary,
+  approveStatementLineForInvoice,
+  getStatementInvoiceHistory,
+  exportStatement
+} from './statementFunctions';
+
+// Invoice Module Cloud Functions
+export {
+  getInvoiceEligibleLines,
+  createInvoiceDraft,
+  finalizeInvoice,
+  cancelInvoice,
+  getInvoiceHistory
+} from './invoiceFunctions';
+
 

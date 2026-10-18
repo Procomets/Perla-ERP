@@ -15,7 +15,8 @@ import {
   Palette,
   Network,
   X,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { ColourItem } from '../../../types/colourMaster';
@@ -31,6 +32,7 @@ import {
   RateBasis
 } from '../../../types/po';
 import { Vendor } from '../../../types/vendor';
+import { InwardEntry } from '../../../types/inwardOutward';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import {
@@ -39,10 +41,12 @@ import {
   purchaseOrderFormSchema
 } from '../../../schemas/poSchema';
 import { formatCurrency, formatQuantity } from '../../../utils/formatters';
+import { hasInwardForPO } from '../../../utils/calculations';
 
 interface POFormProps {
   initialPO?: PurchaseOrder | null;
   vendors: Vendor[];
+  inwards?: InwardEntry[];
   onSave: (
     poData: Partial<PurchaseOrder>,
     status: 'draft' | 'approved' | string
@@ -55,6 +59,7 @@ interface POFormProps {
 export const POForm: React.FC<POFormProps> = ({
   initialPO,
   vendors,
+  inwards = [],
   onSave,
   onCancel,
   isSaving,
@@ -66,6 +71,7 @@ export const POForm: React.FC<POFormProps> = ({
     (activeRole === 'Admin' ||
       (user as any)?.role === 'Admin' ||
       (user as any)?.role === 'admin');
+  const hasInward = initialPO ? hasInwardForPO(initialPO, inwards) : false;
   const [allVendors, setAllVendors] = useState<Vendor[]>(() => {
     return (vendors || []).map((v) => ({
       ...v,
@@ -576,6 +582,11 @@ export const POForm: React.FC<POFormProps> = ({
   const handleSubmit = async (targetStatus: 'draft' | 'submitted' | string) => {
     setValidationErrors([]);
 
+    if (hasInward && !isUserAdmin) {
+      alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
+      return;
+    }
+
     const payload = {
       customerId: selectedCustomerId,
       customerCode: selectedCustomer?.vendorCode || '',
@@ -653,11 +664,13 @@ export const POForm: React.FC<POFormProps> = ({
             <Button
               variant="primary"
               size="sm"
-              icon={<Save className="w-4 h-4" />}
-              onClick={() => handleSubmit(initialPO.status === 'approved' ? 'approved' : 'draft')}
-              disabled={isSaving}
+              icon={hasInward && !isUserAdmin ? <Lock className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              onClick={() => handleSubmit(initialPO.status || 'draft')}
+              disabled={isSaving || (hasInward && !isUserAdmin)}
+              title={hasInward && !isUserAdmin ? 'Inward has been entered. Only Admin can edit this PO.' : undefined}
+              className={hasInward && !isUserAdmin ? 'opacity-60 cursor-not-allowed bg-slate-600 hover:bg-slate-600' : undefined}
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving...' : hasInward && !isUserAdmin ? 'Admin Edit Only' : 'Save Changes'}
             </Button>
           ) : isUserAdmin ? (
             <>
@@ -694,6 +707,21 @@ export const POForm: React.FC<POFormProps> = ({
           )}
         </div>
       </div>
+
+      {/* Inward Restriction Notice */}
+      {hasInward && !isUserAdmin && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3 text-amber-900 shadow-2xs">
+          <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800 shrink-0">
+            <Lock className="w-5 h-5 text-amber-700" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-amber-950">Editing Restricted (Administrator Only)</h4>
+            <p className="text-xs text-amber-800 mt-0.5">
+              Inward receipts/entries have already been entered for this Purchase Order. Once an inward is entered, this PO can only be edited by an Administrator.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Validation Errors Alert */}
       {validationErrors.length > 0 && (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { OutwardEntry, OutwardFilterOptions, OutwardPagination } from '../../../types/outward';
 import { Vendor } from '../../../types/vendor';
 import { PurchaseOrder } from '../../../types/po';
@@ -7,7 +7,22 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+
+export type OutwardSortField =
+  | 'outwardNo'
+  | 'outwardDate'
+  | 'ourDcNo'
+  | 'customerName'
+  | 'poNumber'
+  | 'poQty'
+  | 'totalInward'
+  | 'prevDispatched'
+  | 'thisDispatch'
+  | 'balanceAfter'
+  | 'status';
+
+export type SortDirection = 'asc' | 'desc' | null;
 
 interface OutwardListProps {
   outwards: OutwardEntry[];
@@ -57,6 +72,25 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     bottom?: number;
     left: number;
   } | null>(null);
+
+  // 3-State Column Sorting (asc -> desc -> unsort/desort)
+  const [sortField, setSortField] = useState<OutwardSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: OutwardSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else if (sortDirection === 'desc') {
+      setSortField(null);
+      setSortDirection(null);
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
 
   const handleMouseEnter = (
     e: React.MouseEvent<HTMLElement>,
@@ -186,6 +220,140 @@ export const OutwardList: React.FC<OutwardListProps> = ({
       );
     }
     return <div className={`flex flex-col items-end gap-0.5 text-xs ${colorClass}`}>{parts}</div>;
+  };
+
+  const sortedOutwards = useMemo(() => {
+    if (!sortField || !sortDirection) {
+      return outwards;
+    }
+
+    const mult = sortDirection === 'desc' ? -1 : 1;
+    return [...outwards].sort((a, b) => {
+      const qA = getQuantitySummaries(a);
+      const qB = getQuantitySummaries(b);
+
+      switch (sortField) {
+        case 'outwardNo':
+          return (
+            (a.outwardNo || a.entryId || '').localeCompare(b.outwardNo || b.entryId || '', undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            }) * mult
+          );
+        case 'outwardDate': {
+          const dateA = a.outwardDate ? new Date(a.outwardDate).getTime() : 0;
+          const dateB = b.outwardDate ? new Date(b.outwardDate).getTime() : 0;
+          return (dateA - dateB) * mult;
+        }
+        case 'ourDcNo':
+          return (a.ourDcNo || '').localeCompare(b.ourDcNo || '', undefined, {
+            numeric: true,
+            sensitivity: 'base'
+          }) * mult;
+        case 'customerName': {
+          const nameA = a.customerCompanyNameSnapshot || a.customerName || '';
+          const nameB = b.customerCompanyNameSnapshot || b.customerName || '';
+          return nameA.localeCompare(nameB) * mult;
+        }
+        case 'poNumber': {
+          const poA = `${a.poNumberSnapshot || a.poNumber || ''} ${a.styleNoSnapshot || a.styleNo || ''}`;
+          const poB = `${b.poNumberSnapshot || b.poNumber || ''} ${b.styleNoSnapshot || b.styleNo || ''}`;
+          return poA.localeCompare(poB, undefined, { numeric: true, sensitivity: 'base' }) * mult;
+        }
+        case 'poQty': {
+          const totA = qA.ordered.piece + qA.ordered.kg;
+          const totB = qB.ordered.piece + qB.ordered.kg;
+          return (totA - totB) * mult;
+        }
+        case 'totalInward': {
+          const totA = qA.inward.piece + qA.inward.kg;
+          const totB = qB.inward.piece + qB.inward.kg;
+          return (totA - totB) * mult;
+        }
+        case 'prevDispatched': {
+          const totA = qA.prevOutward.piece + qA.prevOutward.kg;
+          const totB = qB.prevOutward.piece + qB.prevOutward.kg;
+          return (totA - totB) * mult;
+        }
+        case 'thisDispatch': {
+          const totA = qA.dispatched.piece + qA.dispatched.kg || Number(a.totalQuantity) || 0;
+          const totB = qB.dispatched.piece + qB.dispatched.kg || Number(b.totalQuantity) || 0;
+          return (totA - totB) * mult;
+        }
+        case 'balanceAfter': {
+          const totA = qA.remaining.piece + qA.remaining.kg;
+          const totB = qB.remaining.piece + qB.remaining.kg;
+          return (totA - totB) * mult;
+        }
+        case 'status':
+          return (a.status || '').localeCompare(b.status || '') * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [outwards, sortField, sortDirection]);
+
+  const renderSortIcon = (field: OutwardSortField) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
+            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+      if (sortDirection === 'desc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
+            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+    }
+    return (
+      <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+        <ArrowUpDown className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
+      </span>
+    );
+  };
+
+  const getSortTooltip = (field: OutwardSortField, label: string) => {
+    if (sortField !== field || !sortDirection) {
+      return `Click to sort ${label} ascending`;
+    }
+    if (sortDirection === 'asc') {
+      return `Currently sorted ascending. Click to sort descending`;
+    }
+    return `Currently sorted descending. Click to desort`;
+  };
+
+  const getSortColumnLabel = (field: OutwardSortField) => {
+    switch (field) {
+      case 'outwardNo':
+        return 'Outward No';
+      case 'outwardDate':
+        return 'Dispatch Date';
+      case 'ourDcNo':
+        return 'Our DC Number';
+      case 'customerName':
+        return 'Customer / Company';
+      case 'poNumber':
+        return 'PO & Style';
+      case 'poQty':
+        return 'PO Qty';
+      case 'totalInward':
+        return 'Total Inward';
+      case 'prevDispatched':
+        return 'Prev Dispatched';
+      case 'thisDispatch':
+        return 'This DC Dispatch';
+      case 'balanceAfter':
+        return 'Balance After';
+      case 'status':
+        return 'Status';
+      default:
+        return '';
+    }
   };
 
   return (
@@ -328,26 +496,192 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           </div>
         ) : (
           <div className="flex flex-col">
+            {/* Active Sort / Desort Banner */}
+            {sortField && sortDirection && (
+              <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">
+                    Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortField(null);
+                    setSortDirection(null);
+                  }}
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                  title="Reset to default order"
+                >
+                  Clear / Desort
+                </button>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                    <th className="p-2.5 border border-slate-200 whitespace-nowrap">Outward No</th>
-                    <th className="p-2.5 border border-slate-200 whitespace-nowrap">Dispatch Date</th>
-                    <th className="p-2.5 border border-slate-200 whitespace-nowrap">Our DC Number</th>
-                    <th className="p-2.5 border border-slate-200 min-w-[240px]">Customer / Company</th>
-                    <th className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">PO & Style</th>
-                    <th className="p-2.5 border border-slate-200 text-right whitespace-nowrap">PO Qty</th>
-                    <th className="p-2.5 border border-slate-200 text-right whitespace-nowrap">Total Inward</th>
-                    <th className="p-2.5 border border-slate-200 text-right whitespace-nowrap">Prev Dispatched</th>
-                    <th className="p-2.5 border border-slate-200 text-right whitespace-nowrap bg-blue-50/40 text-blue-900">This DC Dispatch</th>
-                    <th className="p-2.5 border border-slate-200 text-right whitespace-nowrap">Balance After</th>
-                    <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap">Status</th>
+                  <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
+                    {/* 1. Outward No */}
+                    <th
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'outwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('outwardNo')}
+                      title={getSortTooltip('outwardNo', 'Outward No')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Outward No</span>
+                        {renderSortIcon('outwardNo')}
+                      </div>
+                    </th>
+
+                    {/* 2. Dispatch Date */}
+                    <th
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'outwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('outwardDate')}
+                      title={getSortTooltip('outwardDate', 'Dispatch Date')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Dispatch Date</span>
+                        {renderSortIcon('outwardDate')}
+                      </div>
+                    </th>
+
+                    {/* 3. Our DC Number */}
+                    <th
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'ourDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('ourDcNo')}
+                      title={getSortTooltip('ourDcNo', 'Our DC Number')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Our DC Number</span>
+                        {renderSortIcon('ourDcNo')}
+                      </div>
+                    </th>
+
+                    {/* 4. Customer / Company */}
+                    <th
+                      className={`p-2.5 border border-slate-200 min-w-[240px] cursor-pointer select-none transition-colors group ${
+                        sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('customerName')}
+                      title={getSortTooltip('customerName', 'Customer / Company')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>Customer / Company</span>
+                        {renderSortIcon('customerName')}
+                      </div>
+                    </th>
+
+                    {/* 5. PO & Style */}
+                    <th
+                      className={`p-2.5 border border-slate-200 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('poNumber')}
+                      title={getSortTooltip('poNumber', 'PO & Style')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-start">
+                        <span>PO & Style</span>
+                        {renderSortIcon('poNumber')}
+                      </div>
+                    </th>
+
+                    {/* 6. PO Qty */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'poQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('poQty')}
+                      title={getSortTooltip('poQty', 'PO Qty')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>PO Qty</span>
+                        {renderSortIcon('poQty')}
+                      </div>
+                    </th>
+
+                    {/* 7. Total Inward */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'totalInward' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('totalInward')}
+                      title={getSortTooltip('totalInward', 'Total Inward')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Total Inward</span>
+                        {renderSortIcon('totalInward')}
+                      </div>
+                    </th>
+
+                    {/* 8. Prev Dispatched */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'prevDispatched' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('prevDispatched')}
+                      title={getSortTooltip('prevDispatched', 'Prev Dispatched')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Prev Dispatched</span>
+                        {renderSortIcon('prevDispatched')}
+                      </div>
+                    </th>
+
+                    {/* 9. This DC Dispatch */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap bg-blue-50/40 text-blue-900 ${
+                        sortField === 'thisDispatch' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('thisDispatch')}
+                      title={getSortTooltip('thisDispatch', 'This DC Dispatch')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>This DC Dispatch</span>
+                        {renderSortIcon('thisDispatch')}
+                      </div>
+                    </th>
+
+                    {/* 10. Balance After */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'balanceAfter' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('balanceAfter')}
+                      title={getSortTooltip('balanceAfter', 'Balance After')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span>Balance After</span>
+                        {renderSortIcon('balanceAfter')}
+                      </div>
+                    </th>
+
+                    {/* 11. Status */}
+                    <th
+                      className={`p-2.5 border border-slate-200 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                        sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                      }`}
+                      onClick={() => handleSort('status')}
+                      title={getSortTooltip('status', 'Status')}
+                    >
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <span>Status</span>
+                        {renderSortIcon('status')}
+                      </div>
+                    </th>
+
+                    {/* 12. Actions */}
                     <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {outwards.map((row) => {
+                  {sortedOutwards.map((row) => {
                     const q = getQuantitySummaries(row);
 
                     return (
@@ -447,7 +781,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                           )}
                         </td>
 
-                        {/* 12. Actions: Clean text buttons */}
+                        {/* 12. Actions: Clean text buttons matching Inward (View, Edit, Delete, Print) */}
                         <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
@@ -457,7 +791,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                               View
                             </button>
 
-                            {canManage && row.status === 'draft' && (
+                            {canManage && (
                               <button
                                 onClick={() => onEdit(row.outwardId || row.id)}
                                 className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
@@ -466,21 +800,12 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                               </button>
                             )}
 
-                            {isAdmin && row.status === 'draft' && (
+                            {isAdmin && (
                               <button
                                 onClick={() => setDeleteTargetOutward(row)}
                                 className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
                               >
                                 Delete
-                              </button>
-                            )}
-
-                            {canManage && row.status === 'posted' && (
-                              <button
-                                onClick={() => onReverse(row.outwardId || row.id)}
-                                className="px-2 py-1 text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded transition-colors"
-                              >
-                                Reverse
                               </button>
                             )}
 
@@ -614,41 +939,49 @@ export const OutwardList: React.FC<OutwardListProps> = ({
         </div>
       )}
 
-      {/* Delete Draft Confirmation Modal */}
-      {deleteTargetOutward && (
-        <Modal
-          isOpen={true}
-          onClose={() => setDeleteTargetOutward(null)}
-          title="Delete Draft Outward Dispatch"
-        >
-          <div className="space-y-4 text-xs">
-            <p className="text-slate-600">
-              Are you sure you want to delete draft outward{' '}
-              <strong className="text-slate-900">{deleteTargetOutward.outwardNo}</strong>? This action
-              cannot be undone.
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deleteTargetOutward}
+        onClose={() => setDeleteTargetOutward(null)}
+        title="Confirm Outward Dispatch Deletion"
+        maxWidth="sm"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 space-y-1">
+            <p className="font-bold">Are you sure you want to delete this Outward Dispatch?</p>
+            <p className="font-mono font-bold text-rose-700">
+              {deleteTargetOutward?.outwardNo || deleteTargetOutward?.entryId}
             </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDeleteTargetOutward(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="bg-rose-600 hover:bg-rose-700 text-white"
-                onClick={() => {
+            <p className="text-[11px] text-rose-600">
+              This action is restricted to Administrators only. Deleting this record will remove it
+              from the system and re-calculate outward dispatch balances.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTargetOutward(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="bg-rose-700 hover:bg-rose-800 text-white"
+              onClick={() => {
+                if (deleteTargetOutward) {
                   onDelete(deleteTargetOutward.outwardId || deleteTargetOutward.id);
                   setDeleteTargetOutward(null);
-                }}
-              >
-                Delete Draft
-              </Button>
-            </div>
+                }
+              }}
+            >
+              Delete Outward Dispatch
+            </Button>
           </div>
-        </Modal>
-      )}
+        </div>
+      </Modal>
     </div>
   );
 };

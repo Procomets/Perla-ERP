@@ -43,13 +43,14 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   isSaving
 }) => {
   // Map of inward entries and received quantities by PO ID and PO Number
+  // Map of inward entries and received quantities by PO ID and PO Number (ONLY POSTED inwards represent physically received inventory)
   const poInwardInfo = useMemo(() => {
     const qtyMap: Record<string, number> = {};
     const countMap: Record<string, number> = {};
 
     for (const inw of inwards || []) {
-      // Do not count reversed or cancelled inward entries
-      if (inw.status === 'reversed' || inw.status === 'cancelled') continue;
+      // Strictly only count POSTED inward receipts! Draft, reversed, or cancelled cannot be dispatched
+      if (inw.status !== 'posted') continue;
 
       let inwTotal = Number(inw.totalQuantity) || 0;
       if (inwTotal === 0 && inw.lines && inw.lines.length > 0) {
@@ -58,7 +59,15 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
         }
       }
 
-      const keys = [inw.poId, inw.poNumberSnapshot, inw.poNumber].filter(Boolean) as string[];
+      const keys = [
+        inw.poId,
+        inw.poNumberSnapshot,
+        inw.poNumber,
+        inw.poNumberSnapshot?.trim().toLowerCase(),
+        inw.poNumber?.trim().toLowerCase(),
+        inw.poId?.trim().toLowerCase()
+      ].filter(Boolean) as string[];
+
       for (const k of keys) {
         qtyMap[k] = (qtyMap[k] || 0) + inwTotal;
         countMap[k] = (countMap[k] || 0) + 1;
@@ -67,54 +76,172 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     return { qtyMap, countMap };
   }, [inwards]);
 
+  // Combined list of POs: includes all POs from props plus any POs referenced in posted inward receipts
+  const allPosWithInwardSources = useMemo(() => {
+    const list = [...pos];
+    const seenIds = new Set(list.map((p) => p.id).concat(list.map((p) => p.poId || '')));
+    const seenNums = new Set(list.map((p) => p.poNumber?.trim().toLowerCase()).filter(Boolean));
+
+    for (const inw of inwards || []) {
+      // Must be posted inward
+      if (inw.status !== 'posted') continue;
+      const poNumKey = (inw.poNumber || inw.poNumberSnapshot || '').trim().toLowerCase();
+      const poIdKey = inw.poId;
+      if (poIdKey && !seenIds.has(poIdKey) && (!poNumKey || !seenNums.has(poNumKey))) {
+        list.push({
+          id: inw.poId,
+          poId: inw.poId,
+          poNumber: inw.poNumber || inw.poNumberSnapshot || 'PO-RECORD',
+          customerId: inw.customerId || inw.customerVendorId || 'cust-default',
+          customerVendorId: inw.customerVendorId || inw.customerId || 'cust-default',
+          customerName: inw.customerName || inw.customerCompanyNameSnapshot || 'Customer Company',
+          customerCompanyNameSnapshot: inw.customerCompanyNameSnapshot || inw.customerName || 'Customer Company',
+          styleNo: inw.styleNo || inw.styleNoSnapshot || 'N/A',
+          itemName: inw.itemName || inw.itemNameSnapshot || 'Garments',
+          processCategory: inw.processCategory || inw.processCategorySnapshot || 'washing',
+          status: 'partially_received',
+          orderDate: inw.customerDate || inw.inwardDate,
+          totalQuantity: inw.totalQuantity || 0,
+          totalQtyByUnit: inw.totalQtyByUnit || { piece: inw.totalQuantity || 0, kg: 0 },
+          lines: [],
+          colourLines: [],
+          schemaVersion: 1
+        } as unknown as PurchaseOrder);
+        seenIds.add(poIdKey);
+        if (poNumKey) seenNums.add(poNumKey);
+      }
+    }
+    return list;
+  }, [pos, inwards]);
+
   // Filter eligible POs:
-  // Must have at least 1 inward entry OR inward quantity > 0 OR PO status indicates inward received (partially_received or fully_received).
-  // NOTE: It is NOT mandatory to have Balance Qty = 0 (partially received POs are fully eligible!).
+  // Must have at least 1 POSTED inward entry in this particular PO!
   const eligiblePos = useMemo(() => {
-    return pos.filter((p) => {
+    return allPosWithInwardSources.filter((p) => {
       const s = String(p.status || '').toLowerCase();
       if (s === 'cancelled' || s === 'rejected') return false;
 
-      // 1. Direct status check: PO has received at least 1 inward receipt
-      const hasReceivedStatus = s === 'partially_received' || s === 'fully_received';
+      // 1. Direct match against loaded POSTED inward entries
+      const directInwardMatch = inwards?.some((inw) => {
+        if (inw.status !== 'posted') return false;
+        return (
+          inw.poId === p.id ||
+          inw.poId === p.poId ||
+          (inw.poNumber && inw.poNumber.trim().toLowerCase() === p.poNumber?.trim().toLowerCase()) ||
+          (inw.poNumberSnapshot && inw.poNumberSnapshot.trim().toLowerCase() === p.poNumber?.trim().toLowerCase())
+        );
+      });
 
-      // 2. Count of inward receipts against this PO (at least 1 inward taken)
-      const inwardCount =
-        (poInwardInfo.countMap[p.id] || 0) +
-        (poInwardInfo.countMap[p.poId || ''] || 0) +
-        (poInwardInfo.countMap[p.poNumber || ''] || 0);
+      // 2. Count / quantity of posted inward receipts against this PO
+      const poKeys = [
+        p.id,
+        p.poId,
+        p.poNumber,
+        p.id?.trim().toLowerCase(),
+        p.poId?.trim().toLowerCase(),
+        p.poNumber?.trim().toLowerCase()
+      ].filter(Boolean) as string[];
 
-      // 3. Total inward received quantity
-      const inwardQty =
-        (poInwardInfo.qtyMap[p.id] || 0) +
-        (poInwardInfo.qtyMap[p.poId || ''] || 0) +
-        (poInwardInfo.qtyMap[p.poNumber || ''] || 0);
+      let inwardCount = 0;
+      let inwardQty = 0;
+      for (const k of poKeys) {
+        if (poInwardInfo.countMap[k]) inwardCount += poInwardInfo.countMap[k];
+        if (poInwardInfo.qtyMap[k]) inwardQty += poInwardInfo.qtyMap[k];
+      }
 
-      // Show if at least 1 inward is there for the PO (Balance Qty = 0 is NOT mandatory)
-      const hasAtLeastOneInward = hasReceivedStatus || inwardCount > 0 || inwardQty > 0;
+      // Has at least one posted inward receipt
+      const hasAtLeastOnePostedInward = directInwardMatch || inwardCount > 0 || inwardQty > 0;
+
+      // Status check fallback only if no inward list was loaded at all
+      const hasInwardsList = Boolean(inwards && inwards.length > 0);
+      const hasReceivedStatusFallback = !hasInwardsList && (
+        s === 'partially_received' ||
+        s === 'fully_received' ||
+        Number((p as any).totalReceivedQuantity || (p as any).receivedQuantity || 0) > 0
+      );
+
+      const hasAtLeastOneInward = hasAtLeastOnePostedInward || hasReceivedStatusFallback;
 
       return hasAtLeastOneInward || (initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId));
     });
-  }, [pos, poInwardInfo, initialOutward]);
+  }, [allPosWithInwardSources, inwards, poInwardInfo, initialOutward]);
 
-  // Active Customer vendors: ONLY show companies that have existing inward received quantity (at least one eligible PO with inward > 0)
+  // All Customer companies: Show ALL company names that have at least one POSTED inward entry in a PO
   const eligibleCustomers = useMemo(() => {
-    return vendors.filter((v) => {
-      const isCust = v.vendorType === 'customer' || v.vendorType === 'both';
-      if (!isCust) return false;
+    const customerMap = new Map<string, Vendor>();
 
-      // Must have at least one eligible PO with existing inward received quantity
+    // 1. First add vendors from master vendors list that match an eligible PO (which has posted inward receipts)
+    for (const v of vendors) {
       const hasInwardPO = eligiblePos.some(
         (p) =>
           p.customerId === v.id ||
           p.customerId === v.vendorId ||
           p.customerVendorId === v.id ||
-          p.customerVendorId === v.vendorId
+          p.customerVendorId === v.vendorId ||
+          (p.customerName && p.customerName.trim().toLowerCase() === v.companyName.trim().toLowerCase()) ||
+          (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === v.companyName.trim().toLowerCase())
       );
 
-      return hasInwardPO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId));
-    });
-  }, [vendors, eligiblePos, initialOutward]);
+      if (hasInwardPO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId))) {
+        const key = v.id || v.vendorId || v.companyName;
+        customerMap.set(key, v);
+      }
+    }
+
+    // 2. Ensure EVERY company name present on any eligible PO is included
+    for (const p of eligiblePos) {
+      const custName = p.customerName || p.customerCompanyNameSnapshot;
+      if (!custName) continue;
+
+      const alreadyExists = Array.from(customerMap.values()).some(
+        (v) =>
+          v.id === p.customerId ||
+          v.vendorId === p.customerId ||
+          v.companyName.trim().toLowerCase() === custName.trim().toLowerCase()
+      );
+
+      if (!alreadyExists) {
+        const custId = p.customerId || p.customerVendorId || `cust_${custName.replace(/\s+/g, '_')}`;
+        customerMap.set(custId, {
+          id: custId,
+          vendorId: custId,
+          vendorCode: p.customerCode || 'CUSTOMER',
+          companyName: custName,
+          vendorType: 'customer',
+          vendorCategory: 'main_company',
+          status: 'active'
+        } as Vendor);
+      }
+    }
+
+    // 3. Also check POSTED inwards directly for customer company names
+    for (const inw of inwards || []) {
+      if (inw.status !== 'posted') continue;
+      const custName = inw.customerCompanyNameSnapshot || inw.customerName;
+      if (!custName) continue;
+
+      const alreadyExists = Array.from(customerMap.values()).some(
+        (v) =>
+          v.id === inw.customerVendorId ||
+          v.id === inw.customerId ||
+          v.companyName.trim().toLowerCase() === custName.trim().toLowerCase()
+      );
+
+      if (!alreadyExists) {
+        const custId = inw.customerVendorId || inw.customerId || `cust_${custName.replace(/\s+/g, '_')}`;
+        customerMap.set(custId, {
+          id: custId,
+          vendorId: custId,
+          companyName: custName,
+          vendorType: 'customer',
+          vendorCategory: 'main_company',
+          status: 'active'
+        } as Vendor);
+      }
+    }
+
+    return Array.from(customerMap.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
+  }, [vendors, eligiblePos, inwards, initialOutward]);
 
   // Active Customer selection
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
@@ -144,9 +271,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   const [driverName, setDriverName] = useState<string>(
     initialOutward?.driverName || ''
   );
-  const [transporterVendorId, setTransporterVendorId] = useState<string>(
-    initialOutward?.transporterVendorId || ''
-  );
+  const [transporterVendorId, setTransporterVendorId] = useState<string>(() => {
+    if (initialOutward?.transporterVendorId) return initialOutward.transporterVendorId;
+    if (initialOutward && !initialOutward.transporterVendorId && initialOutward.transporterNameSnapshot) return 'in_house';
+    return '';
+  });
   const [destination, setDestination] = useState<string>(
     initialOutward?.destination || ''
   );
@@ -173,8 +302,10 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
   // Find currently selected PO
   const activePo = useMemo(() => {
-    return eligiblePos.find((p) => p.id === selectedPoId || p.poId === selectedPoId) || pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
-  }, [eligiblePos, pos, selectedPoId]);
+    return eligiblePos.find((p) => p.id === selectedPoId || p.poId === selectedPoId) ||
+           allPosWithInwardSources.find((p) => p.id === selectedPoId || p.poId === selectedPoId) ||
+           pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
+  }, [eligiblePos, allPosWithInwardSources, pos, selectedPoId]);
 
   // Find eligible subcontractors: ONLY show the selected parent's subcompany/subcontractor!
   const eligibleSubcontractors = useMemo(() => {
@@ -243,6 +374,13 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     return [{ options: list }];
   }, [eligibleCustomers]);
 
+  // Currently selected customer object (if any)
+  const selectedCustomer = useMemo(() => {
+    return eligibleCustomers.find(
+      (c) => c.id === selectedCustomerId || c.vendorId === selectedCustomerId
+    );
+  }, [eligibleCustomers, selectedCustomerId]);
+
   // PO dropdown groups with cross-company discovery
   const poOptionGroups: SelectOptionGroup[] = useMemo(() => {
     const matchingCurrentCustomer: SelectOption[] = [];
@@ -250,14 +388,19 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
     for (const p of eligiblePos) {
       const isCurrentCustomer =
-        selectedCustomerId &&
-        (p.customerId === selectedCustomerId || p.customerVendorId === selectedCustomerId);
+        Boolean(selectedCustomerId) &&
+        (p.customerId === selectedCustomerId ||
+         p.customerVendorId === selectedCustomerId ||
+         (selectedCustomer && (
+           (p.customerName && p.customerName.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase()) ||
+           (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase())
+         )));
 
       const option: SelectOption = {
         id: p.id,
         primaryText: p.poNumber,
         secondaryText: `Style: ${p.styleNo || 'N/A'} • ${p.itemName || 'Garment'} • ${p.customerName || 'Customer'}`,
-        badge: isCurrentCustomer ? 'Current Customer' : p.customerName || 'Other Company',
+        badge: isCurrentCustomer ? (selectedCustomer?.companyName || 'Selected Company') : (p.customerName || 'Other Company'),
         badgeVariant: isCurrentCustomer ? 'emerald' : 'slate',
         meta: p
       };
@@ -272,7 +415,9 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     const groups: SelectOptionGroup[] = [];
     if (matchingCurrentCustomer.length > 0) {
       groups.push({
-        title: 'Purchase Orders For Selected Company',
+        title: selectedCustomer
+          ? `Purchase Orders for ${selectedCustomer.companyName}`
+          : 'Purchase Orders For Selected Company',
         isHighlighted: true,
         options: matchingCurrentCustomer
       });
@@ -282,18 +427,25 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       groups.push({
         title: selectedCustomerId
           ? 'Purchase Orders From Other Companies (Auto-Switches Company)'
-          : 'All Available Purchase Orders',
+          : 'All Available Purchase Orders (With Posted Inward Receipts)',
         options: otherCustomers
       });
     }
 
     return groups;
-  }, [eligiblePos, selectedCustomerId]);
+  }, [eligiblePos, selectedCustomerId, selectedCustomer]);
 
   const handleSelectCustomer = (opt: SelectOption) => {
     setSelectedCustomerId(opt.id);
     setSelectedSubcontractorId('');
-    if (activePo && activePo.customerId !== opt.id && activePo.customerVendorId !== opt.id) {
+    // Check if currently selected PO belongs to this customer
+    const isPoForCustomer = activePo && (
+      activePo.customerId === opt.id ||
+      activePo.customerVendorId === opt.id ||
+      (activePo.customerName && activePo.customerName.trim().toLowerCase() === opt.primaryText.trim().toLowerCase()) ||
+      (activePo.customerCompanyNameSnapshot && activePo.customerCompanyNameSnapshot.trim().toLowerCase() === opt.primaryText.trim().toLowerCase())
+    );
+    if (!isPoForCustomer) {
       setSelectedPoId('');
       setDispatchQtyMap({});
     }
@@ -304,10 +456,24 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     const po = opt.meta as PurchaseOrder;
     if (po) {
       setSelectedPoId(po.id);
-      if (po.customerId && po.customerId !== selectedCustomerId) {
-        setSelectedCustomerId(po.customerId);
-        setSelectedSubcontractorId('');
+      // Automatically select customer matching this PO
+      const matchingCust = eligibleCustomers.find(
+        (c) =>
+          c.id === po.customerId ||
+          c.vendorId === po.customerId ||
+          c.id === po.customerVendorId ||
+          c.vendorId === po.customerVendorId ||
+          (c.companyName && (
+            c.companyName.trim().toLowerCase() === (po.customerName || '').trim().toLowerCase() ||
+            c.companyName.trim().toLowerCase() === (po.customerCompanyNameSnapshot || '').trim().toLowerCase()
+          ))
+      );
+      if (matchingCust) {
+        setSelectedCustomerId(matchingCust.id || matchingCust.vendorId || '');
+      } else if (po.customerId || po.customerVendorId) {
+        setSelectedCustomerId(po.customerId || po.customerVendorId || '');
       }
+      setSelectedSubcontractorId('');
       setDispatchQtyMap({});
       setValidationError(null);
     }
@@ -370,6 +536,18 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     if (!ourDcNo.trim()) {
       throw new Error('Please enter Our Delivery Challan Number.');
     }
+    if (!vehicleNumber.trim()) {
+      throw new Error('Please enter the Vehicle Number.');
+    }
+    if (!driverName.trim()) {
+      throw new Error('Please enter the Driver Name.');
+    }
+    if (!transporterVendorId) {
+      throw new Error('Please select a Transporter / Logistics Vendor.');
+    }
+    if (!destination.trim()) {
+      throw new Error('Please enter the Dispatch Destination.');
+    }
 
     const lines = (activePo.lines || []).map((poLine) => {
       const lineBal = balances?.lines[poLine.lineId];
@@ -401,10 +579,10 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       poId: selectedPoId,
       outwardDate,
       ourDcNo: ourDcNo.trim(),
-      vehicleNumber: vehicleNumber.trim() || undefined,
-      driverName: driverName.trim() || undefined,
-      transporterVendorId: transporterVendorId || null,
-      destination: destination.trim() || undefined,
+      vehicleNumber: vehicleNumber.trim(),
+      driverName: driverName.trim(),
+      transporterVendorId: transporterVendorId === 'in_house' ? null : transporterVendorId,
+      destination: destination.trim(),
       remarks: remarks.trim() || undefined,
       lines
     };
@@ -523,13 +701,13 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search customer by name or code..."
             groups={customerOptionGroups}
             onSelect={handleSelectCustomer}
-            helperText="Only shows companies with existing inward received garments"
+            helperText="Shows all companies with at least 1 posted inward entry in a PO"
           />
 
           {/* Subcontractor / Subcompany */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Subcontractor / Subcompany (Optional)
+               Subcontractor / Subcompany (Optional)
             </label>
             <select
               value={selectedSubcontractorId}
@@ -559,7 +737,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search by PO Number or Style No..."
             groups={poOptionGroups}
             onSelect={handleSelectPO}
-            helperText="Shows POs with at least 1 inward (Balance Qty = 0 is not mandatory)"
+            helperText={
+              selectedCustomerId
+                ? "Shows PO numbers for the selected company with at least 1 posted inward entry"
+                : "Shows all PO numbers with at least 1 posted inward entry in the PO"
+            }
           />
         </div>
 
@@ -630,10 +812,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           {/* Vehicle Number */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Vehicle Number (Optional)
+              Vehicle Number <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
+              required
               placeholder="e.g. TN-22-BA-4512"
               value={vehicleNumber}
               onChange={(e) => setVehicleNumber(e.target.value)}
@@ -645,10 +828,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           {/* Driver Name */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Driver Name (Optional)
+              Driver Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
+              required
               placeholder="e.g. Murugan K."
               value={driverName}
               onChange={(e) => setDriverName(e.target.value)}
@@ -659,14 +843,16 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           {/* Transporter / Vendor */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Transporter / Vendor (Optional)
+              Transporter / Vendor <span className="text-rose-500">*</span>
             </label>
             <select
+              required
               value={transporterVendorId}
               onChange={(e) => setTransporterVendorId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
             >
-              <option value="">In-House / Customer Logistics</option>
+              <option value="">Select Transporter / Vendor...</option>
+              <option value="in_house">In-House / Customer Logistics</option>
               {eligibleTransporters.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.companyName}
@@ -678,10 +864,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           {/* Dispatch Destination */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Dispatch Destination (Optional)
+              Dispatch Destination <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
+              required
               placeholder="e.g. Thirumudivakkam to Ambattur"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}

@@ -80,3 +80,68 @@ export function calculateStatementSummaries(
 
   return summaries;
 }
+
+/**
+ * Checks whether inward receipts or entries have been entered for a Purchase Order:
+ * 1. PO status indicates inward progress (partially_received, fully_received, in_progress, completed).
+ * 2. Active non-cancelled/reversed inward entries exist matching PO id or PO number.
+ */
+export function hasInwardForPO(
+  po: PurchaseOrder | null | undefined,
+  inwards: InwardEntry[] = []
+): boolean {
+  if (!po) return false;
+
+  const statusLower = (po.status || '').toLowerCase().trim();
+  if (
+    statusLower === 'partially_received' ||
+    statusLower === 'fully_received' ||
+    statusLower === 'in_progress' ||
+    statusLower === 'completed'
+  ) {
+    return true;
+  }
+
+  const poId = (po.id || po.poId || '').toLowerCase().trim();
+  const poNum = (po.poNumber || '').toLowerCase().trim();
+
+  let candidateInwards = inwards;
+  if ((!candidateInwards || candidateInwards.length === 0) && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('perla_erp_inward_entries');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          candidateInwards = parsed;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (!candidateInwards || candidateInwards.length === 0) {
+    return false;
+  }
+
+  return candidateInwards.some((inw) => {
+    if (inw.status === 'reversed' || inw.status === 'cancelled') return false;
+    const inwPoId = (inw.poId || '').toLowerCase().trim();
+    const inwPoNum = (inw.poNumber || inw.poNumberSnapshot || '').toLowerCase().trim();
+
+    const matchesId =
+      poId &&
+      inwPoId &&
+      (inwPoId === poId ||
+        inwPoId === (po.id || '').toLowerCase() ||
+        inwPoId === (po.poId || '').toLowerCase());
+
+    const matchesNum =
+      poNum &&
+      inwPoNum &&
+      inwPoNum === poNum &&
+      !poNum.includes('pending');
+
+    return Boolean(matchesId || matchesNum);
+  });
+}

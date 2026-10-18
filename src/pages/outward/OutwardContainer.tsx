@@ -116,10 +116,12 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         setVendors(vResult.vendors);
       }
 
-      // 5. Fetch all Inward receipts
-      const inwResult = await InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode);
+      // 5. Fetch posted Inward receipts (only posted receipts have physically received stock for outward dispatch)
+      const inwResult = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemoMode);
       if (inwResult.inwards && inwResult.inwards.length > 0) {
         setInwards(inwResult.inwards);
+      } else {
+        setInwards([]);
       }
     } catch (err) {
       console.error('Failed to load outward data:', err);
@@ -165,6 +167,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   const handleNewOutward = () => {
     setSelectedOutwardDetails({ outward: null, logs: [] });
     setSelectedOutwardId(null);
+    loadData();
     setCurrentView('add');
   };
 
@@ -206,7 +209,11 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
       let postedEntry: OutwardEntry;
       if (currentView === 'edit' && selectedOutwardId) {
-        postedEntry = await OutwardService.postExistingDraft(selectedOutwardId, data, userMeta, isDemoMode);
+        if (selectedOutwardDetails.outward?.status === 'draft') {
+          postedEntry = await OutwardService.postExistingDraft(selectedOutwardId, data, userMeta, isDemoMode);
+        } else {
+          postedEntry = await OutwardService.updateDraftOutwardEntry(selectedOutwardId, data, userMeta, isDemoMode);
+        }
       } else {
         postedEntry = await OutwardService.postOutwardEntry(data, userMeta, isDemoMode);
       }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components/layout/Sidebar';
@@ -45,6 +45,7 @@ import { InwardEntry, OutwardEntry } from './types/inwardOutward';
 import { Invoice } from './types/invoice';
 import { InventoryItem, ChemicalEntry } from './types/stock';
 import { Vendor } from './types/vendor';
+import { StatementService } from './services/statementService';
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Executive Dashboard', subtitle: 'Overview of operational trends, PO balances, and quick actions' },
@@ -175,6 +176,16 @@ const AppContent: React.FC = () => {
   const [approvedPoLineIds, setApprovedPoLineIds] = useState<string[]>(['pol-1']);
   const [invoicedPoLineIds, setInvoicedPoLineIds] = useState<string[]>([]);
 
+  useEffect(() => {
+    StatementService.getApprovedPoLineIds(true)
+      .then((ids) => {
+        if (ids && ids.length > 0) {
+          setApprovedPoLineIds((prev) => Array.from(new Set([...prev, ...ids])));
+        }
+      })
+      .catch((err) => console.error('Failed to sync approved lines:', err));
+  }, []);
+
   // Callbacks for adding operational data
   const handleAddPo = (newPo: PurchaseOrder) => setPos((prev) => [newPo, ...prev]);
   const handleAddInward = (newInward: InwardEntry) => setInwards((prev) => [newInward, ...prev]);
@@ -190,6 +201,13 @@ const AppContent: React.FC = () => {
       if (!invoicedPoLineIds.includes(l.sourcePoLineId)) {
         setInvoicedPoLineIds((prev) => [...prev, l.sourcePoLineId]);
       }
+      StatementService.markApprovalAsInvoiced(
+        l.sourcePoLineId,
+        newInvoice.id,
+        newInvoice.invoiceNo,
+        newInvoice.invoiceDate,
+        true
+      ).catch((err) => console.error('Failed to mark approval as invoiced:', err));
     });
   };
   const handleAddChemicalEntry = (entry: ChemicalEntry) => setChemicalEntries((prev) => [entry, ...prev]);

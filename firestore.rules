@@ -158,6 +158,47 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // Invoice Approvals (Statement Reconciliation & Invoice Module)
+    match /invoice_approvals/{approvalId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Invoices Collection
+    match /invoices/{invoiceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthorizedUser();
+      allow update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+
+      // Subcollection: lines
+      match /lines/{lineId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthorizedUser();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Invoice Number Counters
+    match /invoice_counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthorizedUser();
+    }
+
+    // Invoice Audit Logs (Immutable)
+    match /invoice_audit_logs/{auditId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthorizedUser();
+      allow update, delete: if false; // Immutable audit log
+    }
+
+    // Company Invoice Settings
+    match /invoice_settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     // Default allow authenticated users
     match /{document=**} {
       allow read, write: if isAuthenticated();

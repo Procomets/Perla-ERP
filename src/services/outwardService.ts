@@ -570,6 +570,23 @@ export class OutwardService {
       );
     }
 
+    // 2b. Validate Mandatory Logistics Fields
+    if (!input.outwardDate) {
+      throw new Error('Outward dispatch date is required.');
+    }
+    if (!input.ourDcNo?.trim()) {
+      throw new Error('Our DC number is required.');
+    }
+    if (!input.vehicleNumber?.trim()) {
+      throw new Error('Vehicle number is required.');
+    }
+    if (!input.driverName?.trim()) {
+      throw new Error('Driver name is required.');
+    }
+    if (!input.destination?.trim()) {
+      throw new Error('Dispatch destination is required.');
+    }
+
     // 3. Filter lines to dispatch
     const linesToDispatch = input.lines.filter((l) => (Number(l.dispatchQty) || 0) > 0);
     if (linesToDispatch.length === 0) {
@@ -920,10 +937,6 @@ export class OutwardService {
     const existing = await this.getOutwardEntryById(outwardId, isDemo);
     if (!existing.outward) {
       throw new Error(`Outward Entry ${outwardId} not found.`);
-    }
-
-    if (existing.outward.status !== 'draft') {
-      throw new Error(`Cannot edit an Outward Entry that is already ${existing.outward.status}.`);
     }
 
     const nowIso = new Date().toISOString();
@@ -1319,7 +1332,7 @@ export class OutwardService {
   }
 
   /**
-   * Deletes a draft Outward Entry (only drafts can be deleted; posted records cannot be deleted)
+   * Deletes an Outward Entry (admin only)
    */
   static async deleteOutwardEntry(
     outwardId: string,
@@ -1328,10 +1341,6 @@ export class OutwardService {
   ): Promise<void> {
     const { outward } = await this.getOutwardEntryById(outwardId, isDemo);
     if (!outward) return;
-
-    if (outward.status !== 'draft') {
-      throw new Error(`Only draft dispatches can be deleted. Outward ${outward.outwardNo} is ${outward.status}.`);
-    }
 
     if (!isDemo) {
       try {

@@ -884,12 +884,73 @@ export class POService {
   }
 
   /**
-   * Update draft Purchase Order
+   * Check whether any inward entries exist for a given PO
+   */
+  static async checkHasInward(
+    poId: string,
+    poNumber?: string,
+    isDemo: boolean = false
+  ): Promise<boolean> {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('perla_erp_inward_entries');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const found = list.some((inw: any) => {
+              if (inw.status === 'reversed' || inw.status === 'cancelled') return false;
+              const matchesId = inw.poId === poId;
+              const matchesNum =
+                poNumber &&
+                (inw.poNumber === poNumber || inw.poNumberSnapshot === poNumber) &&
+                !poNumber.includes('PENDING');
+              return matchesId || matchesNum;
+            });
+            if (found) return true;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (!isDemo) {
+      try {
+        const qId = query(collection(db, 'inward_entries'), where('poId', '==', poId));
+        const snapId = await getDocs(qId);
+        const hasActiveId = snapId.docs.some((d) => {
+          const st = d.data().status;
+          return st !== 'reversed' && st !== 'cancelled';
+        });
+        if (hasActiveId) return true;
+
+        if (poNumber && !poNumber.includes('PENDING')) {
+          const qNum = query(
+            collection(db, 'inward_entries'),
+            where('poNumber', '==', poNumber)
+          );
+          const snapNum = await getDocs(qNum);
+          const hasActiveNum = snapNum.docs.some((d) => {
+            const st = d.data().status;
+            return st !== 'reversed' && st !== 'cancelled';
+          });
+          if (hasActiveNum) return true;
+        }
+      } catch (err) {
+        console.warn('checkHasInward Firestore query fallback:', err);
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Update draft Purchase Order (or approved/in-progress PO by Admin)
    */
   static async updatePurchaseOrder(
     poId: string,
     updates: Partial<PurchaseOrder>,
-    user: { uid: string; displayName?: string },
+    user: { uid: string; displayName?: string; role?: string },
     isDemo: boolean = false
   ): Promise<PurchaseOrder> {
     const existing = await this.getPurchaseOrderById(poId, isDemo);
@@ -897,10 +958,34 @@ export class POService {
       throw new Error(`Purchase Order ${poId} not found.`);
     }
 
-    if (existing.po.status !== 'draft' && existing.po.status !== 'Draft') {
-      throw new Error(
-        `Cannot edit Purchase Order in '${existing.po.status}' status. Only draft POs can be edited directly.`
-      );
+    const userRole = (user as any)?.role?.toLowerCase() || '';
+    const isUserAdmin = userRole === 'admin' || (user as any)?.isAdmin === true;
+
+    const hasInwardStatus =
+      existing.po.status === 'partially_received' ||
+      existing.po.status === 'fully_received' ||
+      existing.po.status === 'in_progress' ||
+      existing.po.status === 'completed';
+
+    const hasInwardEntries = await this.checkHasInward(
+      poId,
+      existing.po.poNumber,
+      isDemo
+    );
+    const hasInward = hasInwardStatus || hasInwardEntries;
+
+    if (hasInward) {
+      if (!isUserAdmin) {
+        throw new Error(
+          'This Purchase Order has inward entries and can only be edited by an Administrator.'
+        );
+      }
+    } else {
+      if (!isUserAdmin && existing.po.status !== 'draft' && existing.po.status !== 'Draft') {
+        throw new Error(
+          `Cannot edit Purchase Order in '${existing.po.status}' status. Only draft POs can be edited directly.`
+        );
+      }
     }
 
     const now = new Date().toISOString();
@@ -951,6 +1036,12 @@ export class POService {
       updatedBy: user.uid,
       updatedById: user.uid
     };
+
+    if (hasInward) {
+      if (!updates.status || updates.status === 'draft') {
+        merged.status = existing.po.status;
+      }
+    }
 
     // Protect immutable fields or upgrade pending PO number when status is approved
     let poNumber = existing.po.poNumber;
@@ -1298,24 +1389,17 @@ export class POService {
     if (!existing.po) throw new Error('PO not found');
 
     // Operational transactions check
-    if (!isDemo) {
-      try {
-        const inwardSnap = await getDocs(
-          query(
-            collection(db, 'inwards'),
-            where('poId', '==', poId)
-          )
-        );
-        if (!inwardSnap.empty) {
-          throw new Error(
-            'Cannot cancel Purchase Order: Inward receipts already exist for this PO. Use operational closure instead.'
-          );
-        }
-      } catch (err: any) {
-        if (err.message && err.message.includes('Cannot cancel')) {
-          throw err;
-        }
-      }
+    const hasInwardStatus =
+      existing.po.status === 'partially_received' ||
+      existing.po.status === 'fully_received' ||
+      existing.po.status === 'in_progress' ||
+      existing.po.status === 'completed';
+
+    const hasInward = hasInwardStatus || (await this.checkHasInward(poId, existing.po.poNumber, isDemo));
+    if (hasInward) {
+      throw new Error(
+        'Cannot cancel Purchase Order: Inward receipts already exist for this PO. Use operational closure instead.'
+      );
     }
 
     const now = new Date().toISOString();
@@ -1378,11 +1462,27 @@ export class POService {
    */
   static async deletePurchaseOrder(
     poId: string,
-    user: { uid: string; displayName?: string },
+    user: { uid: string; displayName?: string; role?: string },
     isDemo: boolean = false
   ): Promise<void> {
     const existing = await this.getPurchaseOrderById(poId, isDemo);
-    const poNumber = existing?.po?.poNumber || poId;
+    const po = existing?.po;
+    const poNumber = po?.poNumber || poId;
+
+    // RULE: If inward has been entered for this PO, it CANNOT be deleted
+    const hasInwardStatus =
+      po?.status === 'partially_received' ||
+      po?.status === 'fully_received' ||
+      po?.status === 'in_progress' ||
+      po?.status === 'completed';
+
+    const hasInwardEntries = await this.checkHasInward(poId, po?.poNumber, isDemo);
+
+    if (hasInwardStatus || hasInwardEntries) {
+      throw new Error(
+        `Cannot delete Purchase Order ${poNumber}: Inward receipts have already been entered for this PO.`
+      );
+    }
 
     try {
       await deleteDoc(doc(db, 'purchase_orders', poId));

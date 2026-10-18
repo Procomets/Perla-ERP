@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Printer,
@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   FileCheck2,
   RotateCcw,
-  Trash2
+  Trash2,
+  Lock
 } from 'lucide-react';
 import {
   PurchaseOrder,
@@ -25,6 +26,9 @@ import {
 } from '../../../types/po';
 import { Vendor } from '../../../types/vendor';
 import { InwardEntry, OutwardEntry } from '../../../types/inwardOutward';
+import { InwardService } from '../../../services/inwardService';
+import { OutwardService } from '../../../services/outwardService';
+import { useAuth } from '../../../context/AuthContext';
 import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
@@ -33,6 +37,7 @@ import {
   formatQuantity,
   formatDate
 } from '../../../utils/formatters';
+import { hasInwardForPO } from '../../../utils/calculations';
 
 interface PODetailsProps {
   po: PurchaseOrder;
@@ -75,6 +80,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
   canManage,
   isAdmin
 }) => {
+  const { isDemoMode } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'audit' | 'downstream'>('overview');
 
   // Modals state
@@ -86,33 +92,101 @@ export const PODetails: React.FC<PODetailsProps> = ({
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  // Live downstream state synced with props and auto-refreshed from services
+  const [liveInwards, setLiveInwards] = useState<InwardEntry[]>(inwards);
+  const [liveOutwards, setLiveOutwards] = useState<OutwardEntry[]>(outwards);
+
+  useEffect(() => {
+    setLiveInwards(inwards);
+  }, [inwards]);
+
+  useEffect(() => {
+    setLiveOutwards(outwards);
+  }, [outwards]);
+
+  // Query live Inward and Outward records from database to ensure downstream data is up-to-date
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDownstream = async () => {
+      try {
+        const [inwRes, outRes] = await Promise.all([
+          InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode),
+          OutwardService.getOutwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode)
+        ]);
+        if (!isMounted) return;
+        if (inwRes.inwards && inwRes.inwards.length > 0) {
+          setLiveInwards(inwRes.inwards);
+        }
+        if (outRes.outwards && outRes.outwards.length > 0) {
+          setLiveOutwards(outRes.outwards);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch downstream records in PODetails:', err);
+      }
+    };
+    fetchDownstream();
+    return () => {
+      isMounted = false;
+    };
+  }, [po.id, po.poId, po.poNumber, isDemoMode]);
+
   const statusLower = po.status.toLowerCase();
   const isDraft = statusLower === 'draft' || statusLower === 'submitted';
   const isApproved = statusLower === 'approved';
   const isCancelled = statusLower === 'cancelled' || statusLower === 'rejected';
 
-  // Filter linked inward & outward transactions
-  const linkedInwards = inwards.filter(
-    (inE) => inE.poId === po.id || inE.poId === po.poId || inE.poNumber === po.poNumber
-  );
-  const linkedOutwards = outwards.filter(
-    (outE) => outE.poId === po.id || outE.poId === po.poId || outE.poNumber === po.poNumber
-  );
+  // Filter linked inward & outward transactions with comprehensive matching
+  const poNumClean = (po.poNumber || '').trim().toLowerCase();
+  const poIdClean = (po.id || po.poId || '').trim().toLowerCase();
+
+  const linkedInwards = liveInwards.filter((inE) => {
+    if (inE.status === 'reversed' || inE.status === 'cancelled') return false;
+    const inwPoId = (inE.poId || '').trim().toLowerCase();
+    const inwPoNum = (inE.poNumberSnapshot || inE.poNumber || '').trim().toLowerCase();
+    return (
+      (inwPoId && (inwPoId === poIdClean || inwPoId === (po.id || '').toLowerCase() || inwPoId === (po.poId || '').toLowerCase())) ||
+      (poNumClean && inwPoNum && inwPoNum === poNumClean)
+    );
+  });
+
+  const linkedOutwards = liveOutwards.filter((outE) => {
+    if (outE.status === 'reversed' || outE.status === 'cancelled') return false;
+    const outPoId = (outE.poId || '').trim().toLowerCase();
+    const outPoNum = (outE.poNumberSnapshot || outE.poNumber || '').trim().toLowerCase();
+    return (
+      (outPoId && (outPoId === poIdClean || outPoId === (po.id || '').toLowerCase() || outPoId === (po.poId || '').toLowerCase())) ||
+      (poNumClean && outPoNum && outPoNum === poNumClean)
+    );
+  });
 
   // Compute received and dispatched totals
   let totalReceivedQty = 0;
   linkedInwards.forEach((inE) => {
-    inE.lines.forEach((l) => {
-      totalReceivedQty += Number(l.receivedQty) || 0;
-    });
+    if (inE.status === 'posted') {
+      let sum = 0;
+      if (inE.lines && inE.lines.length > 0) {
+        inE.lines.forEach((l) => {
+          sum += Number(l.receivedQty) || 0;
+        });
+      } else {
+        sum = Number(inE.totalQuantity) || inE.totalQtyByUnit?.piece || inE.totalQtyByUnit?.kg || 0;
+      }
+      totalReceivedQty += sum;
+    }
   });
 
   let totalDispatchedQty = 0;
   linkedOutwards.forEach((outE) => {
     if (!outE.status || outE.status === 'posted') {
-      outE.lines.forEach((l) => {
-        totalDispatchedQty += Number(l.dispatchQty) || 0;
-      });
+      let sum = 0;
+      if (outE.lines && outE.lines.length > 0) {
+        outE.lines.forEach((l) => {
+          sum += Number(l.dispatchQty) || 0;
+        });
+      } else {
+        sum = Number(outE.totalQuantity) || outE.totalQtyByUnit?.piece || outE.totalQtyByUnit?.kg || 0;
+      }
+      totalDispatchedQty += sum;
     }
   });
 
@@ -123,7 +197,8 @@ export const PODetails: React.FC<PODetailsProps> = ({
     statusLower === 'partially_received' ||
     statusLower === 'fully_received' ||
     statusLower === 'in_progress' ||
-    statusLower === 'completed';
+    statusLower === 'completed' ||
+    hasInwardForPO(po, liveInwards);
 
   const handleConfirmReject = () => {
     if (!rejectReason.trim()) {
@@ -173,6 +248,12 @@ export const PODetails: React.FC<PODetailsProps> = ({
                   </span>
                 )}
                 <StatusChip status={po.status} />
+                {hasInwardTaken && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    <Lock className="w-3 h-3 text-blue-600" />
+                    Inward Entered (Admin Edit Only)
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 Customer Work Order • {po.customerName} • Ordered on{' '}
@@ -193,14 +274,27 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </Button>
 
             {canManage && !isCancelled && (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Edit className="w-4 h-4" />}
-                onClick={onEdit}
-              >
-                Edit PO
-              </Button>
+              hasInwardTaken && !isAdmin ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  title="Inward has been entered for this PO. Only Admin can edit."
+                  className="opacity-60 cursor-not-allowed text-slate-400 border-slate-200"
+                >
+                  Edit PO (Admin Only)
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Edit className="w-4 h-4" />}
+                  onClick={onEdit}
+                >
+                  Edit PO
+                </Button>
+              )
             )}
 
             {/* Approve PO (Admin only, when draft) */}
@@ -262,15 +356,28 @@ export const PODetails: React.FC<PODetailsProps> = ({
             )}
 
             {isAdmin && onDeletePO && (
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<Trash2 className="w-4 h-4 text-rose-500" />}
-                onClick={() => setIsDeleteModalOpen(true)}
-                className="text-rose-600 hover:bg-rose-50 border-rose-200"
-              >
-                Delete PO
-              </Button>
+              hasInwardTaken ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  title="Cannot delete: Inward has already been entered for this PO"
+                  className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+                >
+                  Delete PO
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Trash2 className="w-4 h-4 text-rose-500" />}
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="text-rose-600 hover:bg-rose-50 border-rose-200"
+                >
+                  Delete PO
+                </Button>
+              )
             )}
           </div>
         </div>
@@ -660,7 +767,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 Ordered Quantity
               </span>
               <strong className="text-xl font-black text-slate-900">
-                {formatQuantity(po.totalQuantity, po.colourLines[0]?.unit || 'piece')}
+                {formatQuantity(po.totalQuantity, po.colourLines?.[0]?.unit || po.lines?.[0]?.unit || 'piece')}
               </strong>
             </div>
 
@@ -669,7 +776,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 Cumulative Inward Received
               </span>
               <strong className="text-xl font-black text-emerald-700">
-                {formatQuantity(totalReceivedQty, po.colourLines[0]?.unit || 'piece')}
+                {formatQuantity(totalReceivedQty, po.colourLines?.[0]?.unit || po.lines?.[0]?.unit || 'piece')}
               </strong>
             </div>
 
@@ -678,7 +785,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 Cumulative Outward Dispatched
               </span>
               <strong className="text-xl font-black text-blue-700">
-                {formatQuantity(totalDispatchedQty, po.colourLines[0]?.unit || 'piece')}
+                {formatQuantity(totalDispatchedQty, po.colourLines?.[0]?.unit || po.lines?.[0]?.unit || 'piece')}
               </strong>
             </div>
           </div>
@@ -711,23 +818,29 @@ export const PODetails: React.FC<PODetailsProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {linkedInwards.map((inE) => {
-                      const totalInward = inE.lines.reduce(
-                        (acc, l) => acc + (Number(l.receivedQty) || 0),
-                        0
-                      );
+                      let totalInward = 0;
+                      if (inE.lines && inE.lines.length > 0) {
+                        totalInward = inE.lines.reduce(
+                          (acc, l) => acc + (Number(l.receivedQty) || 0),
+                          0
+                        );
+                      } else {
+                        totalInward = Number(inE.totalQuantity) || inE.totalQtyByUnit?.piece || inE.totalQtyByUnit?.kg || 0;
+                      }
+                      const inwUnit = inE.lines?.[0]?.unit || po.colourLines?.[0]?.unit || po.lines?.[0]?.unit || 'piece';
                       return (
-                        <tr key={inE.id || inE.entryId}>
+                        <tr key={inE.id || inE.inwardId || inE.entryId || inE.inwardNo}>
                           <td className="py-3 px-4 font-bold text-[#1F4E79]">
-                            {inE.entryId}
+                            {inE.inwardNo || inE.entryId || inE.inwardId || inE.id}
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
-                            {inE.customerDcNo}
+                            {inE.customerDcNo || '-'}
                           </td>
                           <td className="py-3 px-4 text-slate-600">
-                            {formatDate(inE.customerDate)}
+                            {formatDate(inE.customerDate || inE.inwardDate || inE.createdAt || '')}
                           </td>
                           <td className="py-3 px-4 text-right font-black text-emerald-700">
-                            {formatQuantity(totalInward, inE.lines[0]?.unit || 'piece')}
+                            {formatQuantity(totalInward, inwUnit)}
                           </td>
                         </tr>
                       );
@@ -767,26 +880,32 @@ export const PODetails: React.FC<PODetailsProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {linkedOutwards.map((outE) => {
-                      const totalOutward = outE.lines.reduce(
-                        (acc, l) => acc + (Number(l.dispatchQty) || 0),
-                        0
-                      );
+                      let totalOutward = 0;
+                      if (outE.lines && outE.lines.length > 0) {
+                        totalOutward = outE.lines.reduce(
+                          (acc, l) => acc + (Number(l.dispatchQty) || 0),
+                          0
+                        );
+                      } else {
+                        totalOutward = Number(outE.totalQuantity) || outE.totalQtyByUnit?.piece || outE.totalQtyByUnit?.kg || 0;
+                      }
+                      const outUnit = outE.lines?.[0]?.unit || po.colourLines?.[0]?.unit || po.lines?.[0]?.unit || 'piece';
                       return (
-                        <tr key={outE.id || outE.entryId}>
+                        <tr key={outE.id || outE.outwardId || outE.entryId || outE.outwardNo}>
                           <td className="py-3 px-4 font-bold text-[#1F4E79]">
-                            {outE.entryId}
+                            {outE.outwardNo || outE.entryId || outE.outwardId || outE.id}
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
-                            {outE.ourDcNo}
+                            {outE.ourDcNo || '-'}
                           </td>
                           <td className="py-3 px-4 text-slate-600">
-                            {outE.vehicleNo || '-'}
+                            {outE.vehicleNumber || outE.vehicleNo || '-'}
                           </td>
                           <td className="py-3 px-4 text-slate-600">
-                            {formatDate(outE.outwardDate || outE.ourDate || '')}
+                            {formatDate(outE.outwardDate || (outE as any).ourDate || outE.createdAt || '')}
                           </td>
                           <td className="py-3 px-4 text-right font-black text-blue-700">
-                            {formatQuantity(totalOutward, outE.lines[0]?.unit || 'piece')}
+                            {formatQuantity(totalOutward, outUnit)}
                           </td>
                         </tr>
                       );
@@ -904,15 +1023,27 @@ export const PODetails: React.FC<PODetailsProps> = ({
               </div>
             </div>
 
-            <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-3 space-y-1 text-xs text-rose-800">
-              <div className="flex items-center gap-1.5 font-semibold text-rose-900">
-                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span>Confirm Permanent Deletion</span>
+            {hasInwardTaken ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1 text-xs text-amber-900">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-900">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Cannot Delete Purchase Order</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Inward entries have already been recorded for <strong className="font-bold text-amber-950">{po.poNumber}</strong>. Purchase Orders with inward records cannot be deleted.
+                </p>
               </div>
-              <p className="text-[11px] text-rose-700 leading-relaxed">
-                This action will permanently delete purchase order <strong className="font-bold text-rose-950">{po.poNumber}</strong> ({po.customerName}) from the database. This action cannot be undone.
-              </p>
-            </div>
+            ) : (
+              <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-3 space-y-1 text-xs text-rose-800">
+                <div className="flex items-center gap-1.5 font-semibold text-rose-900">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Confirm Permanent Deletion</span>
+                </div>
+                <p className="text-[11px] text-rose-700 leading-relaxed">
+                  This action will permanently delete purchase order <strong className="font-bold text-rose-950">{po.poNumber}</strong> ({po.customerName}) from the database. This action cannot be undone.
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
               <Button
@@ -925,13 +1056,18 @@ export const PODetails: React.FC<PODetailsProps> = ({
               <Button
                 variant="primary"
                 size="sm"
+                disabled={hasInwardTaken}
                 onClick={() => {
+                  if (hasInwardTaken) {
+                    alert('Cannot delete: Inward entries have already been entered for this PO.');
+                    return;
+                  }
                   setIsDeleteModalOpen(false);
                   if (onDeletePO) {
                     onDeletePO();
                   }
                 }}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs"
+                className="bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold shadow-xs"
               >
                 Delete Permanently
               </Button>

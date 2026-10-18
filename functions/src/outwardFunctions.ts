@@ -589,7 +589,6 @@ export const listOutwardEntries = functions.https.onCall(async (data, context) =
 
   const {
     customerId,
-    subcontractorId,
     poId,
     status,
     page = 1,
