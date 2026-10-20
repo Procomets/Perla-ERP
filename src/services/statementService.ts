@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  writeBatch,
   query,
   where,
   orderBy,
@@ -73,16 +74,19 @@ export class StatementService {
 
     // 2. Load POs for this company
     const poResult = await POService.getPurchaseOrders(
-      { customerId: companyId },
-      { page: 1, pageSize: 500 },
+      {},
+      { page: 1, pageSize: 1000 },
       isDemo
     );
+    const targetComp = companies.find((c) => c.id === companyId || c.vendorId === companyId);
+    const targetName = (targetComp?.companyName || '').toLowerCase();
     const companyPos = (poResult.pos || []).filter(
       (p) =>
         p.customerId === companyId ||
         p.customerVendorId === companyId ||
-        (companies.find((c) => c.id === companyId || c.vendorId === companyId)?.companyName.toLowerCase() ===
-          (p.customerName || p.customerCompanyNameSnapshot || '').toLowerCase())
+        (targetComp?.vendorId && (p.customerId === targetComp.vendorId || p.customerVendorId === targetComp.vendorId)) ||
+        (targetComp?.id && (p.customerId === targetComp.id || p.customerVendorId === targetComp.id)) ||
+        (targetName && (p.customerName || p.customerCompanyNameSnapshot || '').toLowerCase() === targetName)
     );
 
     const styleSet = new Set<string>();
@@ -124,12 +128,15 @@ export class StatementService {
     const companyName = companyRes?.vendor?.companyName || 'Selected Customer';
 
     // 2. Load all eligible Purchase Orders for this company & filters
-    const poRes = await POService.getPurchaseOrders({ customerId: filters.companyId }, { page: 1, pageSize: 500 }, isDemo);
+    const poRes = await POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo);
     let matchedPOs = (poRes.pos || []).filter((p) => {
       const matchComp =
         p.customerId === filters.companyId ||
         p.customerVendorId === filters.companyId ||
-        (p.customerName && p.customerName.toLowerCase() === companyName.toLowerCase());
+        (companyRes?.vendor?.vendorId && (p.customerId === companyRes.vendor.vendorId || p.customerVendorId === companyRes.vendor.vendorId)) ||
+        (companyRes?.vendor?.id && (p.customerId === companyRes.vendor.id || p.customerVendorId === companyRes.vendor.id)) ||
+        (p.customerName && p.customerName.toLowerCase() === companyName.toLowerCase()) ||
+        (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.toLowerCase() === companyName.toLowerCase());
       if (!matchComp) return false;
 
       if (filters.styleNo && filters.styleNo !== 'all') {
@@ -174,7 +181,15 @@ export class StatementService {
     const approvals = await this.getInvoiceApprovals(filters.companyId, isDemo);
     const approvalMap = new Map<string, InvoiceApprovalRecord>();
     approvals.forEach((app) => {
-      approvalMap.set(app.poColourLineId, app);
+      if (app.poColourLineId) {
+        approvalMap.set(app.poColourLineId, app);
+      }
+      if (app.purchaseOrderId && app.colourName) {
+        approvalMap.set(`${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`, app);
+      }
+      if (app.poNumber && app.colourName) {
+        approvalMap.set(`${app.poNumber.trim().toLowerCase()}:::${app.colourName.trim().toLowerCase()}`, app);
+      }
     });
 
     // 6. Build Left Side (INWARD Rows)
@@ -294,7 +309,10 @@ export class StatementService {
         });
 
         const balanceQty = cumulativeInward - cumulativeOutward;
-        const approvalRecord = approvalMap.get(lineId);
+        const approvalRecord =
+          approvalMap.get(lineId) ||
+          approvalMap.get(`${po.id}:::${lineColourName.trim().toLowerCase()}`) ||
+          approvalMap.get(`${(po.poNumber || '').trim().toLowerCase()}:::${lineColourName.trim().toLowerCase()}`);
         const isApprovedForInvoice = Boolean(approvalRecord && approvalRecord.status === 'approved');
         const isInvoiced = Boolean(approvalRecord && approvalRecord.status === 'invoiced');
 
@@ -439,6 +457,21 @@ export class StatementService {
       throw new Error('This colour line has already been approved for invoice.');
     }
 
+    // Direct check against existing approvals to guard against concurrent clicks
+    const existingApprovals = await this.getInvoiceApprovals(params.companyId, isDemo);
+    const alreadyApproved = existingApprovals.find(
+      (a) =>
+        a.poColourLineId === params.poLineId ||
+        (a.purchaseOrderId === line.poId && a.colourName?.toLowerCase() === line.colour?.toLowerCase()) ||
+        (a.poNumber === line.poNumber && a.colourName?.toLowerCase() === line.colour?.toLowerCase())
+    );
+    if (alreadyApproved) {
+      if (alreadyApproved.status === 'invoiced') {
+        throw new Error(`This colour line is already invoiced (Invoice: ${alreadyApproved.invoiceNo || 'Billed'}).`);
+      }
+      throw new Error('This colour line has already been approved for invoice.');
+    }
+
     if (line.cumulativeInward <= 0) {
       throw new Error('Cannot approve for invoice: No inward receipts recorded.');
     }
@@ -450,7 +483,8 @@ export class StatementService {
     }
 
     const now = new Date().toISOString();
-    const approvalId = `appr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    // Deterministic approval ID based on PO and colour line to prevent duplicate document creation
+    const approvalId = `appr_${line.poId}_${params.poLineId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     const approvalRecord: InvoiceApprovalRecord = {
       approvalId,
@@ -478,18 +512,78 @@ export class StatementService {
     if (!isDemo) {
       try {
         const docRef = doc(db, 'invoice_approvals', approvalId);
-        await setDoc(docRef, approvalRecord);
+        await setDoc(docRef, approvalRecord, { merge: true });
       } catch (err) {
         console.warn('Firestore write to invoice_approvals failed, storing locally:', err);
       }
     }
 
-    // Persist locally
-    const current = getLocalApprovals().filter((a) => a.poColourLineId !== params.poLineId);
+    // Persist locally, removing any stale record for this line
+    const current = getLocalApprovals().filter(
+      (a) =>
+        a.approvalId !== approvalId &&
+        a.poColourLineId !== params.poLineId &&
+        !(a.purchaseOrderId === line.poId && a.colourName?.toLowerCase() === line.colour?.toLowerCase())
+    );
     current.push(approvalRecord);
     saveLocalApprovals(current);
 
     return approvalRecord;
+  }
+
+  /**
+   * Approves all eligible colour lines for an entire Purchase Order.
+   * Note: Any colour lines that have ALREADY been moved to invoice generation
+   * (or already invoiced) are skipped and NOT re-stored or duplicated.
+   */
+  static async approveEntirePOForInvoice(
+    params: {
+      poId: string;
+      companyId: string;
+    },
+    user: { uid: string; displayName?: string },
+    isDemo: boolean = false
+  ): Promise<{ approvedRecords: InvoiceApprovalRecord[]; skippedLineCount: number }> {
+    const statement = await this.getStatementData({ companyId: params.companyId, poId: params.poId }, isDemo);
+    const poLines = statement.colourLines.filter(
+      (l) => l.poId === params.poId || l.poNumber === params.poId
+    );
+
+    if (poLines.length === 0) {
+      throw new Error('No colour lines found for this Purchase Order.');
+    }
+
+    // Filter to only lines that are strictly ready for invoice and not already approved or invoiced
+    const eligibleLines = poLines.filter(
+      (l) => l.isReadyForInvoice && !l.isApprovedForInvoice && !l.isInvoiced
+    );
+
+    if (eligibleLines.length === 0) {
+      const alreadyMoved = poLines.filter((l) => l.isApprovedForInvoice || l.isInvoiced);
+      if (alreadyMoved.length > 0) {
+        throw new Error('All eligible colour lines for this PO have already been approved and moved to Invoice module.');
+      }
+      throw new Error(
+        'No colour lines in this PO meet invoice eligibility criteria (inward received must strictly match outward dispatched).'
+      );
+    }
+
+    const approvedRecords: InvoiceApprovalRecord[] = [];
+    for (const line of eligibleLines) {
+      const rec = await this.approveStatementLineForInvoice(
+        {
+          poId: line.poId,
+          poLineId: line.poLineId,
+          companyId: params.companyId
+        },
+        user,
+        isDemo
+      );
+      approvedRecords.push(rec);
+    }
+
+    const skippedLineCount = poLines.length - eligibleLines.length;
+    return { approvedRecords, skippedLineCount };
   }
 
   /**
@@ -500,26 +594,52 @@ export class StatementService {
 
     if (!isDemo) {
       try {
+        // Query without composite orderBy to eliminate index requirement failures in Firestore
         const q = companyId
-          ? query(collection(db, 'invoice_approvals'), where('companyId', '==', companyId), orderBy('approvedAt', 'desc'))
-          : query(collection(db, 'invoice_approvals'), orderBy('approvedAt', 'desc'));
+          ? query(collection(db, 'invoice_approvals'), where('companyId', '==', companyId))
+          : collection(db, 'invoice_approvals');
         const snap = await getDocs(q);
-        if (!snap.empty) {
-          list = snap.docs.map((d) => d.data() as InvoiceApprovalRecord);
-        } else {
-          list = getLocalApprovals();
-        }
+        // Always trust Firestore (even if empty = all records deleted).
+        // Overwrite local storage cache so stale deleted approvals are removed.
+        list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as InvoiceApprovalRecord));
+        saveLocalApprovals(list);
       } catch (e) {
+        console.warn('Firestore getInvoiceApprovals error:', e);
         list = getLocalApprovals();
       }
     } else {
       list = getLocalApprovals();
     }
 
-    if (companyId) {
-      return list.filter((a) => a.companyId === companyId);
+    // Sort chronologically descending in memory
+    list.sort((a, b) => (b.approvedAt || b.createdAt || '').localeCompare(a.approvedAt || a.createdAt || ''));
+
+    // Deduplicate approvals by PO Colour Line to guarantee no duplicate entries
+    const dedupedMap = new Map<string, InvoiceApprovalRecord>();
+    for (const app of list) {
+      const lineKey =
+        app.poColourLineId ||
+        (app.purchaseOrderId && app.colourName
+          ? `${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`
+          : app.approvalId);
+
+      const existing = dedupedMap.get(lineKey);
+      if (!existing) {
+        dedupedMap.set(lineKey, app);
+      } else {
+        // If an approval is already 'invoiced', that takes precedence over 'approved'
+        if (app.status === 'invoiced' && existing.status !== 'invoiced') {
+          dedupedMap.set(lineKey, app);
+        }
+      }
     }
-    return list;
+
+    const uniqueList = Array.from(dedupedMap.values());
+
+    if (companyId) {
+      return uniqueList.filter((a) => a.companyId === companyId);
+    }
+    return uniqueList;
   }
 
   /**
@@ -533,18 +653,25 @@ export class StatementService {
   }
 
   /**
-   * Marks an approval record as invoiced when an invoice is created in Invoice Module
+   * Batch marks multiple approval records as invoiced in a single atomic batch
    */
-  static async markApprovalAsInvoiced(
-    poLineId: string,
+  static async markApprovalsBatch(
+    items: { poLineId?: string; approvalId?: string }[],
     invoiceId: string,
     invoiceNo: string,
     invoiceDate: string,
     isDemo: boolean = false
   ): Promise<void> {
     const list = getLocalApprovals();
+    const poLineIds = new Set(items.map((i) => i.poLineId).filter(Boolean));
+    const approvalIds = new Set(items.map((i) => i.approvalId).filter(Boolean));
+
     const updated = list.map((app) => {
-      if (app.poColourLineId === poLineId) {
+      if (
+        (app.poColourLineId && poLineIds.has(app.poColourLineId)) ||
+        (app.approvalId && approvalIds.has(app.approvalId)) ||
+        (app.approvalId && items.some((i) => i.poLineId && app.approvalId.includes(i.poLineId)))
+      ) {
         return {
           ...app,
           status: 'invoiced' as const,
@@ -560,10 +687,33 @@ export class StatementService {
 
     if (!isDemo) {
       try {
-        const target = list.find((a) => a.poColourLineId === poLineId);
-        if (target) {
-          const docRef = doc(db, 'invoice_approvals', target.approvalId);
-          await updateDoc(docRef, {
+        const batch = writeBatch(db);
+        const docIdsToUpdate = new Set<string>();
+
+        // Include any directly known approval IDs
+        for (const id of approvalIds) {
+          if (id) docIdsToUpdate.add(id);
+        }
+
+        // Query by poColourLineId in parallel for any missing doc IDs
+        const missingLineIds = Array.from(poLineIds);
+        if (missingLineIds.length > 0) {
+          await Promise.all(
+            missingLineIds.map(async (lineId) => {
+              try {
+                const q = query(collection(db, 'invoice_approvals'), where('poColourLineId', '==', lineId));
+                const snap = await getDocs(q);
+                snap.docs.forEach((d) => docIdsToUpdate.add(d.id));
+              } catch (e) {
+                console.warn('Error querying approvals for lineId:', lineId, e);
+              }
+            })
+          );
+        }
+
+        for (const docId of docIdsToUpdate) {
+          const docRef = doc(db, 'invoice_approvals', docId);
+          batch.update(docRef, {
             status: 'invoiced',
             invoiceId,
             invoiceNo,
@@ -571,10 +721,25 @@ export class StatementService {
             updatedAt: Timestamp.now()
           });
         }
-      } catch (e) {
-        console.warn('Failed to update Firestore invoice_approvals status:', e);
+
+        await batch.commit();
+      } catch (err) {
+        console.warn('Firestore batch markApprovalsBatch error:', err);
       }
     }
+  }
+
+  /**
+   * Marks an approval record as invoiced when an invoice is created in Invoice Module
+   */
+  static async markApprovalAsInvoiced(
+    poLineId: string,
+    invoiceId: string,
+    invoiceNo: string,
+    invoiceDate: string,
+    isDemo: boolean = false
+  ): Promise<void> {
+    return this.markApprovalsBatch([{ poLineId }], invoiceId, invoiceNo, invoiceDate, isDemo);
   }
 
   /**

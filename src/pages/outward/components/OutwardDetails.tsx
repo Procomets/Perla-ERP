@@ -3,7 +3,7 @@ import { OutwardEntry, OutwardAuditLog } from '../../../types/outward';
 import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
-import { formatDate } from '../../../utils/formatters';
+import { formatDate, formatDateTime } from '../../../utils/formatters';
 import {
   ArrowLeft,
   Printer,
@@ -15,8 +15,10 @@ import {
   Building,
   Layers,
   Calendar,
-  FileText
+  FileText,
+  Lock
 } from 'lucide-react';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 interface OutwardDetailsProps {
   outward: OutwardEntry;
@@ -28,6 +30,7 @@ interface OutwardDetailsProps {
   onReverse: (reason: string) => Promise<void>;
   canManage: boolean;
   isProcessing: boolean;
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
@@ -39,8 +42,10 @@ export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
   onPostDraft,
   onReverse,
   canManage,
-  isProcessing
+  isProcessing,
+  lockedPOMap = {}
 }) => {
+  const lockStatus = POLockService.isLocked(outward, lockedPOMap);
   const [isReverseModalOpen, setIsReverseModalOpen] = useState(false);
   const [reversalReason, setReversalReason] = useState('');
   const [reverseError, setReverseError] = useState<string | null>(null);
@@ -109,27 +114,64 @@ export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
               )}
 
               {onEditDraft && (
-                <Button variant="outline" size="sm" onClick={onEditDraft} className="flex items-center gap-1.5 text-xs">
-                  <Edit className="w-4 h-4" />
-                  Edit Draft
-                </Button>
+                lockStatus ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    icon={<Lock className="w-4 h-4 text-slate-400" />}
+                    title={lockStatus.reason}
+                    className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+                  >
+                    Edit Draft
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={onEditDraft} className="flex items-center gap-1.5 text-xs">
+                    <Edit className="w-4 h-4" />
+                    Edit Draft
+                  </Button>
+                )
               )}
             </>
           )}
 
           {outward.status === 'posted' && canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsReverseModalOpen(true)}
-              className="text-rose-600 border-rose-200 hover:bg-rose-50 flex items-center gap-1.5 text-xs font-semibold"
-            >
-              <RotateCcw className="w-4 h-4 text-rose-600" />
-              Reverse Dispatch
-            </Button>
+            lockStatus ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                icon={<Lock className="w-4 h-4 text-slate-400" />}
+                title={lockStatus.reason}
+                className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+              >
+                Reverse Dispatch
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsReverseModalOpen(true)}
+                className="text-rose-600 border-rose-200 hover:bg-rose-50 flex items-center gap-1.5 text-xs font-semibold"
+              >
+                <RotateCcw className="w-4 h-4 text-rose-600" />
+                Reverse Dispatch
+              </Button>
+            )
           )}
         </div>
       </div>
+
+      {/* Lock Banner if Statement is Approved or Invoiced */}
+      {lockStatus && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-xs text-amber-900 font-medium shadow-2xs">
+          <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+          <div>
+            <span className="font-bold block text-amber-950">Purchase Order Locked from Modification</span>
+            <span className="text-amber-800">{lockStatus.reason}</span>
+          </div>
+        </div>
+      )}
 
       {/* Reversal Banner if Reversed */}
       {outward.status === 'reversed' && (
@@ -392,8 +434,10 @@ export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
                   </span>
                   <span className="text-slate-600">{log.summary}</span>
                 </div>
-                <div className="text-[11px] text-slate-400 whitespace-nowrap">
-                  {log.performedByName || log.performedBy} • {formatDate(log.performedAt)}
+                <div className="text-[11px] text-slate-500 whitespace-nowrap font-medium flex items-center gap-1">
+                  <span>{log.performedByName || log.performedBy}</span>
+                  <span>•</span>
+                  <span>{formatDateTime(log.performedAt)}</span>
                 </div>
               </div>
             ))}

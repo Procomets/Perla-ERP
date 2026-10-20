@@ -24,6 +24,7 @@ import {
   InwardLineBalance,
   InwardStatus
 } from '../types/inward';
+import { POLockService } from './poLockService';
 import { PurchaseOrder } from '../types/po';
 import { Vendor } from '../types/vendor';
 import { calculateInwardTotalsByUnit } from '../schemas/inwardSchema';
@@ -31,202 +32,35 @@ import { cleanFirestoreData, VendorService } from './vendorService';
 import { POService } from './poService';
 
 // Seed initial mock inward entries for demonstration & seeding
-export const initialMockInwardEntries: InwardEntry[] = [
-  {
-    id: 'inw-paramount-0001',
-    inwardId: 'inw-paramount-0001',
-    inwardNo: 'INW/2026-27/0001',
-    entryId: 'INW/2026-27/0001',
-    poId: 'po-paramount-2467',
-    poNumberSnapshot: 'PO/2026-27/0002',
-    poNumber: 'PO/2026-27/0002',
-    customerVendorId: 'v-102',
-    customerId: 'v-102',
-    customerCompanyNameSnapshot: 'Paramount Apparel Processing',
-    customerName: 'Paramount Apparel Processing',
-    subcontractorVendorId: null,
-    subContractorId: undefined,
-    subcontractorNameSnapshot: null,
-    subContractorName: undefined,
-    styleNoSnapshot: '2467',
-    styleNo: '2467',
-    itemNameSnapshot: 'shoe',
-    itemName: 'shoe',
-    processCategorySnapshot: 'dyeing',
-    processCategory: 'dyeing',
-    customerDate: '2026-10-12',
-    customerDcNo: 'DC-PAP-9901',
-    inwardDate: '2026-10-12',
-    status: 'posted',
-    totalQtyByUnit: { piece: 2, kg: 0 },
-    totalQuantity: 2,
-    remarks: 'First batch receipt against sample order. All pieces checked.',
-    createdBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    createdByName: 'Pranav',
-    createdAt: '2026-10-12T10:15:00.000Z',
-    updatedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    updatedByName: 'Pranav',
-    updatedAt: '2026-10-12T10:15:00.000Z',
-    postedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    postedByName: 'Pranav',
-    postedAt: '2026-10-12T10:15:00.000Z',
-    lines: [
-      {
-        inwardLineId: 'inwl-paramount-1',
-        lineId: 'inwl-paramount-1',
-        inwardId: 'inw-paramount-0001',
-        poId: 'po-paramount-2467',
-        poLineId: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
-        colourNameSnapshot: 'pink',
-        colour: 'pink',
-        colourCodeSnapshot: null,
-        itemNameSnapshot: 'shoe',
-        washTypeSnapshot: 'stoneWash',
-        processType: 'stoneWash',
-        orderedQtySnapshot: 2,
-        unit: 'piece',
-        previouslyReceivedQtySnapshot: 0,
-        receivedQty: 2,
-        cumulativeReceivedQtySnapshot: 2,
-        balanceAfterReceiptSnapshot: 0,
-        createdAt: '2026-10-12T10:15:00.000Z'
-      }
-    ],
-    schemaVersion: 1
-  },
-  {
-    id: 'inw-apex-0002',
-    inwardId: 'inw-apex-0002',
-    inwardNo: 'INW/2026-27/0002',
-    entryId: 'INW/2026-27/0002',
-    poId: 'po-apex-9021',
-    poNumberSnapshot: 'PO/2026-27/0001',
-    poNumber: 'PO/2026-27/0001',
-    customerVendorId: 'v-101',
-    customerId: 'v-101',
-    customerCompanyNameSnapshot: 'Sree Kumar Texind Corporation',
-    customerName: 'Sree Kumar Texind Corporation',
-    subcontractorVendorId: 'v-103',
-    subContractorId: 'v-103',
-    subcontractorNameSnapshot: 'Sree Kumar Subcontractor Unit A',
-    subContractorName: 'Sree Kumar Subcontractor Unit A',
-    styleNoSnapshot: 'ST-9021',
-    styleNo: 'ST-9021',
-    itemNameSnapshot: "Men's Casual Shirt",
-    itemName: "Men's Casual Shirt",
-    processCategorySnapshot: 'washing',
-    processCategory: 'washing',
-    customerDate: '2026-10-10',
-    customerDcNo: 'DC-SKT-4029',
-    inwardDate: '2026-10-10',
-    status: 'posted',
-    totalQtyByUnit: { piece: 4500, kg: 0 },
-    totalQuantity: 4500,
-    remarks: 'Lot 1 partial receipt. Inward verified by stores supervisor.',
-    createdBy: 'admin-uid',
-    createdByName: 'Thiru M.',
-    createdAt: '2026-10-10T14:30:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Thiru M.',
-    updatedAt: '2026-10-10T14:30:00.000Z',
-    postedBy: 'admin-uid',
-    postedByName: 'Thiru M.',
-    postedAt: '2026-10-10T14:30:00.000Z',
-    lines: [
-      {
-        inwardLineId: 'inwl-apex-1',
-        lineId: 'inwl-apex-1',
-        inwardId: 'inw-apex-0002',
-        poId: 'po-apex-9021',
-        poLineId: 'pol-101',
-        colourNameSnapshot: 'Pantone Brunnet Shadow',
-        colour: 'Pantone Brunnet Shadow',
-        colourCodeSnapshot: '19-0912',
-        itemNameSnapshot: "Men's Casual Shirt",
-        washTypeSnapshot: 'Softener Wash',
-        processType: 'Softener Wash',
-        orderedQtySnapshot: 3066,
-        unit: 'piece',
-        previouslyReceivedQtySnapshot: 0,
-        receivedQty: 1800,
-        cumulativeReceivedQtySnapshot: 1800,
-        balanceAfterReceiptSnapshot: 1266,
-        createdAt: '2026-10-10T14:30:00.000Z'
-      },
-      {
-        inwardLineId: 'inwl-apex-2',
-        lineId: 'inwl-apex-2',
-        inwardId: 'inw-apex-0002',
-        poId: 'po-apex-9021',
-        poLineId: 'pol-102',
-        colourNameSnapshot: 'Pantone Blue Graphite',
-        colour: 'Pantone Blue Graphite',
-        colourCodeSnapshot: '19-4010',
-        itemNameSnapshot: "Men's Casual Shirt",
-        washTypeSnapshot: 'Softener Wash',
-        processType: 'Softener Wash',
-        orderedQtySnapshot: 2859,
-        unit: 'piece',
-        previouslyReceivedQtySnapshot: 0,
-        receivedQty: 1500,
-        cumulativeReceivedQtySnapshot: 1500,
-        balanceAfterReceiptSnapshot: 1359,
-        createdAt: '2026-10-10T14:30:00.000Z'
-      },
-      {
-        inwardLineId: 'inwl-apex-3',
-        lineId: 'inwl-apex-3',
-        inwardId: 'inw-apex-0002',
-        poId: 'po-apex-9021',
-        poLineId: 'pol-103',
-        colourNameSnapshot: 'Green Micro',
-        colour: 'Green Micro',
-        colourCodeSnapshot: '18-5611',
-        itemNameSnapshot: "Men's Casual Shirt",
-        washTypeSnapshot: 'Softener Wash',
-        processType: 'Softener Wash',
-        orderedQtySnapshot: 1514,
-        unit: 'piece',
-        previouslyReceivedQtySnapshot: 0,
-        receivedQty: 1200,
-        cumulativeReceivedQtySnapshot: 1200,
-        balanceAfterReceiptSnapshot: 314,
-        createdAt: '2026-10-10T14:30:00.000Z'
-      }
-    ],
-    schemaVersion: 1
-  }
-];
+// Seed initial mock inward entries for demonstration & seeding
+export const initialMockInwardEntries: InwardEntry[] = [];
 
-export const initialMockInwardAuditLogs: Record<string, InwardAuditLog[]> = {
-  'inw-paramount-0001': [
-    {
-      auditId: 'inw_audit_1',
-      inwardId: 'inw-paramount-0001',
-      inwardNo: 'INW/2026-27/0001',
-      action: 'posted',
-      performedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-      performedByName: 'Pranav',
-      performedAt: '2026-10-12T10:15:00.000Z',
-      summary: 'Inward Receipt INW/2026-27/0001 posted for PO PO/2026-27/0002 with DC No DC-PAP-9901.'
-    }
-  ],
-  'inw-apex-0002': [
-    {
-      auditId: 'inw_audit_2',
-      inwardId: 'inw-apex-0002',
-      inwardNo: 'INW/2026-27/0002',
-      action: 'posted',
-      performedBy: 'admin-uid',
-      performedByName: 'Thiru M.',
-      performedAt: '2026-10-10T14:30:00.000Z',
-      summary: 'Inward Receipt INW/2026-27/0002 posted for PO PO/2026-27/0001 with DC No DC-SKT-4029.'
-    }
-  ]
-};
+export const initialMockInwardAuditLogs: Record<string, InwardAuditLog[]> = {};
 
 const LOCAL_STORAGE_KEY = 'perla_erp_inward_entries';
 const AUDIT_STORAGE_KEY = 'perla_erp_inward_audit_logs';
+
+export interface InwardOutwardAnalysis {
+  deletableInwardMap: Record<string, boolean>; // inwardId -> boolean (false if outward entered against this inward)
+  inwardMinAllowedMap: Record<string, Record<string, number>>; // inwardId -> lineKey/poLineId -> minQty
+  inwardConsumedByOutwardMap: Record<string, number>; // inwardId -> total consumed qty
+  outwardCountByPo: Record<string, number>; // poId -> count of active outwards
+}
+
+function getLocalOutwardsForInward(): any[] {
+  if (typeof localStorage !== 'undefined') {
+    const raw = localStorage.getItem('perla_erp_outward_entries');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  return [];
+}
 
 let memoryInwards: InwardEntry[] = [...initialMockInwardEntries];
 let memoryAuditLogs: Record<string, InwardAuditLog[]> = { ...initialMockInwardAuditLogs };
@@ -237,7 +71,16 @@ function getLocalInwards(): InwardEntry[] {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Filter out legacy default mock inward entries if present
+          const cleaned = parsed.filter(
+            (e) => !['inw-paramount-0001', 'inw-apex-0002', 'inw-101'].includes(e.id || e.inwardId)
+          );
+          if (cleaned.length !== parsed.length) {
+            saveLocalInwards(cleaned);
+          }
+          return cleaned;
+        }
       } catch (e) {
         // Fallback
       }
@@ -263,7 +106,12 @@ function getLocalAuditLogs(): Record<string, InwardAuditLog[]> {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (typeof parsed === 'object') return parsed;
+        if (typeof parsed === 'object' && parsed !== null) {
+          delete parsed['inw-paramount-0001'];
+          delete parsed['inw-apex-0002'];
+          delete parsed['inw-101'];
+          return parsed;
+        }
       } catch (e) {
         // Fallback
       }
@@ -380,7 +228,12 @@ export class InwardService {
   /**
    * Retrieves cumulative posted quantities received for each colour line of a PO
    */
-  static async getCumulativePostedInwardMap(poId: string, excludeInwardId?: string, isDemo: boolean = false): Promise<Record<string, number>> {
+  static async getCumulativePostedInwardMap(
+    poId: string,
+    excludeInwardId?: string,
+    isDemo: boolean = false,
+    poNumber?: string
+  ): Promise<Record<string, number>> {
     const cumulativeMap: Record<string, number> = {};
 
     let entries: InwardEntry[] = [];
@@ -390,15 +243,39 @@ export class InwardService {
         const snap = await getDocs(q);
         if (!snap.empty) {
           entries = snap.docs.map((d) => d.data() as InwardEntry);
-        } else {
-          entries = getLocalInwards().filter((i) => i.poId === poId && i.status === 'posted');
+        }
+        if (poNumber && !poNumber.includes('PENDING')) {
+          const qNum = query(collection(db, 'inward_entries'), where('poNumber', '==', poNumber), where('status', '==', 'posted'));
+          const snapNum = await getDocs(qNum);
+          if (!snapNum.empty) {
+            const numEntries = snapNum.docs.map((d) => d.data() as InwardEntry);
+            const existingIds = new Set(entries.map((e) => e.inwardId || e.id));
+            for (const ne of numEntries) {
+              if (!existingIds.has(ne.inwardId || ne.id)) {
+                entries.push(ne);
+                existingIds.add(ne.inwardId || ne.id);
+              }
+            }
+          }
         }
       } catch (err) {
-        console.warn('Firestore getCumulativePostedInwardMap failed, using local storage:', err);
-        entries = getLocalInwards().filter((i) => i.poId === poId && i.status === 'posted');
+        console.warn('Firestore getCumulativePostedInwardMap failed, falling back to local storage:', err);
       }
-    } else {
-      entries = getLocalInwards().filter((i) => i.poId === poId && i.status === 'posted');
+    }
+
+    // Always merge or fallback to local storage
+    if (entries.length === 0) {
+      const local = getLocalInwards();
+      entries = local.filter((i) => {
+        const isPosted = !i.status || i.status === 'posted';
+        if (!isPosted) return false;
+        const matchId = i.poId === poId;
+        const matchNum =
+          poNumber &&
+          !poNumber.includes('PENDING') &&
+          (i.poNumber === poNumber || i.poNumberSnapshot === poNumber);
+        return matchId || matchNum;
+      });
     }
 
     for (const entry of entries) {
@@ -407,13 +284,322 @@ export class InwardService {
       }
       for (const line of entry.lines || []) {
         const lid = line.poLineId || line.lineId;
+        const qty = Number(line.receivedQty) || 0;
         if (lid) {
-          cumulativeMap[lid] = (cumulativeMap[lid] || 0) + (Number(line.receivedQty) || 0);
+          cumulativeMap[lid] = (cumulativeMap[lid] || 0) + qty;
+        }
+        const colourKey = (line.colour || line.colourNameSnapshot || '').trim().toLowerCase();
+        if (colourKey) {
+          cumulativeMap[`colour_${colourKey}`] = (cumulativeMap[`colour_${colourKey}`] || 0) + qty;
         }
       }
     }
 
     return cumulativeMap;
+  }
+
+  /**
+   * Evaluates relationship between Inward and Outward entries for a PO (or all POs)
+   * based on exact entry timestamps (creation / dispatch time) and line quantities.
+   *
+   * 1. If an inward receipt has had any of its quantity consumed by outward entries,
+   *    or if deleting it would cause cumulative outward to exceed remaining inward,
+   *    it is marked as non-deletable (deletableInwardMap[id] = false).
+   * 2. In edit mode, inwardMinAllowedMap[id][poLineId] determines the minimum quantity
+   *    that must be retained for each colour line to satisfy present outward dispatches.
+   */
+  static async getInwardOutwardDependencies(
+    poIdFilter?: string,
+    isDemo: boolean = false
+  ): Promise<InwardOutwardAnalysis> {
+    const deletableInwardMap: Record<string, boolean> = {};
+    const inwardMinAllowedMap: Record<string, Record<string, number>> = {};
+    const inwardConsumedByOutwardMap: Record<string, number> = {};
+    const outwardCountByPo: Record<string, number> = {};
+
+    let inwards: InwardEntry[] = [];
+    let outwards: any[] = [];
+
+    if (!isDemo) {
+      try {
+        const inwSnap = await getDocs(collection(db, 'inward_entries'));
+        inwSnap.forEach((d) => {
+          inwards.push({ id: d.id, ...d.data() } as InwardEntry);
+        });
+      } catch (e) {
+        inwards = [];
+      }
+
+      try {
+        const outSnap = await getDocs(collection(db, 'outward_entries'));
+        outSnap.forEach((d) => {
+          outwards.push({ id: d.id, ...d.data() });
+        });
+      } catch (e) {
+        outwards = [];
+      }
+    }
+
+    // Merge or fallback to local storage
+    const localInwards = getLocalInwards();
+    const existingInwIds = new Set(inwards.map((i) => i.inwardId || i.id));
+    for (const li of localInwards) {
+      if (!existingInwIds.has(li.inwardId || li.id)) {
+        inwards.push(li);
+      }
+    }
+
+    const localOutwards = getLocalOutwardsForInward();
+    const existingOutIds = new Set(outwards.map((o) => o.outwardId || o.id));
+    for (const lo of localOutwards) {
+      if (!existingOutIds.has(lo.outwardId || lo.id)) {
+        outwards.push(lo);
+      }
+    }
+
+    // Filter active/valid records: posted outwards and non-reversed inwards
+    const activeInwards = inwards.filter((i) => i.status !== 'reversed' && i.status !== 'cancelled');
+    const postedOutwards = outwards.filter((o) => o.status === 'posted');
+
+    // Helper: extract timestamp in ms from various possible formats
+    const parseTime = (val: any): number => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      if (val.seconds) return val.seconds * 1000;
+      if (typeof val.toDate === 'function') {
+        try {
+          return val.toDate().getTime();
+        } catch (e) {
+          // ignore
+        }
+      }
+      const t = new Date(val).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
+    const getInwardTime = (inw: InwardEntry): number => {
+      return parseTime(inw.createdAt) || parseTime(inw.inwardDate) || parseTime(inw.customerDate) || 0;
+    };
+
+    const getOutwardTime = (outw: any): number => {
+      return parseTime(outw.createdAt) || parseTime(outw.outwardDate) || 0;
+    };
+
+    // Build PO groups
+    const getCanonicalPoKey = (entry: any): string => {
+      return (entry.poId || entry.poNumberSnapshot || entry.poNumber || '').trim();
+    };
+
+    const inwardsByPo: Record<string, InwardEntry[]> = {};
+    for (const inw of activeInwards) {
+      const key = getCanonicalPoKey(inw);
+      if (!key) continue;
+      inwardsByPo[key] = inwardsByPo[key] || [];
+      inwardsByPo[key].push(inw);
+
+      if (inw.poNumberSnapshot && inw.poNumberSnapshot !== key) {
+        inwardsByPo[inw.poNumberSnapshot] = inwardsByPo[key];
+      }
+      if (inw.poId && inw.poId !== key) {
+        inwardsByPo[inw.poId] = inwardsByPo[key];
+      }
+    }
+
+    const outwardsByPo: Record<string, any[]> = {};
+    for (const outw of postedOutwards) {
+      const key = getCanonicalPoKey(outw);
+      if (!key) continue;
+      outwardsByPo[key] = outwardsByPo[key] || [];
+      outwardsByPo[key].push(outw);
+
+      if (outw.poNumberSnapshot && outw.poNumberSnapshot !== key) {
+        outwardsByPo[outw.poNumberSnapshot] = outwardsByPo[key];
+      }
+      if (outw.poId && outw.poId !== key) {
+        outwardsByPo[outw.poId] = outwardsByPo[key];
+      }
+    }
+
+    const poKeys = new Set([...Object.keys(inwardsByPo), ...Object.keys(outwardsByPo)]);
+
+    for (const poKey of poKeys) {
+      if (poIdFilter && poKey !== poIdFilter) continue;
+
+      // Unique inwards for this PO
+      const rawInwards = inwardsByPo[poKey] || [];
+      const seenInw = new Set<string>();
+      const poInwards = rawInwards.filter((i) => {
+        const id = i.inwardId || i.id;
+        if (!id || seenInw.has(id)) return false;
+        seenInw.add(id);
+        return true;
+      });
+
+      // Unique outwards for this PO
+      const rawOutwards = outwardsByPo[poKey] || [];
+      const seenOut = new Set<string>();
+      const poOutwards = rawOutwards.filter((o) => {
+        const id = o.outwardId || o.id;
+        if (!id || seenOut.has(id)) return false;
+        seenOut.add(id);
+        return true;
+      });
+
+      outwardCountByPo[poKey] = poOutwards.length;
+
+      // If no posted outwards exist for this PO, every inward can be safely deleted / edited down to 0
+      if (poOutwards.length === 0) {
+        for (const inw of poInwards) {
+          const inwId = inw.inwardId || inw.id;
+          deletableInwardMap[inwId] = true;
+          inwardConsumedByOutwardMap[inwId] = 0;
+          inwardMinAllowedMap[inwId] = {};
+        }
+        continue;
+      }
+
+      // Sort inwards and outwards chronologically ascending
+      const sortedInwards = [...poInwards].sort((a, b) => getInwardTime(a) - getInwardTime(b));
+      const sortedOutwards = [...poOutwards].sort((a, b) => getOutwardTime(a) - getOutwardTime(b));
+
+      interface InwardSlot {
+        inwardId: string;
+        poLineId: string;
+        colourKey: string;
+        originalQty: number;
+        remainingQty: number;
+        time: number;
+      }
+
+      const lineSlots: Record<string, InwardSlot[]> = {};
+      const totalInwardPerLine: Record<string, number> = {};
+      const totalOutwardPerLine: Record<string, number> = {};
+
+      for (const inw of sortedInwards) {
+        const inwId = inw.inwardId || inw.id;
+        const inwTime = getInwardTime(inw);
+        for (const line of inw.lines || []) {
+          const poLineId = line.poLineId || line.lineId || '';
+          const colourKey = (line.colourNameSnapshot || line.colour || '').trim().toLowerCase();
+          const qty = Math.max(0, Number(line.receivedQty) || 0);
+
+          const slot: InwardSlot = {
+            inwardId: inwId,
+            poLineId,
+            colourKey,
+            originalQty: qty,
+            remainingQty: qty,
+            time: inwTime
+          };
+
+          if (poLineId) {
+            lineSlots[poLineId] = lineSlots[poLineId] || [];
+            lineSlots[poLineId].push(slot);
+            totalInwardPerLine[poLineId] = (totalInwardPerLine[poLineId] || 0) + qty;
+          }
+          if (colourKey) {
+            lineSlots[`col_${colourKey}`] = lineSlots[`col_${colourKey}`] || [];
+            lineSlots[`col_${colourKey}`].push(slot);
+            totalInwardPerLine[`col_${colourKey}`] = (totalInwardPerLine[`col_${colourKey}`] || 0) + qty;
+          }
+        }
+      }
+
+      // Track consumption per inward and per line
+      const inwardConsumedQty: Record<string, number> = {};
+      const inwardLineConsumedQty: Record<string, Record<string, number>> = {};
+
+      for (const outw of sortedOutwards) {
+        for (const outLine of outw.lines || []) {
+          const poLineId = outLine.poLineId || outLine.lineId || '';
+          const colourKey = (outLine.colourNameSnapshot || outLine.colour || '').trim().toLowerCase();
+          let dispatchNeeded = Math.max(0, Number(outLine.dispatchQty) || 0);
+          if (dispatchNeeded <= 0) continue;
+
+          if (poLineId) {
+            totalOutwardPerLine[poLineId] = (totalOutwardPerLine[poLineId] || 0) + dispatchNeeded;
+          }
+          if (colourKey) {
+            totalOutwardPerLine[`col_${colourKey}`] = (totalOutwardPerLine[`col_${colourKey}`] || 0) + dispatchNeeded;
+          }
+
+          // Prioritize exact poLineId match; fallback to colour key
+          const slots = (poLineId && lineSlots[poLineId]) || (colourKey && lineSlots[`col_${colourKey}`]) || [];
+
+          for (const slot of slots) {
+            if (dispatchNeeded <= 0) break;
+            if (slot.remainingQty <= 0) continue;
+
+            const allocated = Math.min(slot.remainingQty, dispatchNeeded);
+            slot.remainingQty -= allocated;
+            dispatchNeeded -= allocated;
+
+            inwardConsumedQty[slot.inwardId] = (inwardConsumedQty[slot.inwardId] || 0) + allocated;
+            inwardLineConsumedQty[slot.inwardId] = inwardLineConsumedQty[slot.inwardId] || {};
+
+            if (slot.poLineId) {
+              inwardLineConsumedQty[slot.inwardId][slot.poLineId] =
+                (inwardLineConsumedQty[slot.inwardId][slot.poLineId] || 0) + allocated;
+            }
+            if (slot.colourKey) {
+              inwardLineConsumedQty[slot.inwardId][`col_${slot.colourKey}`] =
+                (inwardLineConsumedQty[slot.inwardId][`col_${slot.colourKey}`] || 0) + allocated;
+            }
+          }
+        }
+      }
+
+      // Check each inward receipt for deletability and edit minimums
+      for (const inw of sortedInwards) {
+        const inwId = inw.inwardId || inw.id;
+        const consumed = inwardConsumedQty[inwId] || 0;
+        inwardConsumedByOutwardMap[inwId] = consumed;
+
+        let stockBalanceViolated = false;
+        inwardMinAllowedMap[inwId] = inwardMinAllowedMap[inwId] || {};
+
+        for (const line of inw.lines || []) {
+          const poLineId = line.poLineId || line.lineId || '';
+          const colourKey = (line.colourNameSnapshot || line.colour || '').trim().toLowerCase();
+          const inwQty = Math.max(0, Number(line.receivedQty) || 0);
+
+          const totInw = (poLineId && totalInwardPerLine[poLineId]) || (colourKey && totalInwardPerLine[`col_${colourKey}`]) || 0;
+          const totOutw = (poLineId && totalOutwardPerLine[poLineId]) || (colourKey && totalOutwardPerLine[`col_${colourKey}`]) || 0;
+
+          const remainingInwWithoutThis = Math.max(0, totInw - inwQty);
+          if (totOutw > remainingInwWithoutThis) {
+            stockBalanceViolated = true;
+          }
+
+          const minRequiredForBalance = Math.max(0, totOutw - remainingInwWithoutThis);
+          const consumedForLine = (poLineId && inwardLineConsumedQty[inwId]?.[poLineId]) ||
+                                  (colourKey && inwardLineConsumedQty[inwId]?.[`col_${colourKey}`]) || 0;
+          const minAllowed = Math.max(consumedForLine, minRequiredForBalance);
+
+          if (poLineId) inwardMinAllowedMap[inwId][poLineId] = minAllowed;
+          if (colourKey) {
+            inwardMinAllowedMap[inwId][`col_${colourKey}`] = minAllowed;
+            inwardMinAllowedMap[inwId][colourKey] = minAllowed;
+          }
+        }
+
+        // If some outward was entered in the PO and consumed from this inward entry,
+        // or if deleting it drops inward stock below outward dispatched:
+        // Do NOT show the delete option!
+        if (consumed > 0 || stockBalanceViolated) {
+          deletableInwardMap[inwId] = false;
+        } else {
+          deletableInwardMap[inwId] = true;
+        }
+      }
+    }
+
+    return {
+      deletableInwardMap,
+      inwardMinAllowedMap,
+      inwardConsumedByOutwardMap,
+      outwardCountByPo
+    };
   }
 
   /**
@@ -431,33 +617,22 @@ export class InwardService {
         const q = query(collection(db, 'inward_entries'), orderBy('inwardDate', 'desc'));
         const snap = await getDocs(q);
 
-        if (!snap.empty) {
-          allEntries = snap.docs.map((docSnap) => {
-            const data = docSnap.data();
-            const id = docSnap.id;
-            return {
-              ...data,
-              id,
-              inwardId: data.inwardId || id,
-              entryId: data.entryId || data.inwardNo || id
-            } as InwardEntry;
-          });
-        } else {
-          // Auto-seed initial inward entries into live Firestore
-          console.log('Seeding initial inward entries into live Firestore...');
-          for (const item of initialMockInwardEntries) {
-            const docRef = doc(db, 'inward_entries', item.inwardId);
-            await setDoc(docRef, cleanFirestoreData(item));
-            // Seed subcollection lines
-            for (const l of item.lines) {
-              const lineRef = doc(collection(db, 'inward_entries', item.inwardId, 'lines'), l.inwardLineId);
-              await setDoc(lineRef, cleanFirestoreData(l));
-            }
-          }
-          allEntries = [...initialMockInwardEntries];
-        }
+        // Always trust Firestore result (even empty = all records deleted).
+        // Do NOT fall back to localStorage when Firestore succeeds — that would show stale deleted data.
+        allEntries = snap.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const id = docSnap.id;
+          return {
+            ...data,
+            id,
+            inwardId: data.inwardId || id,
+            entryId: data.entryId || data.inwardNo || id
+          } as InwardEntry;
+        });
+        saveLocalInwards(allEntries); // Sync cache: overwrites with fresh Firestore data (or clears it if empty)
       } catch (err) {
-        console.warn('Firestore fetch failed for inward_entries, falling back to local demo:', err);
+        // Only fall back to localStorage on a genuine network/permission error
+        console.warn('Firestore fetch failed for inward_entries, falling back to local cache:', err);
         allEntries = getLocalInwards();
       }
     } else {
@@ -585,8 +760,9 @@ export class InwardService {
           };
         }
       } catch (err) {
-        console.warn('Firestore getInwardEntryById failed, using local storage:', err);
+        console.warn('Firestore getInwardEntryById failed:', err);
       }
+      return { inward: null, logs: [] };
     }
 
     const localList = getLocalInwards();
@@ -599,7 +775,7 @@ export class InwardService {
    * Calculate Colour-wise Inward balance preview for a PO
    */
   static async getInwardBalancesForPO(po: PurchaseOrder, isDemo: boolean = false): Promise<InwardBalancesResponse> {
-    const cumulativeMap = await this.getCumulativePostedInwardMap(po.id, undefined, isDemo);
+    const cumulativeMap = await this.getCumulativePostedInwardMap(po.id, undefined, isDemo, po.poNumber);
 
     const totalsByUnit: InwardBalancesResponse['totalsByUnit'] = {
       piece: { ordered: 0, previouslyReceived: 0, remaining: 0 },
@@ -609,8 +785,12 @@ export class InwardService {
     const colourLines = po.colourLines || po.lines || [];
     const processedLines: InwardLineBalance[] = colourLines.map((line) => {
       const lineId = line.id || line.lineId;
+      const colourKey = (line.colourName || '').trim().toLowerCase();
       const ordered = Math.max(0, Number(line.quantity) || 0);
-      const prev = Math.max(0, cumulativeMap[lineId] || 0);
+      const prev = Math.max(
+        0,
+        cumulativeMap[lineId] ?? (colourKey ? cumulativeMap[`colour_${colourKey}`] : 0) ?? 0
+      );
       const remaining = Math.max(0, ordered - prev);
       const unit = line.unit === 'kg' ? 'kg' : 'piece';
 
@@ -836,10 +1016,11 @@ export class InwardService {
     );
 
     // Over-receipt check against authoritative cumulative posted receipts
-    const cumulativeMap = await this.getCumulativePostedInwardMap(po.id, draftInwardId, isDemo);
+    const cumulativeMap = await this.getCumulativePostedInwardMap(po.id, draftInwardId, isDemo, po.poNumber);
 
     const processedLines: InwardLine[] = lines.map((l, idx) => {
-      const prev = cumulativeMap[l.poLineId] || 0;
+      const colourKey = (l.colourName || '').trim().toLowerCase();
+      const prev = cumulativeMap[l.poLineId] ?? (colourKey ? cumulativeMap[`colour_${colourKey}`] : 0) ?? 0;
       const rec = Math.max(0, Number(l.receivedQty) || 0);
       const remainingBefore = Math.max(0, Number(l.orderedQty) - prev);
 
@@ -1184,6 +1365,22 @@ export class InwardService {
     }
 
     const poId = inward.poId;
+
+    // Safety verification 1: Check if PO is locked due to statement approval / invoice
+    const lockMap = await POLockService.getLockedPOMap(isDemo);
+    const lockStatus = POLockService.isLocked(inward, lockMap);
+    if (lockStatus) {
+      throw new Error(`Cannot delete Inward Receipt ${inward.inwardNo || inwardId}: ${lockStatus.reason}`);
+    }
+
+    // Safety verification 2: Prevent deleting inward if outward dispatches depend on it
+    const analysis = await this.getInwardOutwardDependencies(poId, isDemo);
+    const targetKey = inward.inwardId || inward.id || inwardId;
+    if (analysis.deletableInwardMap[targetKey] === false || analysis.deletableInwardMap[inwardId] === false) {
+      throw new Error(
+        `Cannot delete Inward Receipt ${inward.inwardNo || inwardId}: One or more Outward dispatch entries have already been entered against this Purchase Order.`
+      );
+    }
 
     if (!isDemo) {
       try {

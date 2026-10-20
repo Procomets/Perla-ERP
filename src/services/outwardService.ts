@@ -24,6 +24,7 @@ import {
   OutwardLineBalance,
   OutwardStatus
 } from '../types/outward';
+import { POLockService } from './poLockService';
 import { PurchaseOrder } from '../types/po';
 import { Vendor } from '../types/vendor';
 import { calculateOutwardTotalsByUnit } from '../schemas/outwardSchema';
@@ -31,176 +32,17 @@ import { InwardService } from './inwardService';
 import { POService } from './poService';
 import { VendorService } from './vendorService';
 
-// Initial Mock Outward Entries for demonstration & demo mode
-export const initialMockOutwardEntries: OutwardEntry[] = [
-  {
-    id: 'out-paramount-0001',
-    outwardId: 'out-paramount-0001',
-    outwardNo: 'OUT/2026-27/0001',
-    entryId: 'OUT/2026-27/0001',
-    poId: 'po-paramount-2467',
-    poNumberSnapshot: 'PO/2026-27/0002',
-    poNumber: 'PO/2026-27/0002',
-    customerVendorId: 'v-102',
-    customerId: 'v-102',
-    customerCompanyNameSnapshot: 'Paramount Apparel Processing',
-    customerName: 'Paramount Apparel Processing',
-    subcontractorVendorId: null,
-    subContractorId: undefined,
-    subcontractorNameSnapshot: null,
-    subContractorName: undefined,
-    styleNoSnapshot: '2467',
-    styleNo: '2467',
-    itemNameSnapshot: 'shoe',
-    itemName: 'shoe',
-    processCategorySnapshot: 'dyeing',
-    processCategory: 'dyeing',
-    outwardDate: '2026-10-14',
-    ourDcNo: 'DC-PERLA-1041',
-    vehicleNumber: 'TN-22-BA-4512',
-    vehicleNo: 'TN-22-BA-4512',
-    driverName: 'Murugan K.',
-    transporterVendorId: null,
-    transporterNameSnapshot: 'Perla In-House Logistics',
-    destination: 'Thirumudivakkam to Ambattur Industrial Estate',
-    remarks: 'Sample batch dispatched after complete dyeing inspection.',
-    status: 'posted',
-    totalQtyByUnit: { piece: 1, kg: 0 },
-    totalQuantity: 1,
-    createdBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    createdByName: 'Pranav',
-    createdAt: '2026-10-14T11:00:00.000Z',
-    updatedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    updatedByName: 'Pranav',
-    updatedAt: '2026-10-14T11:00:00.000Z',
-    postedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-    postedByName: 'Pranav',
-    postedAt: '2026-10-14T11:00:00.000Z',
-    lines: [
-      {
-        outwardLineId: 'outl-paramount-1',
-        lineId: 'outl-paramount-1',
-        outwardId: 'out-paramount-0001',
-        poId: 'po-paramount-2467',
-        poLineId: '755fdd37-83ea-45d6-a69a-83a76eb26cf5',
-        colourNameSnapshot: 'pink',
-        colour: 'pink',
-        colourCodeSnapshot: null,
-        itemNameSnapshot: 'shoe',
-        washTypeSnapshot: 'stoneWash',
-        processType: 'stoneWash',
-        orderedQtySnapshot: 2,
-        unit: 'piece',
-        cumulativeInwardQtySnapshot: 2,
-        previouslyDispatchedQtySnapshot: 0,
-        availableForDispatchSnapshot: 2,
-        dispatchQty: 1,
-        remainingAfterDispatchSnapshot: 1,
-        createdAt: '2026-10-14T11:00:00.000Z'
-      }
-    ],
-    schemaVersion: 1
-  },
-  {
-    id: 'out-apex-0002',
-    outwardId: 'out-apex-0002',
-    outwardNo: 'OUT/2026-27/0002',
-    entryId: 'OUT/2026-27/0002',
-    poId: 'po-apex-9021',
-    poNumberSnapshot: 'PO/2026-27/0001',
-    poNumber: 'PO/2026-27/0001',
-    customerVendorId: 'v-101',
-    customerId: 'v-101',
-    customerCompanyNameSnapshot: 'Sree Kumar Texind Corporation',
-    customerName: 'Sree Kumar Texind Corporation',
-    subcontractorVendorId: 'v-103',
-    subContractorId: 'v-103',
-    subcontractorNameSnapshot: 'Sree Kumar Subcontractor Unit A',
-    subContractorName: 'Sree Kumar Subcontractor Unit A',
-    styleNoSnapshot: 'ST-9021',
-    styleNo: 'ST-9021',
-    itemNameSnapshot: "Men's Casual Shirt",
-    itemName: "Men's Casual Shirt",
-    processCategorySnapshot: 'washing',
-    processCategory: 'washing',
-    outwardDate: '2026-10-13',
-    ourDcNo: 'DC-PERLA-1040',
-    vehicleNumber: 'TN-09-CK-8890',
-    vehicleNo: 'TN-09-CK-8890',
-    driverName: 'Senthil Nathan',
-    destination: 'Thirumudivakkam to Guindy Warehouse',
-    remarks: 'Lot 1 partial dispatch. Softener wash quality verified.',
-    status: 'posted',
-    totalQtyByUnit: { piece: 800, kg: 0 },
-    totalQuantity: 800,
-    createdBy: 'admin-uid',
-    createdByName: 'Thiru M.',
-    createdAt: '2026-10-13T16:20:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Thiru M.',
-    updatedAt: '2026-10-13T16:20:00.000Z',
-    postedBy: 'admin-uid',
-    postedByName: 'Thiru M.',
-    postedAt: '2026-10-13T16:20:00.000Z',
-    lines: [
-      {
-        outwardLineId: 'outl-apex-1',
-        lineId: 'outl-apex-1',
-        outwardId: 'out-apex-0002',
-        poId: 'po-apex-9021',
-        poLineId: 'pol-101',
-        colourNameSnapshot: 'Pantone Brunnet Shadow',
-        colour: 'Pantone Brunnet Shadow',
-        colourCodeSnapshot: '19-0912',
-        itemNameSnapshot: "Men's Casual Shirt",
-        washTypeSnapshot: 'Softener Wash',
-        processType: 'Softener Wash',
-        orderedQtySnapshot: 3066,
-        unit: 'piece',
-        cumulativeInwardQtySnapshot: 1800,
-        previouslyDispatchedQtySnapshot: 0,
-        availableForDispatchSnapshot: 1800,
-        dispatchQty: 800,
-        remainingAfterDispatchSnapshot: 1000,
-        createdAt: '2026-10-13T16:20:00.000Z'
-      }
-    ],
-    schemaVersion: 1
-  }
-];
+// No dummy entries — all data comes from Firebase
+export const initialMockOutwardEntries: OutwardEntry[] = [];
 
-export const initialMockOutwardAuditLogs: Record<string, OutwardAuditLog[]> = {
-  'out-paramount-0001': [
-    {
-      auditId: 'out_audit_1',
-      outwardId: 'out-paramount-0001',
-      outwardNo: 'OUT/2026-27/0001',
-      action: 'posted',
-      performedBy: '7WfxoJvAyceJe1STVGNqKXgkvbN2',
-      performedByName: 'Pranav',
-      performedAt: '2026-10-14T11:00:00.000Z',
-      summary: 'Outward Dispatch OUT/2026-27/0001 posted for PO PO/2026-27/0002 with DC No DC-PERLA-1041.'
-    }
-  ],
-  'out-apex-0002': [
-    {
-      auditId: 'out_audit_2',
-      outwardId: 'out-apex-0002',
-      outwardNo: 'OUT/2026-27/0002',
-      action: 'posted',
-      performedBy: 'admin-uid',
-      performedByName: 'Thiru M.',
-      performedAt: '2026-10-13T16:20:00.000Z',
-      summary: 'Outward Dispatch OUT/2026-27/0002 posted for PO PO/2026-27/0001 with DC No DC-PERLA-1040.'
-    }
-  ]
-};
+export const initialMockOutwardAuditLogs: Record<string, OutwardAuditLog[]> = {};
 
 const LOCAL_STORAGE_KEY = 'perla_erp_outward_entries';
 const AUDIT_STORAGE_KEY = 'perla_erp_outward_audit_logs';
 
-let memoryOutwards: OutwardEntry[] = [...initialMockOutwardEntries];
-let memoryAuditLogs: Record<string, OutwardAuditLog[]> = { ...initialMockOutwardAuditLogs };
+let memoryOutwards: OutwardEntry[] = [];
+let memoryAuditLogs: Record<string, OutwardAuditLog[]> = {};
+
 
 function getLocalOutwards(): OutwardEntry[] {
   if (typeof localStorage !== 'undefined') {
@@ -417,6 +259,26 @@ export class OutwardService {
   }
 
   /**
+   * Retrieves all posted outward entries across all POs
+   */
+  static async getAllPostedOutwards(isDemo: boolean = false): Promise<OutwardEntry[]> {
+    let list: OutwardEntry[] = [];
+    if (!isDemo) {
+      try {
+        const q = query(collection(db, 'outward_entries'), where('status', '==', 'posted'));
+        const snap = await getDocs(q);
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as OutwardEntry);
+        });
+        return list;
+      } catch (err) {
+        console.warn('Firestore getAllPostedOutwards error, falling back to local store:', err);
+      }
+    }
+    return getLocalOutwards().filter((o) => o.status === 'posted');
+  }
+
+  /**
    * Gets cumulative posted outward quantities for a PO by colour line ID, optionally excluding one outwardId
    */
   static async getCumulativePostedOutwardMap(
@@ -435,7 +297,7 @@ export class OutwardService {
           list.push({ id: d.id, ...d.data() } as OutwardEntry);
         });
       } catch (err) {
-        list = getLocalOutwards().filter((o) => o.poId === poId && o.status === 'posted');
+        list = [];
       }
     } else {
       list = getLocalOutwards().filter((o) => o.poId === poId && o.status === 'posted');
@@ -1152,12 +1014,12 @@ export class OutwardService {
       }
     }
 
-    if (!outward) {
+    if (!outward && isDemo) {
       const all = getLocalOutwards();
       outward = all.find((o) => o.id === outwardId || o.outwardId === outwardId) || null;
     }
 
-    if (logs.length === 0 && outward) {
+    if (logs.length === 0 && outward && isDemo) {
       const logsMap = getLocalAuditLogs();
       logs = logsMap[outward.outwardId] || logsMap[outward.id] || [];
     }
@@ -1178,17 +1040,18 @@ export class OutwardService {
     if (!isDemo) {
       try {
         const snap = await getDocs(collection(db, 'outward_entries'));
+        // Always trust Firestore result (even empty = all records deleted).
+        // Overwrite local cache so stale deleted data is not shown.
         snap.forEach((d) => {
           allEntries.push({ id: d.id, ...d.data() } as OutwardEntry);
         });
+        saveLocalOutwards(allEntries);
       } catch (err) {
+        // Only fall back to localStorage on a genuine network/permission error
+        console.warn('Firestore getOutwardEntries error, falling back to local cache:', err);
         allEntries = getLocalOutwards();
       }
     } else {
-      allEntries = getLocalOutwards();
-    }
-
-    if (allEntries.length === 0) {
       allEntries = getLocalOutwards();
     }
 
@@ -1341,6 +1204,12 @@ export class OutwardService {
   ): Promise<void> {
     const { outward } = await this.getOutwardEntryById(outwardId, isDemo);
     if (!outward) return;
+
+    const lockMap = await POLockService.getLockedPOMap(isDemo);
+    const lockStatus = POLockService.isLocked(outward, lockMap);
+    if (lockStatus) {
+      throw new Error(`Cannot delete Outward Dispatch ${outward.outwardNo || outwardId}: ${lockStatus.reason}`);
+    }
 
     if (!isDemo) {
       try {

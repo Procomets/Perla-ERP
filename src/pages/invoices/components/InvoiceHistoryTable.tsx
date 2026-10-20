@@ -104,72 +104,77 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[1200px]">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-4">Invoice No</th>
-                <th className="py-3 px-3">Date</th>
-                <th className="py-3 px-3">Customer / Company</th>
-                <th className="py-3 px-3">PO & Style</th>
-                <th className="py-3 px-3 text-right">Taxable Subtotal</th>
-                <th className="py-3 px-3 text-right">GST Total</th>
-                <th className="py-3 px-3 text-right">Grand Total</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-4 text-center">Actions</th>
+              <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-4 min-w-[170px]">Invoice No</th>
+                <th className="py-3 px-3 min-w-[120px]">Date</th>
+                <th className="py-3 px-3 min-w-[220px]">Customer / Company</th>
+                <th className="py-3 px-3 min-w-[180px]">PO &amp; Style</th>
+                <th className="py-3 px-3 min-w-[120px] text-right">Taxable Subtotal</th>
+                <th className="py-3 px-3 min-w-[100px] text-right">GST Total</th>
+                <th className="py-3 px-3 min-w-[120px] text-right">Grand Total</th>
+                <th className="py-3 px-3 min-w-[110px] text-center">Status</th>
+                <th className="py-3 px-4 min-w-[180px] text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {invoices.map((inv) => {
-                const gstTotal = (inv.totalCgst || 0) + (inv.totalSgst || 0) + (inv.totalIgst || 0);
-                const isCancelled = inv.status.toLowerCase() === 'cancelled';
-                return (
+              {[...invoices]
+                .sort((a, b) => {
+                  const timeA = new Date(a.createdAt || a.updatedAt || a.invoiceDate || 0).getTime();
+                  const timeB = new Date(b.createdAt || b.updatedAt || b.invoiceDate || 0).getTime();
+                  return timeB - timeA;
+                })
+                .map((inv) => {
+                  const gstTotal = (inv.totalCgst || 0) + (inv.totalSgst || 0) + (inv.totalIgst || 0);
+                  const isCancelled = inv.status.toLowerCase() === 'cancelled';
+                  return (
                   <tr
                     key={inv.id}
                     className={`hover:bg-slate-50/80 transition-colors ${
                       isCancelled ? 'bg-rose-50/20 opacity-75' : ''
                     }`}
                   >
-                    <td className="py-3 px-4">
-                      <span className="font-mono font-bold text-[#1F4E79] text-xs block">
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className="font-mono font-bold text-slate-900 text-xs block">
                         {inv.invoiceNo || inv.invoiceNumber || inv.id}
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">FY: {inv.financialYear || '2026-27'}</span>
                     </td>
-                    <td className="py-3 px-3 text-slate-600 whitespace-nowrap font-medium">
+                    <td className="py-3.5 px-3 text-slate-700 whitespace-nowrap font-medium">
                       {formatDate(inv.invoiceDate)}
                     </td>
-                    <td className="py-3 px-3">
-                      <span className="font-semibold text-slate-900 block">
+                    <td className="py-3.5 px-3">
+                      <span className="font-bold text-slate-900 text-xs block">
                         {inv.customerSnapshot?.companyName || 'Customer'}
                       </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
+                      <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
                         GSTIN: {inv.customerSnapshot?.gstin || 'Unregistered'}
                       </span>
                     </td>
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-medium text-slate-800 block">{inv.poNumber}</span>
-                      <span className="text-[10px] text-slate-500">Style: {inv.styleNo}</span>
+                    <td className="py-3.5 px-3 whitespace-nowrap">
+                      <span className="font-mono font-bold text-slate-900 text-xs block">{inv.poNumber}</span>
+                      <span className="text-[11px] text-slate-500 block mt-0.5">Style: {inv.styleNo}</span>
                     </td>
-                    <td className="py-3 px-3 text-right font-medium text-slate-700">
+                    <td className="py-3.5 px-3 text-right font-medium text-slate-700 whitespace-nowrap">
                       {formatCurrency(inv.subtotal || inv.taxableAmount || 0)}
                     </td>
-                    <td className="py-3 px-3 text-right font-medium text-slate-700">
+                    <td className="py-3.5 px-3 text-right font-medium text-slate-700 whitespace-nowrap">
                       {formatCurrency(gstTotal)}
                     </td>
-                    <td className="py-3 px-3 text-right font-bold text-slate-900 font-mono">
+                    <td className="py-3.5 px-3 text-right font-bold text-slate-900 font-mono whitespace-nowrap text-xs">
                       {formatCurrency(inv.finalTotal || inv.grandTotal || 0)}
                     </td>
-                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                    <td className="py-3.5 px-3 text-center whitespace-nowrap">
                       {renderStatus(inv.status)}
                     </td>
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => onDownloadPdf(inv)}
-                          icon={<Download className="w-3.5 h-3.5 text-emerald-600" />}
-                          className="text-xs font-semibold hover:border-emerald-500"
+                          className="text-xs font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 h-auto py-1 px-2.5"
                         >
                           Download
                         </Button>
@@ -177,7 +182,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                           type="button"
                           onClick={() => onViewInvoice(inv)}
                           title="View Invoice Details"
-                          className="p-1.5 text-slate-600 hover:text-[#1F4E79] hover:bg-slate-100 rounded-md transition-colors"
+                          className="p-1.5 text-slate-600 hover:text-black hover:bg-slate-100 rounded-md transition-colors"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -185,7 +190,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                           type="button"
                           onClick={() => onPrintPdf(inv)}
                           title="Print Tax Invoice"
-                          className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                          className="p-1.5 text-slate-600 hover:text-black hover:bg-slate-100 rounded-md transition-colors"
                         >
                           <Printer className="w-4 h-4" />
                         </button>

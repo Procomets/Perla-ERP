@@ -1,14 +1,15 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Invoice } from '../types/invoice';
+import { Invoice, CompanyInvoiceSettings } from '../types/invoice';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { InvoiceSettingsService } from './invoiceSettingsService';
 
 export class InvoicePdfService {
   /**
    * Generates a jsPDF document instance representing the exact official Tax Invoice
-   * following the Perla Textiles Processor reference format.
+   * following the Perla Textiles Processor reference format, using live tax & issuer settings from Firebase.
    */
-  static generateInvoicePdfDoc(invoice: Invoice): jsPDF {
+  static generateInvoicePdfDoc(invoice: Invoice, settings?: CompanyInvoiceSettings): jsPDF {
     const jsPdfConstructor: any = (jsPDF as any).default || jsPDF;
     const doc = new jsPdfConstructor({
       orientation: 'portrait',
@@ -46,44 +47,38 @@ export class InvoicePdfService {
     // Left Issuer Box
     doc.rect(margin, headerBlockY, leftColWidth, headerBlockHeight);
 
+    const companyName = settings?.companyName || invoice.issuerSnapshot?.companyName || 'PERLA TEXTILES PROCESSOR';
+    const addressLine1 = settings?.addressLine1 || invoice.issuerSnapshot?.addressLine1 || 'NO.107, INDUSTRIAL ESTATE';
+    const addressLine2 = settings?.addressLine2 ?? invoice.issuerSnapshot?.addressLine2 ?? 'THIRUMUDIVAKKAM, SIDCO';
+    const city = settings?.city || invoice.issuerSnapshot?.city || 'CHENNAI';
+    const pincode = settings?.pincode || invoice.issuerSnapshot?.pincode || '600044';
+    const tin = settings?.tin || invoice.issuerSnapshot?.tin || '33916280923';
+    const cst = settings?.cst || invoice.issuerSnapshot?.cst || '1299271/02-01-2015';
+    const gstin = settings?.gstin || invoice.issuerSnapshot?.gstin || '33AMMPK2032Q1ZU';
+    const state = settings?.state || invoice.issuerSnapshot?.state || 'Tamil Nadu';
+    const stateCode = settings?.stateCode || invoice.issuerSnapshot?.stateCode || '33';
+    const pan = settings?.pan || invoice.issuerSnapshot?.pan || 'AMMPK2032Q';
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(0, 0, 0);
-    doc.text(
-      invoice.issuerSnapshot?.companyName || 'PERLA TEXTILES PROCESSOR',
-      margin + 2.5,
-      headerBlockY + 4.5
-    );
+    doc.text(companyName, margin + 2.5, headerBlockY + 4.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(
-      invoice.issuerSnapshot?.addressLine1 || 'NO.107, INDUSTRIAL ESTATE',
-      margin + 2.5,
-      headerBlockY + 8.5
-    );
-    doc.text(
-      invoice.issuerSnapshot?.addressLine2 || 'THIRUMUDIVAKKAM, SIDCO',
-      margin + 2.5,
-      headerBlockY + 12.5
-    );
-    doc.text(
-      `${invoice.issuerSnapshot?.city || 'CHENNAI'}-${invoice.issuerSnapshot?.pincode || '600044'}`,
-      margin + 2.5,
-      headerBlockY + 16.5
-    );
+    doc.text(addressLine1, margin + 2.5, headerBlockY + 8.5);
+    if (addressLine2) {
+      doc.text(addressLine2, margin + 2.5, headerBlockY + 12.5);
+    }
+    doc.text(`${city}-${pincode}`, margin + 2.5, headerBlockY + 16.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`TIN: ${invoice.issuerSnapshot?.tin || '33916280923'}`, margin + 2.5, headerBlockY + 21);
-    doc.text(`CST: ${invoice.issuerSnapshot?.cst || '1299271/02-01-2015'}`, margin + 2.5, headerBlockY + 25.5);
-    doc.text(`GST ID : ${invoice.issuerSnapshot?.gstin || '33AMMPK2032Q1ZU'}`, margin + 2.5, headerBlockY + 30);
+    doc.text(`TIN: ${tin}`, margin + 2.5, headerBlockY + 21);
+    doc.text(`CST: ${cst}`, margin + 2.5, headerBlockY + 25.5);
+    doc.text(`GST ID : ${gstin}`, margin + 2.5, headerBlockY + 30);
 
     doc.setFont('helvetica', 'normal');
-    doc.text(
-      `STATE- ${invoice.issuerSnapshot?.state || 'Tamil Nadu'}.  Code No-${invoice.issuerSnapshot?.stateCode || '33'}`,
-      margin + 2.5,
-      headerBlockY + 35
-    );
+    doc.text(`STATE- ${state}.  Code No-${stateCode}`, margin + 2.5, headerBlockY + 35);
 
     // Right Metadata Grid (2 rows x 2 cols)
     const rightBoxX = margin + leftColWidth;
@@ -319,30 +314,30 @@ export class InvoicePdfService {
     // Dividing line above bank details
     doc.line(margin, finalTableY + 14, margin + leftColWidth, finalTableY + 14);
 
-    // Bank Details
+    // Bank Details from Firebase settings or invoice snapshot
+    const bankName = (settings?.bankName || invoice.bankDetailsSnapshot?.bankName || 'STATE BANK OF INDIA').toUpperCase();
+    const accountNumber = settings?.accountNumber || invoice.bankDetailsSnapshot?.accountNumber || '30407742234';
+    const ifscCode = settings?.ifscCode || invoice.bankDetailsSnapshot?.ifscCode || 'SBIN0012931';
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.text(
-      `BANK DETAILS: (${(invoice.bankDetailsSnapshot?.bankName || 'STATE BANK OF INDIA').toUpperCase()})`,
-      margin + 2.5,
-      finalTableY + 18
-    );
+    doc.text(`BANK DETAILS: (${bankName})`, margin + 2.5, finalTableY + 18);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.text('Bank Account Number', margin + 2.5, finalTableY + 22.5);
-    doc.text(`: ${invoice.bankDetailsSnapshot?.accountNumber || '30407742234'}`, margin + 35, finalTableY + 22.5);
+    doc.text(`: ${accountNumber}`, margin + 35, finalTableY + 22.5);
 
     doc.text('IFS Code', margin + 2.5, finalTableY + 26.5);
-    doc.text(`: ${invoice.bankDetailsSnapshot?.ifscCode || 'SBIN0012931'}`, margin + 35, finalTableY + 26.5);
+    doc.text(`: ${ifscCode}`, margin + 35, finalTableY + 26.5);
 
     doc.text("COMPANY'S PAN", margin + 2.5, finalTableY + 30.5);
-    doc.text(`: ${invoice.issuerSnapshot?.pan || 'AMMPK2032Q'}`, margin + 35, finalTableY + 30.5);
+    doc.text(`: ${pan}`, margin + 35, finalTableY + 30.5);
 
     // Dividing line above declaration
     doc.line(margin, finalTableY + 33.5, margin + leftColWidth, finalTableY + 33.5);
 
-    // Declaration
+    // Declaration from Firebase settings or invoice snapshot
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.text('Declaration', margin + 2.5, finalTableY + 37.5);
@@ -350,6 +345,7 @@ export class InvoicePdfService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(6.5);
     const declText =
+      settings?.declaration ||
       invoice.declarationSnapshot ||
       'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.';
     const splitDecl = doc.splitTextToSize(declText, leftColWidth - 5);
@@ -423,32 +419,15 @@ export class InvoicePdfService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.text(
-      `FOR ${(invoice.issuerSnapshot?.companyName || 'PERLA TEXTILES PROCESSOR').toUpperCase()}`,
+      `FOR ${companyName.toUpperCase()}`,
       rightBoxX + rightColWidth / 2,
       signBoxY + 3.5,
       { align: 'center' }
     );
 
-    // Subtle stamp illustration circle
-    const stampCenterX = rightBoxX + rightColWidth / 2;
-    const stampCenterY = signBoxY + 10.5;
-    doc.setDrawColor(31, 78, 121); // Stamp blue
-    doc.setLineWidth(0.4);
-    doc.circle(stampCenterX, stampCenterY, 6);
-    doc.circle(stampCenterX, stampCenterY, 4.5);
-    doc.setFontSize(4);
-    doc.setTextColor(31, 78, 121);
-    doc.text('PERLA TEXTILES', stampCenterX, stampCenterY - 1.5, { align: 'center' });
-    doc.text('CHENNAI', stampCenterX, stampCenterY + 0.8, { align: 'center' });
-    doc.text('600 044', stampCenterX, stampCenterY + 2.8, { align: 'center' });
-
-    // Reset draw color
-    doc.setDrawColor(0, 0, 0);
-    doc.setTextColor(0, 0, 0);
-
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text('Authorised Signatory', rightBoxX + rightColWidth / 2, finalTableY + bottomBlockHeight - 2, {
+    doc.text(settings?.signatoryName || 'Authorised Signatory', rightBoxX + rightColWidth / 2, finalTableY + bottomBlockHeight - 2, {
       align: 'center'
     });
 
@@ -456,19 +435,21 @@ export class InvoicePdfService {
   }
 
   /**
-   * Triggers a browser download of the generated PDF
+   * Triggers a browser download of the generated PDF using live Firebase tax & issuer settings
    */
-  static downloadInvoicePdf(invoice: Invoice): void {
-    const doc = this.generateInvoicePdfDoc(invoice);
+  static async downloadInvoicePdf(invoice: Invoice, settings?: CompanyInvoiceSettings): Promise<void> {
+    const liveSettings = settings || (await InvoiceSettingsService.getSettings());
+    const doc = this.generateInvoicePdfDoc(invoice, liveSettings);
     const cleanNo = (invoice.invoiceNo || invoice.invoiceNumber || 'Invoice').replace(/[/\\?%*:|"<>]/g, '_');
     doc.save(`${cleanNo}.pdf`);
   }
 
   /**
-   * Opens the PDF in a new window/tab for printing
+   * Opens the PDF in a new window/tab for printing using live Firebase tax & issuer settings
    */
-  static printInvoicePdf(invoice: Invoice): void {
-    const doc = this.generateInvoicePdfDoc(invoice);
+  static async printInvoicePdf(invoice: Invoice, settings?: CompanyInvoiceSettings): Promise<void> {
+    const liveSettings = settings || (await InvoiceSettingsService.getSettings());
+    const doc = this.generateInvoicePdfDoc(invoice, liveSettings);
     const pdfBlob = doc.output('blob');
     const blobUrl = URL.createObjectURL(pdfBlob);
     const printWindow = window.open(blobUrl, '_blank');

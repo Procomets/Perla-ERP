@@ -303,7 +303,13 @@ export const VendorList: React.FC<VendorListProps> = ({
                   </td>
                 </tr>
               ) : (
-                vendors.map((vendor) => (
+                [...vendors]
+                  .sort((a, b) => {
+                    const timeA = new Date(a.createdAt || (a as any).updatedAt || 0).getTime();
+                    const timeB = new Date(b.createdAt || (b as any).updatedAt || 0).getTime();
+                    return timeB - timeA;
+                  })
+                  .map((vendor) => (
                   <tr key={vendor.vendorId} className="hover:bg-slate-50/80 transition-colors">
                     {/* Vendor Code */}
                     <td className="p-3.5 font-bold font-mono text-[#1F4E79] whitespace-nowrap">

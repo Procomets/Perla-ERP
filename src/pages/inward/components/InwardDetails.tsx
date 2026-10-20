@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { InwardEntry, InwardAuditLog } from '../../../types/inward';
+import { Vendor } from '../../../types/vendor';
 import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
@@ -10,12 +11,15 @@ import {
   RotateCcw,
   AlertTriangle,
   Edit,
-  CheckCircle2
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 interface InwardDetailsProps {
   inward: InwardEntry;
   auditLogs?: InwardAuditLog[];
+  customerVendor?: Vendor | null;
   onBack: () => void;
   onPrint: () => void;
   onEditDraft?: () => void;
@@ -23,18 +27,23 @@ interface InwardDetailsProps {
   onReverse: (reason: string) => Promise<void>;
   canManage: boolean;
   isProcessing: boolean;
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export const InwardDetails: React.FC<InwardDetailsProps> = ({
   inward,
+  auditLogs,
+  customerVendor,
   onBack,
   onPrint,
   onEditDraft,
   onPostDraft,
   onReverse,
   canManage,
-  isProcessing
+  isProcessing,
+  lockedPOMap = {}
 }) => {
+  const lockStatus = POLockService.isLocked(inward, lockedPOMap);
   const [isReverseModalOpen, setIsReverseModalOpen] = useState(false);
   const [reversalReason, setReversalReason] = useState('');
   const [reverseError, setReverseError] = useState<string | null>(null);
@@ -56,6 +65,21 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
   };
 
   const lines = inward.lines || [];
+
+  // Customer company details
+  const companyName = inward.customerCompanyNameSnapshot || customerVendor?.companyName || inward.customerName || 'Customer';
+  const companyCode = customerVendor?.vendorCode || (customerVendor as any)?.code || (customerVendor as any)?.companyCode || inward.customerVendorId || inward.customerId || '—';
+  const gstin = customerVendor?.taxDetails?.gstin || (customerVendor as any)?.gstin || (customerVendor?.taxDetails?.gstRegistrationStatus === 'unregistered' ? 'Unregistered' : '—');
+
+  const vendorAddress = customerVendor?.address;
+  const addressLine1 = typeof vendorAddress === 'object' ? vendorAddress?.addressLine1 : (typeof vendorAddress === 'string' ? vendorAddress : '');
+  const addressLine2 = typeof vendorAddress === 'object' ? vendorAddress?.addressLine2 : '';
+  const city = (typeof vendorAddress === 'object' ? vendorAddress?.city : '') || customerVendor?.city || '';
+  const state = (typeof vendorAddress === 'object' ? vendorAddress?.state : '') || customerVendor?.state || '';
+  const pinCode = (typeof vendorAddress === 'object' ? vendorAddress?.pinCode : '') || customerVendor?.pinCode || '';
+
+  const formattedAddress = [addressLine1, addressLine2].filter(Boolean).join(', ');
+  const cityState = [city, state].filter(Boolean).join(', ') + (pinCode ? ` - ${pinCode}` : '');
 
   return (
     <div className="space-y-5">
@@ -103,26 +127,63 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
               )}
 
               {onEditDraft && (
-                <Button variant="outline" size="sm" icon={<Edit className="w-4 h-4" />} onClick={onEditDraft}>
-                  Edit Draft
-                </Button>
+                lockStatus ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    icon={<Lock className="w-4 h-4 text-slate-400" />}
+                    title={lockStatus.reason}
+                    className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+                  >
+                    Edit Draft
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" icon={<Edit className="w-4 h-4" />} onClick={onEditDraft}>
+                    Edit Draft
+                  </Button>
+                )
               )}
             </>
           )}
 
           {inward.status === 'posted' && canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              icon={<RotateCcw className="w-4 h-4 text-rose-600" />}
-              onClick={() => setIsReverseModalOpen(true)}
-              className="text-rose-600 border-rose-200 hover:bg-rose-50"
-            >
-              Reverse Receipt
-            </Button>
+            lockStatus ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                icon={<Lock className="w-4 h-4 text-slate-400" />}
+                title={lockStatus.reason}
+                className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+              >
+                Reverse Receipt
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<RotateCcw className="w-4 h-4 text-rose-600" />}
+                onClick={() => setIsReverseModalOpen(true)}
+                className="text-rose-600 border-rose-200 hover:bg-rose-50"
+              >
+                Reverse Receipt
+              </Button>
+            )
           )}
         </div>
       </div>
+
+      {/* Lock Banner if Statement is Approved or Invoiced */}
+      {lockStatus && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-xs text-amber-900 font-medium shadow-2xs">
+          <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+          <div>
+            <span className="font-bold block text-amber-950">Purchase Order Locked from Modification</span>
+            <span className="text-amber-800">{lockStatus.reason}</span>
+          </div>
+        </div>
+      )}
 
       {/* Reversal Banner if reversed */}
       {inward.status === 'reversed' && (
@@ -150,16 +211,42 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
           <div className="space-y-3 text-xs">
             <div>
               <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Customer Company</span>
-              <span className="font-semibold text-slate-800">
-                {inward.customerCompanyNameSnapshot || inward.customerName || 'Customer'}
+              <span className="font-semibold text-slate-800 text-sm">
+                {companyName}
               </span>
             </div>
-            <div>
-              <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Customer Vendor Ref</span>
-              <span className="font-semibold text-slate-700">{inward.customerVendorId || inward.customerId || '—'}</span>
-            </div>
-            {inward.subcontractorNameSnapshot && (
+
+            <div className="grid grid-cols-2 gap-2">
               <div>
+                <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Company Code</span>
+                <span className="font-mono font-semibold text-slate-700">
+                  {companyCode}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">GST NO</span>
+                <span className="font-mono font-semibold text-slate-700">
+                  {gstin}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Address</span>
+              <span className="text-slate-700 leading-snug block">
+                {formattedAddress || '—'}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">City & State</span>
+              <span className="font-medium text-slate-700">
+                {cityState || '—'}
+              </span>
+            </div>
+
+            {inward.subcontractorNameSnapshot && (
+              <div className="pt-2 border-t border-slate-100">
                 <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Subcontractor Unit</span>
                 <span className="font-medium text-slate-700">{inward.subcontractorNameSnapshot}</span>
               </div>

@@ -21,6 +21,7 @@ import { OutwardDetails } from './components/OutwardDetails';
 import { OutwardPrintView } from './components/OutwardPrintView';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { POLockService, POLockStatus } from '../../services/poLockService';
 
 interface OutwardContainerProps {
   initialPOs?: PurchaseOrder[];
@@ -28,6 +29,7 @@ interface OutwardContainerProps {
   initialOutwards?: OutwardEntry[];
   initialVendors?: Vendor[];
   onAddOutward?: (newOutward: OutwardEntry) => void;
+  onUpdateOutward?: (outward: OutwardEntry) => void;
 }
 
 export const OutwardContainer: React.FC<OutwardContainerProps> = ({
@@ -35,7 +37,8 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   initialInwards,
   initialOutwards,
   initialVendors,
-  onAddOutward
+  onAddOutward,
+  onUpdateOutward
 }) => {
   const { user, activeRole, isDemoMode } = useAuth();
   const canManage = activeRole === 'Admin' || activeRole === 'Manager';
@@ -47,6 +50,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   // Data States
   const [outwards, setOutwards] = useState<OutwardEntry[]>(initialOutwards || []);
+  const [allPostedOutwards, setAllPostedOutwards] = useState<OutwardEntry[]>([]);
   const [inwards, setInwards] = useState<InwardEntry[]>(initialInwards || []);
   const [pos, setPos] = useState<PurchaseOrder[]>(initialPOs || []);
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors || []);
@@ -75,6 +79,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
   // Selected Outward Details & Logs
   const [selectedOutwardDetails, setSelectedOutwardDetails] = useState<{
@@ -106,15 +111,11 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
       // 3. Fetch latest POs
       const poResult = await POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode);
-      if (poResult.pos && poResult.pos.length > 0) {
-        setPos(poResult.pos);
-      }
+      setPos(poResult.pos || []);
 
       // 4. Fetch latest Vendors
       const vResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode);
-      if (vResult.vendors && vResult.vendors.length > 0) {
-        setVendors(vResult.vendors);
-      }
+      setVendors(vResult.vendors || []);
 
       // 5. Fetch posted Inward receipts (only posted receipts have physically received stock for outward dispatch)
       const inwResult = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemoMode);
@@ -122,6 +123,23 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         setInwards(inwResult.inwards);
       } else {
         setInwards([]);
+      }
+
+      // 5b. Fetch all posted outward entries to calculate available dispatch balances across all POs
+      try {
+        const postedOutwards = await OutwardService.getAllPostedOutwards(isDemoMode);
+        setAllPostedOutwards(postedOutwards || []);
+      } catch (outwErr) {
+        console.warn('Failed to load all posted outwards:', outwErr);
+        setAllPostedOutwards([]);
+      }
+
+      // 6. Fetch PO lock map based on statement approvals & invoices
+      try {
+        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
+        setLockedPOMap(lockMap);
+      } catch (lockErr) {
+        console.warn('Failed to load PO lock map:', lockErr);
       }
     } catch (err) {
       console.error('Failed to load outward data:', err);
@@ -133,6 +151,24 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   useEffect(() => {
     loadData();
   }, [filters, pagination.page, isDemoMode]);
+
+  useEffect(() => {
+    if (initialPOs && initialPOs.length > 0) {
+      setPos(initialPOs);
+    }
+  }, [initialPOs]);
+
+  useEffect(() => {
+    if (initialInwards && initialInwards.length > 0) {
+      setInwards(initialInwards);
+    }
+  }, [initialInwards]);
+
+  useEffect(() => {
+    if (initialOutwards && initialOutwards.length > 0) {
+      setOutwards(initialOutwards);
+    }
+  }, [initialOutwards]);
 
   // Load single outward details
   const loadSingleOutward = async (outwardId: string) => {
@@ -160,6 +196,12 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   };
 
   const handleEdit = async (outwardId: string) => {
+    const target = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId);
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
     await loadSingleOutward(outwardId);
     setCurrentView('edit');
   };
@@ -262,6 +304,10 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         isDemoMode
       );
 
+      if (onUpdateOutward) {
+        onUpdateOutward(posted);
+      }
+
       await loadData();
       await loadSingleOutward(posted.outwardId || posted.id);
     } catch (err) {
@@ -277,6 +323,13 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
     const targetId = selectedOutwardId || reverseTargetId;
     if (!targetId) return;
 
+    const target = outwards.find((o) => o.outwardId === targetId || o.id === targetId) || selectedOutwardDetails.outward;
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const userMeta = {
@@ -284,7 +337,10 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         name: user?.displayName || (user as any)?.name || 'Authorized User'
       };
 
-      await OutwardService.reverseOutwardEntry(targetId, reason, userMeta, isDemoMode);
+      const reversed = await OutwardService.reverseOutwardEntry(targetId, reason, userMeta, isDemoMode);
+      if (onUpdateOutward) {
+        onUpdateOutward(reversed);
+      }
       await loadData();
 
       if (currentView === 'details') {
@@ -303,6 +359,13 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   // Action: Delete Draft
   const handleDeleteDraft = async (outwardId: string) => {
+    const target = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId) || selectedOutwardDetails.outward;
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     try {
       const userMeta = {
         uid: user?.uid || 'user-default',
@@ -349,6 +412,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           canManage={canManage}
           isAdmin={isAdmin}
           isLoading={loading}
+          lockedPOMap={lockedPOMap}
         />
       )}
 
@@ -358,6 +422,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           pos={pos}
           vendors={vendors}
           inwards={inwards}
+          outwards={allPostedOutwards}
           initialOutward={currentView === 'edit' ? selectedOutwardDetails.outward : null}
           onSaveDraft={handleSaveDraft}
           onPostOutward={handlePostOutward}
@@ -371,6 +436,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         <OutwardDetails
           outward={selectedOutwardDetails.outward}
           auditLogs={selectedOutwardDetails.logs}
+          lockedPOMap={lockedPOMap}
           onBack={() => setCurrentView('list')}
           onPrint={() => setCurrentView('print')}
           onEditDraft={() => setCurrentView('edit')}

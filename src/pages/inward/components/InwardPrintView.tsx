@@ -1,20 +1,34 @@
 import React from 'react';
 import { InwardEntry } from '../../../types/inward';
+import { Vendor } from '../../../types/vendor';
 import { Button } from '../../../components/ui/Button';
 import { formatDate } from '../../../utils/formatters';
 import { ArrowLeft, Printer } from 'lucide-react';
 
 interface InwardPrintViewProps {
   inward: InwardEntry;
+  customerVendor?: Vendor | null;
   onBack: () => void;
 }
 
-export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, onBack }) => {
+export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, customerVendor, onBack }) => {
   const handlePrint = () => {
     window.print();
   };
 
   const lines = inward.lines || [];
+
+  const companyCode = customerVendor?.vendorCode || (customerVendor as any)?.code || (customerVendor as any)?.companyCode || inward.customerVendorId || inward.customerId || '';
+  const gstin = customerVendor?.taxDetails?.gstin || (customerVendor as any)?.gstin || '';
+  const vendorAddress = customerVendor?.address;
+  const addressLine1 = typeof vendorAddress === 'object' ? vendorAddress?.addressLine1 : (typeof vendorAddress === 'string' ? vendorAddress : '');
+  const addressLine2 = typeof vendorAddress === 'object' ? vendorAddress?.addressLine2 : '';
+  const city = (typeof vendorAddress === 'object' ? vendorAddress?.city : '') || customerVendor?.city || '';
+  const state = (typeof vendorAddress === 'object' ? vendorAddress?.state : '') || customerVendor?.state || '';
+  const pinCode = (typeof vendorAddress === 'object' ? vendorAddress?.pinCode : '') || customerVendor?.pinCode || '';
+
+  const formattedAddress = [addressLine1, addressLine2].filter(Boolean).join(', ');
+  const cityState = [city, state].filter(Boolean).join(', ') + (pinCode ? ` - ${pinCode}` : '');
 
   return (
     <div className="space-y-6">
@@ -63,14 +77,31 @@ export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, onBack
             <div className="font-bold text-sm text-[#1F4E79]">
               {inward.customerCompanyNameSnapshot || inward.customerName}
             </div>
+            {companyCode && (
+              <div className="text-slate-600">
+                <span className="font-semibold">Company Code:</span> {companyCode}
+              </div>
+            )}
+            {gstin && (
+              <div className="text-slate-600">
+                <span className="font-semibold">GST NO:</span> {gstin}
+              </div>
+            )}
+            {formattedAddress && (
+              <div className="text-slate-600">
+                <span className="font-semibold">Address:</span> {formattedAddress}
+              </div>
+            )}
+            {cityState && (
+              <div className="text-slate-600">
+                <span className="font-semibold">City, State:</span> {cityState}
+              </div>
+            )}
             {inward.subcontractorNameSnapshot && (
               <div className="text-slate-600">
                 <span className="font-semibold">Subcontractor:</span> {inward.subcontractorNameSnapshot}
               </div>
             )}
-            <div className="text-slate-500">
-              <span className="font-semibold">Customer ID:</span> {inward.customerVendorId || inward.customerId}
-            </div>
           </div>
 
           {/* Right: Receipt & DC Info */}

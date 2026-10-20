@@ -19,6 +19,7 @@ import { PODetails } from './components/PODetails';
 import { POPrintView } from './components/POPrintView';
 import { useAuth } from '../../context/AuthContext';
 import { hasInwardForPO } from '../../utils/calculations';
+import { POLockService, POLockStatus } from '../../services/poLockService';
 
 interface PurchaseOrdersContainerProps {
   initialPOs?: PurchaseOrder[];
@@ -26,6 +27,7 @@ interface PurchaseOrdersContainerProps {
   inwards?: InwardEntry[];
   outwards?: OutwardEntry[];
   onAddPo?: (newPo: PurchaseOrder) => void;
+  onUpdatePo?: (updatedPo: PurchaseOrder) => void;
 }
 
 export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = ({
@@ -33,7 +35,8 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   initialVendors,
   inwards = [],
   outwards = [],
-  onAddPo
+  onAddPo,
+  onUpdatePo
 }) => {
   const { user, activeRole, isDemoMode } = useAuth();
   const canManage = activeRole === 'Admin' || activeRole === 'Manager';
@@ -69,6 +72,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
 
   const [loading, setLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
   // Selected PO detailed data
   const [selectedPoDetails, setSelectedPoDetails] = useState<{
@@ -96,9 +100,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         { page: 1, pageSize: 500 },
         isDemoMode
       );
-      if (vResult.vendors && vResult.vendors.length > 0) {
-        setVendors(vResult.vendors);
-      }
+      setVendors(vResult.vendors || []);
 
       // Load latest live Inward receipts
       const inwResult = await InwardService.getInwardEntries(
@@ -106,9 +108,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         { page: 1, pageSize: 1000 },
         isDemoMode
       );
-      if (inwResult.inwards && inwResult.inwards.length > 0) {
-        setInwardsList(inwResult.inwards);
-      }
+      setInwardsList(inwResult.inwards || []);
 
       // Load latest live Outward dispatches
       const outResult = await OutwardService.getOutwardEntries(
@@ -116,8 +116,14 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         { page: 1, pageSize: 1000 },
         isDemoMode
       );
-      if (outResult.outwards && outResult.outwards.length > 0) {
-        setOutwardsList(outResult.outwards);
+      setOutwardsList(outResult.outwards || []);
+
+      // Load PO lock map based on statement approvals & invoices
+      try {
+        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
+        setLockedPOMap(lockMap);
+      } catch (lockErr) {
+        console.warn('Error loading PO lock map:', lockErr);
       }
     } catch (err) {
       console.error('Error loading PO data:', err);
@@ -129,6 +135,12 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   useEffect(() => {
     loadData();
   }, [filters, pagination.page, isDemoMode]);
+
+  useEffect(() => {
+    if (initialPOs && initialPOs.length > 0) {
+      setPos(initialPOs);
+    }
+  }, [initialPOs]);
 
   // Load single PO for details/edit view
   const loadSinglePO = async (poId: string) => {
@@ -142,8 +154,8 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
         InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode),
         OutwardService.getOutwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode)
       ]);
-      if (inwRes.inwards && inwRes.inwards.length > 0) setInwardsList(inwRes.inwards);
-      if (outRes.outwards && outRes.outwards.length > 0) setOutwardsList(outRes.outwards);
+      if (inwRes.inwards) setInwardsList(inwRes.inwards);
+      if (outRes.outwards) setOutwardsList(outRes.outwards);
     } catch (e) {
       console.warn('Failed to refresh downstream records:', e);
     }
@@ -157,6 +169,11 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
 
   const handleEditPO = async (poId: string) => {
     const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    const lock = POLockService.isLocked(targetPo, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
     if (targetPo && hasInwardForPO(targetPo, inwardsList) && !isAdmin) {
       alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
       return;
@@ -192,12 +209,16 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           return;
         }
 
-        await POService.updatePurchaseOrder(
+        const updated = await POService.updatePurchaseOrder(
           selectedPoId,
           { ...poData, status: resolvedStatus },
           activeUser,
           isDemoMode
         );
+
+        if (onUpdatePo) {
+          onUpdatePo(updated);
+        }
       } else {
         const customer = vendors.find(
           (v) => (v.vendorId || v.id) === poData.customerId
@@ -269,6 +290,13 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   };
 
   const handleCancelPO = async (poId: string, reason: string) => {
+    const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    const lock = POLockService.isLocked(targetPo, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     const activeUser = {
       uid: user?.uid || 'user-101',
       displayName: user?.displayName || 'Authorized User'
@@ -285,6 +313,13 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   };
 
   const handleRevokeApprovalPO = async (poId: string, reason?: string) => {
+    const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    const lock = POLockService.isLocked(targetPo, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     const activeUser = {
       uid: user?.uid || 'user-101',
       displayName: user?.displayName || 'Authorized User'
@@ -311,6 +346,11 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
       return;
     }
     const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;
+    const lock = POLockService.isLocked(targetPo, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
     if (targetPo && hasInwardForPO(targetPo, inwardsList)) {
       alert(`Cannot delete Purchase Order ${targetPo.poNumber || ''}: Inward entries have already been entered for this PO.`);
       return;
@@ -367,6 +407,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
             onAddNewPO={() => setCurrentView('add')}
             canManage={canManage}
             isAdmin={isAdmin}
+            lockedPOMap={lockedPOMap}
           />
         </div>
       )}
@@ -406,6 +447,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
           onPrint={() => setCurrentView('print')}
           canManage={canManage}
           isAdmin={isAdmin}
+          lockedPOMap={lockedPOMap}
         />
       )}
 

@@ -9,13 +9,15 @@ interface InwardPageProps {
   inwards?: InwardEntry[];
   vendors?: Vendor[];
   onAddInward?: (entry: InwardEntry) => void;
+  onUpdateInward?: (inward: InwardEntry) => void;
 }
 
 export const InwardPage: React.FC<InwardPageProps> = ({
   pos,
   inwards,
   vendors,
-  onAddInward
+  onAddInward,
+  onUpdateInward
 }) => {
   return (
     <InwardContainer
@@ -23,6 +25,7 @@ export const InwardPage: React.FC<InwardPageProps> = ({
       initialInwards={inwards}
       initialVendors={vendors}
       onAddInward={onAddInward}
+      onUpdateInward={onUpdateInward}
     />
   );
 };

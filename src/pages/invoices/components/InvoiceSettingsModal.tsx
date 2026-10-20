@@ -71,7 +71,7 @@ export const InvoiceSettingsModal: React.FC<InvoiceSettingsModalProps> = ({
         <form onSubmit={handleSave} className="space-y-6 text-xs text-black max-h-[75vh] overflow-y-auto px-1">
           {savedSuccess && (
             <div className="p-3 bg-neutral-100 border border-neutral-300 text-black rounded-lg flex items-center gap-2 text-xs font-semibold">
-              <Check className="w-4 h-4 text-black stroke-[2.5]" /> Settings saved successfully!
+              <Check className="w-4 h-4 text-black stroke-[2.5]" /> Settings saved successfully to Firebase!
             </div>
           )}
 

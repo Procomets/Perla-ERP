@@ -11,6 +11,7 @@ interface OutwardPageProps {
   outwards?: OutwardEntry[];
   vendors?: Vendor[];
   onAddOutward?: (entry: OutwardEntry) => void;
+  onUpdateOutward?: (outward: OutwardEntry) => void;
 }
 
 export const OutwardPage: React.FC<OutwardPageProps> = ({
@@ -18,7 +19,8 @@ export const OutwardPage: React.FC<OutwardPageProps> = ({
   inwards,
   outwards,
   vendors,
-  onAddOutward
+  onAddOutward,
+  onUpdateOutward
 }) => {
   return (
     <OutwardContainer
@@ -27,6 +29,7 @@ export const OutwardPage: React.FC<OutwardPageProps> = ({
       initialOutwards={outwards}
       initialVendors={vendors}
       onAddOutward={onAddOutward}
+      onUpdateOutward={onUpdateOutward}
     />
   );
 };

@@ -7,12 +7,13 @@ import {
   InvoiceHistoryItem
 } from '../../types/statement';
 import { StatementService } from '../../services/statementService';
+import { useNavigate } from 'react-router-dom';
 import { StatementFilters } from './components/StatementFilters';
 import { StatementLedgerTable } from './components/StatementLedgerTable';
 import { ColourReconciliationStrip } from './components/ColourReconciliationStrip';
 import { InvoiceHistoryTable } from './components/InvoiceHistoryTable';
 import { useAuth } from '../../context/AuthContext';
-import { Scale, History, Building2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Scale, History, Building2, AlertTriangle, ShieldCheck, CheckCircle2, ArrowRight, X } from 'lucide-react';
 
 interface StatementPageProps {
   pos?: PurchaseOrder[];
@@ -24,11 +25,15 @@ interface StatementPageProps {
 }
 
 export const StatementPage: React.FC<StatementPageProps> = ({
+  pos,
+  inwards,
+  outwards,
   approvedPoLineIds = [],
   invoicedPoLineIds = [],
   onApproveForInvoice
 }) => {
   const { user, isDemoMode, activeRole } = useAuth();
+  const navigate = useNavigate();
   const canManage = activeRole === 'Admin' || activeRole === 'Manager';
 
   // Navigation tab: Active Statement vs Invoice History
@@ -53,6 +58,12 @@ export const StatementPage: React.FC<StatementPageProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isApproving, setIsApproving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    type: 'success' | 'error';
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  } | null>(null);
 
   // Invoice History States
   const [invoiceHistory, setInvoiceHistory] = useState<InvoiceHistoryItem[]>([]);
@@ -92,9 +103,9 @@ export const StatementPage: React.FC<StatementPageProps> = ({
       .catch((err) => {
         console.error('Failed to load company cascade filters:', err);
       });
-  }, [selectedCompanyId, isDemoMode]);
+  }, [selectedCompanyId, isDemoMode, pos]);
 
-  // 3. Load Statement Data when filters change
+  // 3. Load Statement Data when filters or operational records change
   const loadStatement = async () => {
     if (!selectedCompanyId) {
       setStatementData(null);
@@ -127,7 +138,7 @@ export const StatementPage: React.FC<StatementPageProps> = ({
 
   useEffect(() => {
     loadStatement();
-  }, [selectedCompanyId, selectedStyleNo, selectedItemName, selectedPoId, isDemoMode]);
+  }, [selectedCompanyId, selectedStyleNo, selectedItemName, selectedPoId, isDemoMode, pos, inwards, outwards]);
 
   // 4. Load Invoice History
   const loadInvoiceHistory = async () => {
@@ -189,7 +200,59 @@ export const StatementPage: React.FC<StatementPageProps> = ({
 
       // Refresh statement data to update badges and readiness
       await loadStatement();
+
+      setToast({
+        type: 'success',
+        message: 'Colour line successfully approved and moved to Invoice module!'
+      });
     } catch (err: any) {
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to approve colour line for invoice.'
+      });
+      throw err;
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // Entire PO Invoice Approval Handler (For POs with more than 1 colour)
+  const handleApproveEntirePO = async (poId: string) => {
+    if (!canManage) {
+      alert('Only Admin and Manager roles are authorized to approve for invoicing.');
+      return;
+    }
+
+    setIsApproving(true);
+    try {
+      const activeUser = {
+        uid: user?.uid || 'admin-user',
+        displayName: user?.displayName || user?.email?.split('@')[0] || 'Authorized User'
+      };
+
+      const result = await StatementService.approveEntirePOForInvoice(
+        {
+          poId,
+          companyId: selectedCompanyId
+        },
+        activeUser,
+        isDemoMode
+      );
+
+      // Refresh statement data to update badges and readiness
+      await loadStatement();
+
+      setToast({
+        type: 'success',
+        message: `Entire PO approved! ${result.approvedRecords.length} colour(s) moved to Invoice module${
+          result.skippedLineCount > 0 ? ` (${result.skippedLineCount} previously moved colour(s) skipped)` : ''
+        }.`
+      });
+    } catch (err: any) {
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to approve entire PO for invoice.'
+      });
       throw err;
     } finally {
       setIsApproving(false);
@@ -229,45 +292,48 @@ export const StatementPage: React.FC<StatementPageProps> = ({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black text-[#1F4E79] tracking-tight">Statement</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
-              Reconciliation Ledger
-            </span>
+            <h1 className="text-2xl font-black text-[#000000] tracking-tight">Statement</h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Complete inward and outward transaction audit ledger for customer styles and purchase orders.
           </p>
-        </div>
-
-        {/* View Switcher Tabs: Active Statement vs Invoice History */}
-        <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200 text-xs">
-          <button
-            type="button"
-            onClick={() => setActiveTab('active')}
-            className={`px-4 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'active'
-                ? 'bg-white text-[#1F4E79] shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Scale className="w-4 h-4 text-[#1F4E79]" />
-            Active Statement
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'history'
-                ? 'bg-white text-[#1F4E79] shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <History className="w-4 h-4 text-[#1F4E79]" />
-            Invoice History
-          </button>
-        </div>
+        </div>       
       </div>
+
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div
+          className={`px-4 py-3 rounded-xl border flex items-center justify-between text-xs transition-all shadow-xs ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+              : 'bg-rose-50 text-rose-900 border-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{toast.message}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {toast.actionLabel && toast.onAction && (
+              <button
+                type="button"
+                onClick={toast.onAction}
+                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition shadow-2xs"
+              >
+                {toast.actionLabel}
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Top Filter Ribbon (Visible in both views) */}
       <StatementFilters
@@ -293,7 +359,18 @@ export const StatementPage: React.FC<StatementPageProps> = ({
           else if (poId === 'all') setSelectedStyleNo('all');
         }}
         onReset={handleResetFilters}
-        onRefresh={loadStatement}
+        onRefresh={() => {
+          loadStatement();
+          if (selectedCompanyId) {
+            StatementService.getFilterOptions(selectedCompanyId, isDemoMode)
+              .then((res) => {
+                setStyles(res.styles);
+                setItems(res.items);
+                setPurchaseOrders(res.purchaseOrders);
+              })
+              .catch(console.error);
+          }
+        }}
         onExportCsv={handleExportCsv}
         isLoading={isLoading}
         hasData={Boolean(statementData && statementData.hasTransactions)}
@@ -340,6 +417,7 @@ export const StatementPage: React.FC<StatementPageProps> = ({
                 colourLines={statementData.colourLines}
                 companyName={statementData.companyName}
                 onApproveLine={handleApproveLine}
+                onApproveEntirePO={handleApproveEntirePO}
                 isApproving={isApproving}
               />
 

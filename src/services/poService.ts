@@ -27,6 +27,7 @@ import {
 import { calculateLineAmount, calculatePOTotals } from '../schemas/poSchema';
 import { Vendor } from '../types/vendor';
 import { cleanFirestoreData } from './vendorService';
+import { POLockService } from './poLockService';
 
 // Initial sample POs for Perla Textiles Processor (including the exact live sample provided by user)
 export const initialMockPurchaseOrders: PurchaseOrder[] = [
@@ -243,7 +244,7 @@ export const initialMockPurchaseOrders: PurchaseOrder[] = [
     customerInstructions: 'Extra silicone softening for autumn-winter delivery',
     internalRemarks: 'Checked with washing supervisor Ramanathan',
     notes: 'Premium export finish required',
-    status: 'in_progress',
+    status: 'approved',
     revision: 1,
     createdBy: 'admin-uid',
     createdById: 'admin-uid',
@@ -321,17 +322,17 @@ export const initialMockPOAuditLogs: Record<string, POAuditLog[]> = {
 };
 
 // Local in-memory store for fallback & demo mode
-let localDemoPOs: PurchaseOrder[] = [...initialMockPurchaseOrders];
-let localDemoAuditLogs: Record<string, POAuditLog[]> = { ...initialMockPOAuditLogs };
+let localDemoPOs: PurchaseOrder[] = [];
+let localDemoAuditLogs: Record<string, POAuditLog[]> = {};
 let localDemoAmendments: Record<string, POAmendment[]> = {};
 
 function getLocalDemoPOs(): PurchaseOrder[] {
   if (typeof localStorage !== 'undefined') {
     const stored = localStorage.getItem('perla_erp_purchase_orders');
-    if (stored) {
+    if (stored !== null) {
       try {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       } catch (e) {
@@ -597,21 +598,27 @@ export class POService {
 
     if (!isDemo) {
       try {
-        const poQuery = query(
-          collection(db, 'purchase_orders'),
-          orderBy('createdAt', 'desc')
-        );
-        const snap = await getDocs(poQuery);
-        if (!snap.empty) {
-          allPos = snap.docs.map((d) => normalizePODocument(d.id, d.data()));
-          saveLocalDemoPOs(allPos);
+        let snap;
+        try {
+          const poQuery = query(
+            collection(db, 'purchase_orders'),
+            orderBy('createdAt', 'desc')
+          );
+          snap = await getDocs(poQuery);
+        } catch {
+          snap = await getDocs(collection(db, 'purchase_orders'));
         }
+        // Always trust Firestore result (even empty = all records deleted).
+        // Do NOT fall back to localStorage when Firestore succeeds — that would show stale deleted data.
+        const fsPos = snap.docs.map((d) => normalizePODocument(d.id, d.data()));
+        allPos = fsPos;
+        saveLocalDemoPOs(allPos);
       } catch (err) {
-        console.warn('Firestore getPurchaseOrders fallback to local store:', err);
+        // Only fall back to localStorage on a genuine network/permission error
+        console.warn('Firestore getPurchaseOrders failed, falling back to local cache:', err);
+        allPos = getLocalDemoPOs();
       }
-    }
-
-    if (allPos.length === 0) {
+    } else {
       allPos = getLocalDemoPOs();
     }
 
@@ -744,7 +751,7 @@ export class POService {
       }
     }
 
-    if (!po) {
+    if (!po && isDemo) {
       const all = getLocalDemoPOs();
       po = all.find((p) => p.id === poId || p.poId === poId) || null;
       logs = localDemoAuditLogs[poId] || [];
@@ -891,29 +898,6 @@ export class POService {
     poNumber?: string,
     isDemo: boolean = false
   ): Promise<boolean> {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('perla_erp_inward_entries');
-        if (raw) {
-          const list = JSON.parse(raw);
-          if (Array.isArray(list)) {
-            const found = list.some((inw: any) => {
-              if (inw.status === 'reversed' || inw.status === 'cancelled') return false;
-              const matchesId = inw.poId === poId;
-              const matchesNum =
-                poNumber &&
-                (inw.poNumber === poNumber || inw.poNumberSnapshot === poNumber) &&
-                !poNumber.includes('PENDING');
-              return matchesId || matchesNum;
-            });
-            if (found) return true;
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-
     if (!isDemo) {
       try {
         const qId = query(collection(db, 'inward_entries'), where('poId', '==', poId));
@@ -936,8 +920,34 @@ export class POService {
           });
           if (hasActiveNum) return true;
         }
+        return false;
       } catch (err) {
-        console.warn('checkHasInward Firestore query fallback:', err);
+        console.warn('checkHasInward Firestore query error:', err);
+        return false;
+      }
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('perla_erp_inward_entries');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const found = list.some((inw: any) => {
+              if (inw.status === 'reversed' || inw.status === 'cancelled') return false;
+              if (['inw-paramount-0001', 'inw-apex-0002', 'inw-101'].includes(inw.id || inw.inwardId)) return false;
+              const matchesId = inw.poId === poId;
+              const matchesNum =
+                poNumber &&
+                (inw.poNumber === poNumber || inw.poNumberSnapshot === poNumber) &&
+                !poNumber.includes('PENDING');
+              return matchesId || matchesNum;
+            });
+            if (found) return true;
+          }
+        }
+      } catch (e) {
+        // ignore
       }
     }
 
@@ -961,18 +971,12 @@ export class POService {
     const userRole = (user as any)?.role?.toLowerCase() || '';
     const isUserAdmin = userRole === 'admin' || (user as any)?.isAdmin === true;
 
-    const hasInwardStatus =
-      existing.po.status === 'partially_received' ||
-      existing.po.status === 'fully_received' ||
-      existing.po.status === 'in_progress' ||
-      existing.po.status === 'completed';
-
     const hasInwardEntries = await this.checkHasInward(
       poId,
       existing.po.poNumber,
       isDemo
     );
-    const hasInward = hasInwardStatus || hasInwardEntries;
+    const hasInward = hasInwardEntries;
 
     if (hasInward) {
       if (!isUserAdmin) {
@@ -1012,6 +1016,71 @@ export class POService {
           amount
         } as POColourLine;
       });
+
+      // Verify that no colour line has its quantity reduced below inward received
+      if (hasInward) {
+        const inwardMap: Record<string, number> = {};
+        let inwardEntries: any[] = [];
+        if (!isDemo) {
+          try {
+            const q = query(collection(db, 'inward_entries'), where('poId', '==', poId));
+            const snap = await getDocs(q);
+            inwardEntries = snap.docs.map((d) => d.data());
+          } catch (e) {
+            // ignore
+          }
+        }
+        const currentPoNum = existing.po?.poNumber || '';
+        if (inwardEntries.length === 0 && typeof localStorage !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('perla_erp_inward_entries');
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                inwardEntries = list.filter(
+                  (i: any) =>
+                    i.poId === poId ||
+                    (currentPoNum &&
+                      (i.poNumber === currentPoNum || i.poNumberSnapshot === currentPoNum))
+                );
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        for (const inw of inwardEntries) {
+          if (inw.status === 'reversed' || inw.status === 'cancelled') continue;
+          for (const line of inw.lines || []) {
+            const lid = line.poLineId || line.lineId;
+            const qty = Number(line.receivedQty) || 0;
+            if (lid) inwardMap[lid] = (inwardMap[lid] || 0) + qty;
+            const cName = (line.colour || line.colourNameSnapshot || '').trim().toLowerCase();
+            if (cName) {
+              inwardMap[`colour_${cName}`] = (inwardMap[`colour_${cName}`] || 0) + qty;
+              inwardMap[cName] = (inwardMap[cName] || 0) + qty;
+            }
+          }
+        }
+
+        for (const line of processedColourLines) {
+          const lineId = line.id || line.lineId;
+          const colourKey = (line.colourName || '').trim().toLowerCase();
+          const inwardQty = Math.max(
+            0,
+            inwardMap[lineId] ??
+              inwardMap[`colour_${colourKey}`] ??
+              inwardMap[colourKey] ??
+              0
+          );
+          if (inwardQty > 0 && line.quantity < inwardQty) {
+            throw new Error(
+              `Quantity for colour '${line.colourName}' cannot be less than ${inwardQty} ${line.unit} because ${inwardQty} ${line.unit} has already been received in Inward entries.`
+            );
+          }
+        }
+      }
     }
 
     const totals = calculatePOTotals(processedColourLines);
@@ -1081,10 +1150,27 @@ export class POService {
       console.warn('Firestore updatePurchaseOrder fallback:', err);
     }
 
-    const local = getLocalDemoPOs().map((p) =>
-      p.id === poId || p.poId === poId ? merged : p
-    );
+    let found = false;
+    const local = getLocalDemoPOs().map((p) => {
+      if (p.id === poId || p.poId === poId || (merged.poNumber && p.poNumber === merged.poNumber)) {
+        found = true;
+        return merged;
+      }
+      return p;
+    });
+    if (!found) {
+      local.unshift(merged);
+    }
     saveLocalDemoPOs(local);
+
+    const memIdx = localDemoPOs.findIndex(
+      (p) => p.id === poId || p.poId === poId || (merged.poNumber && p.poNumber === merged.poNumber)
+    );
+    if (memIdx >= 0) {
+      localDemoPOs[memIdx] = merged;
+    } else {
+      localDemoPOs.unshift(merged);
+    }
 
     localDemoAuditLogs[poId] = [
       ...(localDemoAuditLogs[poId] || []),
@@ -1389,13 +1475,7 @@ export class POService {
     if (!existing.po) throw new Error('PO not found');
 
     // Operational transactions check
-    const hasInwardStatus =
-      existing.po.status === 'partially_received' ||
-      existing.po.status === 'fully_received' ||
-      existing.po.status === 'in_progress' ||
-      existing.po.status === 'completed';
-
-    const hasInward = hasInwardStatus || (await this.checkHasInward(poId, existing.po.poNumber, isDemo));
+    const hasInward = await this.checkHasInward(poId, existing.po.poNumber, isDemo);
     if (hasInward) {
       throw new Error(
         'Cannot cancel Purchase Order: Inward receipts already exist for this PO. Use operational closure instead.'
@@ -1469,16 +1549,17 @@ export class POService {
     const po = existing?.po;
     const poNumber = po?.poNumber || poId;
 
-    // RULE: If inward has been entered for this PO, it CANNOT be deleted
-    const hasInwardStatus =
-      po?.status === 'partially_received' ||
-      po?.status === 'fully_received' ||
-      po?.status === 'in_progress' ||
-      po?.status === 'completed';
+    // RULE 1: If statement has been approved or moved to invoice, PO CANNOT be deleted
+    const lockMap = await POLockService.getLockedPOMap(isDemo);
+    const lockStatus = POLockService.isLocked(po, lockMap);
+    if (lockStatus) {
+      throw new Error(`Cannot delete Purchase Order ${poNumber}: ${lockStatus.reason}`);
+    }
 
+    // RULE 2: If inward has been entered for this PO, it CANNOT be deleted
     const hasInwardEntries = await this.checkHasInward(poId, po?.poNumber, isDemo);
 
-    if (hasInwardStatus || hasInwardEntries) {
+    if (hasInwardEntries) {
       throw new Error(
         `Cannot delete Purchase Order ${poNumber}: Inward receipts have already been entered for this PO.`
       );

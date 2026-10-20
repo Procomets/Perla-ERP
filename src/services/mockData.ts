@@ -168,7 +168,7 @@ export const INITIAL_POS: PurchaseOrder[] = [
     styleNo: 'APX-DENIM-9021',
     styleNumber: 'APX-DENIM-9021',
     itemName: 'Mens Denim Jacket Washing',
-    status: 'In Progress',
+    status: 'Approved',
     lines: [
       {
         id: 'pol-1',

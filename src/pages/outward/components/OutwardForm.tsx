@@ -25,6 +25,7 @@ interface OutwardFormProps {
   pos: PurchaseOrder[];
   vendors: Vendor[];
   inwards?: InwardEntry[];
+  outwards?: OutwardEntry[];
   initialOutward?: OutwardEntry | null;
   onSaveDraft: (data: any) => Promise<void>;
   onPostOutward: (data: any) => Promise<void>;
@@ -36,45 +37,27 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   pos,
   vendors,
   inwards = [],
+  outwards = [],
   initialOutward,
   onSaveDraft,
   onPostOutward,
   onCancel,
   isSaving
 }) => {
-  // Map of inward entries and received quantities by PO ID and PO Number
-  // Map of inward entries and received quantities by PO ID and PO Number (ONLY POSTED inwards represent physically received inventory)
-  const poInwardInfo = useMemo(() => {
-    const qtyMap: Record<string, number> = {};
-    const countMap: Record<string, number> = {};
+  // Active posted outwards list (passed via prop or loaded dynamically)
+  const [activeOutwards, setActiveOutwards] = useState<OutwardEntry[]>(outwards);
 
-    for (const inw of inwards || []) {
-      // Strictly only count POSTED inward receipts! Draft, reversed, or cancelled cannot be dispatched
-      if (inw.status !== 'posted') continue;
-
-      let inwTotal = Number(inw.totalQuantity) || 0;
-      if (inwTotal === 0 && inw.lines && inw.lines.length > 0) {
-        for (const line of inw.lines) {
-          inwTotal += Number(line.receivedQty) || 0;
-        }
-      }
-
-      const keys = [
-        inw.poId,
-        inw.poNumberSnapshot,
-        inw.poNumber,
-        inw.poNumberSnapshot?.trim().toLowerCase(),
-        inw.poNumber?.trim().toLowerCase(),
-        inw.poId?.trim().toLowerCase()
-      ].filter(Boolean) as string[];
-
-      for (const k of keys) {
-        qtyMap[k] = (qtyMap[k] || 0) + inwTotal;
-        countMap[k] = (countMap[k] || 0) + 1;
-      }
+  useEffect(() => {
+    if (outwards && outwards.length > 0) {
+      setActiveOutwards(outwards);
+    } else {
+      OutwardService.getAllPostedOutwards()
+        .then((list) => {
+          if (list && list.length > 0) setActiveOutwards(list);
+        })
+        .catch((e) => console.warn('Could not load posted outwards:', e));
     }
-    return { qtyMap, countMap };
-  }, [inwards]);
+  }, [outwards]);
 
   // Combined list of POs: includes all POs from props plus any POs referenced in posted inward receipts
   const allPosWithInwardSources = useMemo(() => {
@@ -114,65 +97,186 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     return list;
   }, [pos, inwards]);
 
+  // Comprehensive inward and outward balance calculation for every candidate PO
+  const poBalanceMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        hasPostedInward: boolean;
+        totalInwardQty: number;
+        totalOutwardQty: number;
+        availableQty: number;
+        isAvailable: boolean;
+        primaryUnit: string;
+      }
+    > = {};
+
+    for (const p of allPosWithInwardSources) {
+      const pPoNum = (p.poNumber || '').trim().toLowerCase();
+      const pId = p.id;
+      const pPoId = p.poId;
+
+      // 1. Matching posted inwards for this PO
+      const matchingInwards = (inwards || []).filter((inw) => {
+        if (inw.status !== 'posted') return false;
+        const inwPoNum = (inw.poNumber || inw.poNumberSnapshot || '').trim().toLowerCase();
+        return (
+          (pId && inw.poId === pId) ||
+          (pPoId && inw.poId === pPoId) ||
+          (pPoNum && inwPoNum === pPoNum)
+        );
+      });
+
+      // 2. Matching posted outwards for this PO (excluding current outward being edited)
+      const matchingOutwards = (activeOutwards || []).filter((outw) => {
+        if (outw.status !== 'posted') return false;
+        if (
+          initialOutward &&
+          (outw.id === initialOutward.id ||
+            outw.outwardId === initialOutward.id ||
+            outw.id === initialOutward.outwardId ||
+            outw.outwardId === initialOutward.outwardId)
+        ) {
+          return false;
+        }
+        const outwPoNum = (outw.poNumber || outw.poNumberSnapshot || '').trim().toLowerCase();
+        return (
+          (pId && outw.poId === pId) ||
+          (pPoId && outw.poId === pPoId) ||
+          (pPoNum && outwPoNum === pPoNum)
+        );
+      });
+
+      // Compute line maps and total inward/outward quantities
+      const inwLineMap: Record<string, number> = {};
+      let totalInward = 0;
+      let primaryUnit = 'piece';
+
+      for (const inw of matchingInwards) {
+        if (inw.lines && inw.lines.length > 0) {
+          for (const l of inw.lines) {
+            const q = Number(l.receivedQty) || 0;
+            if (l.poLineId) {
+              inwLineMap[l.poLineId] = (inwLineMap[l.poLineId] || 0) + q;
+            }
+            if (l.unit) primaryUnit = l.unit;
+          }
+        }
+        let inwTotal = Number(inw.totalQuantity) || 0;
+        if (inwTotal === 0 && inw.lines && inw.lines.length > 0) {
+          inwTotal = inw.lines.reduce((sum, l) => sum + (Number(l.receivedQty) || 0), 0);
+        }
+        totalInward += inwTotal;
+      }
+
+      const outwLineMap: Record<string, number> = {};
+      let totalOutward = 0;
+
+      for (const outw of matchingOutwards) {
+        if (outw.lines && outw.lines.length > 0) {
+          for (const l of outw.lines) {
+            const q = Number(l.dispatchQty) || 0;
+            if (l.poLineId) {
+              outwLineMap[l.poLineId] = (outwLineMap[l.poLineId] || 0) + q;
+            }
+          }
+        }
+        let outwTotal = Number(outw.totalQuantity) || 0;
+        if (outwTotal === 0 && outw.lines && outw.lines.length > 0) {
+          outwTotal = outw.lines.reduce((sum, l) => sum + (Number(l.dispatchQty) || 0), 0);
+        }
+        totalOutward += outwTotal;
+      }
+
+      const poLines = (p.lines && p.lines.length > 0) ? p.lines : (p.colourLines || []);
+      let hasAvailableLine = false;
+      let lineBasedAvailableTotal = 0;
+
+      if (poLines.length > 0) {
+        for (const pl of poLines) {
+          const lineId = pl.lineId || (pl as any).id;
+          if (pl.unit) primaryUnit = pl.unit;
+          const lineIn = inwLineMap[lineId] || 0;
+          const lineOut = outwLineMap[lineId] || 0;
+          const avail = Math.max(0, lineIn - lineOut);
+          lineBasedAvailableTotal += avail;
+          if (avail > 0) {
+            hasAvailableLine = true;
+          }
+        }
+      }
+
+      const hasPostedInward = matchingInwards.length > 0 && totalInward > 0;
+      const totalInwardMinusOutward = Math.max(0, totalInward - totalOutward);
+
+      // Condition:
+      // 1. Must have posted inward
+      // 2. Not all inward has been outwarded (available inward balance > 0)
+      const hasLineBreakdown = poLines.length > 0 && Object.keys(inwLineMap).length > 0;
+      const isAvailable = hasPostedInward && (
+        hasLineBreakdown
+          ? (hasAvailableLine && totalInwardMinusOutward > 0)
+          : (totalInwardMinusOutward > 0)
+      );
+
+      const availableQty = hasLineBreakdown ? lineBasedAvailableTotal : totalInwardMinusOutward;
+
+      const balanceData = {
+        hasPostedInward,
+        totalInwardQty: totalInward,
+        totalOutwardQty: totalOutward,
+        availableQty,
+        isAvailable,
+        primaryUnit
+      };
+
+      if (p.id) map[p.id] = balanceData;
+      if (p.poId) map[p.poId] = balanceData;
+      if (p.poNumber) map[p.poNumber.trim().toLowerCase()] = balanceData;
+    }
+
+    return map;
+  }, [allPosWithInwardSources, inwards, activeOutwards, initialOutward]);
+
   // Filter eligible POs:
-  // Must have at least 1 POSTED inward entry in this particular PO!
+  // ONLY show if inward is available for this particular PO!
+  // If there is NO inward entry for PO OR all the inward is outwarded, DO NOT SHOW!
   const eligiblePos = useMemo(() => {
     return allPosWithInwardSources.filter((p) => {
       const s = String(p.status || '').toLowerCase();
       if (s === 'cancelled' || s === 'rejected') return false;
 
-      // 1. Direct match against loaded POSTED inward entries
-      const directInwardMatch = inwards?.some((inw) => {
-        if (inw.status !== 'posted') return false;
-        return (
-          inw.poId === p.id ||
-          inw.poId === p.poId ||
-          (inw.poNumber && inw.poNumber.trim().toLowerCase() === p.poNumber?.trim().toLowerCase()) ||
-          (inw.poNumberSnapshot && inw.poNumberSnapshot.trim().toLowerCase() === p.poNumber?.trim().toLowerCase())
-        );
-      });
-
-      // 2. Count / quantity of posted inward receipts against this PO
-      const poKeys = [
-        p.id,
-        p.poId,
-        p.poNumber,
-        p.id?.trim().toLowerCase(),
-        p.poId?.trim().toLowerCase(),
-        p.poNumber?.trim().toLowerCase()
-      ].filter(Boolean) as string[];
-
-      let inwardCount = 0;
-      let inwardQty = 0;
-      for (const k of poKeys) {
-        if (poInwardInfo.countMap[k]) inwardCount += poInwardInfo.countMap[k];
-        if (poInwardInfo.qtyMap[k]) inwardQty += poInwardInfo.qtyMap[k];
-      }
-
-      // Has at least one posted inward receipt
-      const hasAtLeastOnePostedInward = directInwardMatch || inwardCount > 0 || inwardQty > 0;
-
-      // Status check fallback only if no inward list was loaded at all
-      const hasInwardsList = Boolean(inwards && inwards.length > 0);
-      const hasReceivedStatusFallback = !hasInwardsList && (
-        s === 'partially_received' ||
-        s === 'fully_received' ||
-        Number((p as any).totalReceivedQuantity || (p as any).receivedQuantity || 0) > 0
+      // Allow current PO if editing an existing outward dispatch
+      const isCurrentEditingPo = Boolean(
+        initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId)
       );
+      if (isCurrentEditingPo) return true;
 
-      const hasAtLeastOneInward = hasAtLeastOnePostedInward || hasReceivedStatusFallback;
+      const bal =
+        poBalanceMap[p.id] ||
+        poBalanceMap[p.poId || ''] ||
+        (p.poNumber ? poBalanceMap[p.poNumber.trim().toLowerCase()] : null);
 
-      return hasAtLeastOneInward || (initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId));
+      if (!bal) return false;
+
+      // Rule 1: If there is no inward entry for PO, do NOT show
+      if (!bal.hasPostedInward) return false;
+
+      // Rule 2: If all the inward is outwarded, do NOT show
+      if (!bal.isAvailable || bal.availableQty <= 0) return false;
+
+      // Rule 3: Only if inward is available (> 0), show!
+      return true;
     });
-  }, [allPosWithInwardSources, inwards, poInwardInfo, initialOutward]);
+  }, [allPosWithInwardSources, poBalanceMap, initialOutward]);
 
-  // All Customer companies: Show ALL company names that have at least one POSTED inward entry in a PO
+  // All Customer companies: ONLY show companies that have at least one PO with available inward balance!
   const eligibleCustomers = useMemo(() => {
     const customerMap = new Map<string, Vendor>();
 
-    // 1. First add vendors from master vendors list that match an eligible PO (which has posted inward receipts)
+    // 1. Add vendors from master vendors list that match an eligible PO (which has available inward balance)
     for (const v of vendors) {
-      const hasInwardPO = eligiblePos.some(
+      const hasEligiblePO = eligiblePos.some(
         (p) =>
           p.customerId === v.id ||
           p.customerId === v.vendorId ||
@@ -182,7 +286,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === v.companyName.trim().toLowerCase())
       );
 
-      if (hasInwardPO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId))) {
+      if (hasEligiblePO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId))) {
         const key = v.id || v.vendorId || v.companyName;
         customerMap.set(key, v);
       }
@@ -214,34 +318,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       }
     }
 
-    // 3. Also check POSTED inwards directly for customer company names
-    for (const inw of inwards || []) {
-      if (inw.status !== 'posted') continue;
-      const custName = inw.customerCompanyNameSnapshot || inw.customerName;
-      if (!custName) continue;
-
-      const alreadyExists = Array.from(customerMap.values()).some(
-        (v) =>
-          v.id === inw.customerVendorId ||
-          v.id === inw.customerId ||
-          v.companyName.trim().toLowerCase() === custName.trim().toLowerCase()
-      );
-
-      if (!alreadyExists) {
-        const custId = inw.customerVendorId || inw.customerId || `cust_${custName.replace(/\s+/g, '_')}`;
-        customerMap.set(custId, {
-          id: custId,
-          vendorId: custId,
-          companyName: custName,
-          vendorType: 'customer',
-          vendorCategory: 'main_company',
-          status: 'active'
-        } as Vendor);
-      }
-    }
-
     return Array.from(customerMap.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
-  }, [vendors, eligiblePos, inwards, initialOutward]);
+  }, [vendors, eligiblePos, initialOutward]);
 
   // Active Customer selection
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
@@ -381,6 +459,17 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     );
   }, [eligibleCustomers, selectedCustomerId]);
 
+  // Clear selected PO if it is no longer in eligiblePos
+  useEffect(() => {
+    if (selectedPoId && !initialOutward) {
+      const isEligible = eligiblePos.some((p) => p.id === selectedPoId || p.poId === selectedPoId);
+      if (!isEligible) {
+        setSelectedPoId('');
+        setDispatchQtyMap({});
+      }
+    }
+  }, [eligiblePos, selectedPoId, initialOutward]);
+
   // PO dropdown groups with cross-company discovery
   const poOptionGroups: SelectOptionGroup[] = useMemo(() => {
     const matchingCurrentCustomer: SelectOption[] = [];
@@ -396,10 +485,19 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
            (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase())
          )));
 
+      const bal =
+        poBalanceMap[p.id] ||
+        poBalanceMap[p.poId || ''] ||
+        (p.poNumber ? poBalanceMap[p.poNumber.trim().toLowerCase()] : null);
+      const availText =
+        bal && bal.availableQty > 0
+          ? `Available Inward: ${bal.availableQty} ${bal.primaryUnit}`
+          : 'Available Inward';
+
       const option: SelectOption = {
         id: p.id,
         primaryText: p.poNumber,
-        secondaryText: `Style: ${p.styleNo || 'N/A'} • ${p.itemName || 'Garment'} • ${p.customerName || 'Customer'}`,
+        secondaryText: `Style: ${p.styleNo || 'N/A'} • ${availText} • ${p.customerName || 'Customer'}`,
         badge: isCurrentCustomer ? (selectedCustomer?.companyName || 'Selected Company') : (p.customerName || 'Other Company'),
         badgeVariant: isCurrentCustomer ? 'emerald' : 'slate',
         meta: p
@@ -416,8 +514,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     if (matchingCurrentCustomer.length > 0) {
       groups.push({
         title: selectedCustomer
-          ? `Purchase Orders for ${selectedCustomer.companyName}`
-          : 'Purchase Orders For Selected Company',
+          ? `Purchase Orders for ${selectedCustomer.companyName} (Available Stock)`
+          : 'Purchase Orders For Selected Company (Available Stock)',
         isHighlighted: true,
         options: matchingCurrentCustomer
       });
@@ -427,13 +525,13 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       groups.push({
         title: selectedCustomerId
           ? 'Purchase Orders From Other Companies (Auto-Switches Company)'
-          : 'All Available Purchase Orders (With Posted Inward Receipts)',
+          : 'All Available Purchase Orders (With Available Inward Stock)',
         options: otherCustomers
       });
     }
 
     return groups;
-  }, [eligiblePos, selectedCustomerId, selectedCustomer]);
+  }, [eligiblePos, selectedCustomerId, selectedCustomer, poBalanceMap]);
 
   const handleSelectCustomer = (opt: SelectOption) => {
     setSelectedCustomerId(opt.id);
@@ -663,7 +761,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             size="sm"
             onClick={handlePostClick}
             disabled={isSaving}
-            className="bg-[#1F4E79] hover:bg-[#163858] text-white text-xs flex items-center gap-1.5 font-semibold"
+            className="bg-black hover:bg-neutral-800 text-white border-black text-xs flex items-center gap-1.5 font-semibold"
           >
             <CheckCircle2 className="w-4 h-4" />
             {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
@@ -701,7 +799,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search customer by name or code..."
             groups={customerOptionGroups}
             onSelect={handleSelectCustomer}
-            helperText="Shows all companies with at least 1 posted inward entry in a PO"
+            helperText="Shows companies with available inward stock ready for outward dispatch"
           />
 
           {/* Subcontractor / Subcompany */}
@@ -739,8 +837,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             onSelect={handleSelectPO}
             helperText={
               selectedCustomerId
-                ? "Shows PO numbers for the selected company with at least 1 posted inward entry"
-                : "Shows all PO numbers with at least 1 posted inward entry in the PO"
+                ? "Shows PO numbers with available inward stock for the selected company"
+                : "Shows all PO numbers with available inward stock ready for dispatch"
             }
           />
         </div>
@@ -1073,7 +1171,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           size="sm"
           onClick={handlePostClick}
           disabled={isSaving}
-          className="bg-[#1F4E79] hover:bg-[#163858] text-white text-xs flex items-center gap-1.5 font-semibold shadow-2xs"
+          className="bg-black hover:bg-neutral-800 text-white border-black text-xs flex items-center gap-1.5 font-semibold shadow-2xs"
         >
           <CheckCircle2 className="w-4 h-4" />
           {isSaving ? 'Posting...' : 'Post Outward Dispatch'}

@@ -109,8 +109,11 @@ export class InvoiceService {
     filters?: { companyId?: string; poNumber?: string; styleNo?: string },
     isDemo: boolean = false
   ): Promise<InvoiceEligibleItem[]> {
-    // 1. Fetch approvals from Statement module
-    const approvals = await StatementService.getInvoiceApprovals(filters?.companyId, isDemo);
+    // 1. Fetch approvals from Statement module and POs in parallel
+    const [approvals, poResult] = await Promise.all([
+      StatementService.getInvoiceApprovals(filters?.companyId, isDemo),
+      POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemo)
+    ]);
 
     // Filter to only approved lines (not yet invoiced)
     const approvedLines = approvals.filter(
@@ -121,14 +124,20 @@ export class InvoiceService {
       return [];
     }
 
-    // 2. Load POs to enrich rateBasis, processCategory, washType
-    const poResult = await POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemo);
     const pos = poResult.pos || [];
 
-    // 3. Map into InvoiceEligibleItem
+    // 2. Map into InvoiceEligibleItem with strict deduplication
     const eligible: InvoiceEligibleItem[] = [];
+    const seenLineKeys = new Set<string>();
 
     for (const app of approvedLines) {
+      const lineKey = `${app.purchaseOrderId || app.poNumber}:::${(app.colourName || '').trim().toLowerCase()}`;
+      if (seenLineKeys.has(lineKey) || (app.poColourLineId && seenLineKeys.has(app.poColourLineId))) {
+        continue;
+      }
+      seenLineKeys.add(lineKey);
+      if (app.poColourLineId) seenLineKeys.add(app.poColourLineId);
+
       const po = pos.find((p) => p.id === app.purchaseOrderId || p.poNumber === app.poNumber);
       const poLine = po?.lines?.find((l) => l.lineId === app.poColourLineId);
 
@@ -188,19 +197,27 @@ export class InvoiceService {
 
   /**
    * Creates an unfinalized Invoice Draft from selected approved colour line items
+   * Supports passing pre-fetched eligible items to eliminate redundant queries
    */
   static async createInvoiceDraft(
     selectedApprovalIds: string[],
     user: { uid: string; displayName?: string },
-    isDemo: boolean = false
+    isDemo: boolean = false,
+    preloadedItems?: InvoiceEligibleItem[]
   ): Promise<Invoice> {
     if (!selectedApprovalIds || selectedApprovalIds.length === 0) {
       throw new Error('Please select at least one approved colour line item to generate an invoice.');
     }
 
-    // 1. Fetch eligible items
-    const allEligible = await this.getInvoiceEligibleItems(undefined, isDemo);
-    const selectedItems = allEligible.filter((item) => selectedApprovalIds.includes(item.approvalId));
+    // 1. Fetch or use preloaded eligible items
+    let selectedItems: InvoiceEligibleItem[] = [];
+    if (preloadedItems && preloadedItems.length > 0) {
+      selectedItems = preloadedItems.filter((item) => selectedApprovalIds.includes(item.approvalId));
+    }
+    if (selectedItems.length === 0) {
+      const allEligible = await this.getInvoiceEligibleItems(undefined, isDemo);
+      selectedItems = allEligible.filter((item) => selectedApprovalIds.includes(item.approvalId));
+    }
 
     if (selectedItems.length === 0) {
       throw new Error('None of the selected items were found or they are no longer eligible for invoicing.');
@@ -213,8 +230,12 @@ export class InvoiceService {
       throw new Error('All selected colour lines must belong to the same customer/company.');
     }
 
-    // 3. Load Customer details from Vendor Master
-    const vendorsResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemo);
+    // 3. Load Customer details & settings in parallel
+    const [vendorsResult, settings] = await Promise.all([
+      VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemo),
+      InvoiceSettingsService.getSettings(isDemo)
+    ]);
+
     const customer = vendorsResult.vendors?.find((v) => v.id === companyId || v.vendorId === companyId);
 
     const customerAddress =
@@ -234,9 +255,6 @@ export class InvoiceService {
         : (customer as any)?.stateCode || '33';
     const customerGstin = customer?.taxDetails?.gstin || (customer as any)?.gstin || '33AAACA1234A1Z5';
     const customerPan = customer?.taxDetails?.pan || (customer as any)?.pan || '';
-
-    // 4. Load Company Settings
-    const settings = await InvoiceSettingsService.getSettings(isDemo);
 
     // 5. Determine Intra-State vs Inter-State supply
     const isIntraState = isIntraStateSupply(customerStateCode, customerState, settings.stateCode);
@@ -347,7 +365,10 @@ export class InvoiceService {
         state: settings.state,
         stateCode: settings.stateCode,
         pincode: settings.pincode,
+        tin: settings.tin,
+        cst: settings.cst,
         gstin: settings.gstin,
+        pan: settings.pan,
         phone: settings.phone,
         email: settings.email
       },
@@ -485,16 +506,17 @@ export class InvoiceService {
       }
     }
 
-    // 3. Mark each line as invoiced in Statement approvals (atomically consumes eligibility)
-    for (const line of finalizedInvoice.lines) {
-      await StatementService.markApprovalAsInvoiced(
-        line.sourcePoLineId,
-        finalInvoiceId,
-        finalInvoiceNo,
-        finalizedInvoice.invoiceDate,
-        isDemo
-      );
-    }
+    // 3. Mark all lines as invoiced in Statement approvals in an atomic batch
+    await StatementService.markApprovalsBatch(
+      finalizedInvoice.lines.map((l) => ({
+        poLineId: l.sourcePoLineId,
+        approvalId: l.statementApprovalId
+      })),
+      finalInvoiceId,
+      finalInvoiceNo,
+      finalizedInvoice.invoiceDate,
+      isDemo
+    );
 
     // 4. Save to Local Storage cache
     const existing = getLocalInvoices().filter((inv) => inv.id !== draftInvoice.id);
@@ -543,14 +565,33 @@ export class InvoiceService {
 
     if (!isDemo) {
       try {
-        const q = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          list = snap.docs.map((d) => d.data() as Invoice);
-        } else {
-          list = getLocalInvoices();
+        let snap;
+        try {
+          const q = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
+          snap = await getDocs(q);
+        } catch {
+          // If composite or orderBy query fails, query directly without ordering
+          snap = await getDocs(collection(db, 'invoices'));
         }
+
+        // Always trust Firestore (even if empty = all records deleted).
+        // Overwrite local storage cache so stale deleted invoices are removed.
+        list = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            ...data,
+            id: d.id,
+            invoiceId: data.invoiceId || d.id
+          } as Invoice;
+        });
+
+        // In-memory sort chronologically descending
+        list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+        saveLocalInvoices(list);
       } catch (err) {
+        // Genuine network/permission error only
+        console.warn('Firestore getInvoices error, falling back to local storage cache:', err);
         list = getLocalInvoices();
       }
     } else {
@@ -626,6 +667,7 @@ export class InvoiceService {
       } catch (e) {
         console.warn('Failed to fetch invoice from Firestore:', e);
       }
+      return null;
     }
 
     const local = getLocalInvoices().find((inv) => inv.id === invoiceId || inv.invoiceId === invoiceId);

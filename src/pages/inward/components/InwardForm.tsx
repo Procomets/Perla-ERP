@@ -28,6 +28,7 @@ interface InwardFormProps {
   onPostReceipt: (data: any) => Promise<void>;
   onCancel: () => void;
   isSaving: boolean;
+  isDemoMode?: boolean;
 }
 
 export const InwardForm: React.FC<InwardFormProps> = ({
@@ -37,7 +38,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   onSaveDraft,
   onPostReceipt,
   onCancel,
-  isSaving
+  isSaving,
+  isDemoMode = false
 }) => {
   // Filter eligible POs: approved, in_progress, partially_received, or previously assigned
   const eligiblePos = useMemo(() => {
@@ -80,10 +82,22 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   const [remarks, setRemarks] = useState<string>(initialInward?.remarks || '');
 
   // Line quantities entered by user: { [poLineId]: number }
-  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
+  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>(() => {
+    if (initialInward?.lines && initialInward.lines.length > 0) {
+      const map: Record<string, number> = {};
+      initialInward.lines.forEach((l) => {
+        const lid = l.poLineId || l.lineId;
+        if (lid) map[lid] = Number(l.receivedQty) || 0;
+      });
+      return map;
+    }
+    return {};
+  });
 
   // Cumulative posted inward map: { [poLineId]: number }
   const [cumulativeMap, setCumulativeMap] = useState<Record<string, number>>({});
+  // Minimum allowable inward qty to satisfy present outward dispatches
+  const [minAllowedMap, setMinAllowedMap] = useState<Record<string, number>>({});
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -96,6 +110,60 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   const activePo = useMemo(() => {
     return pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
   }, [pos, selectedPoId]);
+
+  // Fetch cumulative posted inward map whenever active PO changes
+  useEffect(() => {
+    let isMounted = true;
+    if (!activePo) {
+      setCumulativeMap({});
+      setMinAllowedMap({});
+      return;
+    }
+
+    const fetchBalances = async () => {
+      setIsLoadingBalances(true);
+      try {
+        const poId = activePo.id || activePo.poId;
+        const poNumber = activePo.poNumber;
+        const map = await InwardService.getCumulativePostedInwardMap(
+          poId,
+          initialInward?.inwardId,
+          isDemoMode,
+          poNumber
+        );
+        if (isMounted) {
+          setCumulativeMap(map);
+        }
+
+        // Fetch outward dependencies / minimum allowed quantities per colour line
+        try {
+          const outwAnalysis = await InwardService.getInwardOutwardDependencies(poId, isDemoMode);
+          const inwId = initialInward?.inwardId || initialInward?.id;
+          if (isMounted) {
+            if (inwId && outwAnalysis.inwardMinAllowedMap[inwId]) {
+              setMinAllowedMap(outwAnalysis.inwardMinAllowedMap[inwId]);
+            } else {
+              setMinAllowedMap({});
+            }
+          }
+        } catch (depErr) {
+          console.warn('Failed to fetch inward outward dependencies for form:', depErr);
+        }
+      } catch (err) {
+        console.error('Failed to load PO inward balances:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingBalances(false);
+        }
+      }
+    };
+
+    fetchBalances();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activePo?.id, activePo?.poId, activePo?.poNumber, initialInward?.inwardId, isDemoMode]);
 
   // Find eligible subcontractors for the selected customer: strictly parent's subcompany
   const eligibleSubcontractors = useMemo(() => {
@@ -306,10 +374,16 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     setSelectedSubcontractorId(opt.id);
   };
 
-  const handleQtyChange = (lineId: string, val: number, maxAvailable: number) => {
+  const handleQtyChange = (lineId: string, val: number, maxAvailable: number, minAllowed: number = 0) => {
     const cleanVal = Math.max(0, isNaN(val) ? 0 : val);
     setReceivedQtyMap((prev) => ({ ...prev, [lineId]: cleanVal }));
-    setValidationError(null);
+    if (minAllowed > 0 && cleanVal < minAllowed) {
+      setValidationError(
+        `Received quantity cannot be less than present outward entry (${minAllowed}).`
+      );
+    } else {
+      setValidationError(null);
+    }
   };
 
   // Calculated totals grouped separately by Unit (Piece and Kg never summed together!)
@@ -319,13 +393,25 @@ export const InwardForm: React.FC<InwardFormProps> = ({
 
     return lines.map((l, idx) => {
       const lineId = l.id || l.lineId;
+      const colourKey = (l.colourName || '').trim().toLowerCase();
       const ordered = Math.max(0, Number(l.quantity) || 0);
-      const prev = Math.max(0, cumulativeMap[lineId] || 0);
+      const prev = Math.max(
+        0,
+        cumulativeMap[lineId] ?? (colourKey ? cumulativeMap[`colour_${colourKey}`] : 0) ?? 0
+      );
       const remaining = Math.max(0, ordered - prev);
       const current = Math.max(0, Number(receivedQtyMap[lineId] ?? 0));
+      const minAllowed = Math.max(
+        0,
+        minAllowedMap[lineId] ??
+          (colourKey ? minAllowedMap[`col_${colourKey}`] : 0) ??
+          (colourKey ? minAllowedMap[colourKey] : 0) ??
+          0
+      );
       const cumulative = prev + current;
       const balanceAfter = Math.max(0, ordered - cumulative);
       const isOver = current > remaining;
+      const isBelowMin = current < minAllowed;
 
       return {
         sNo: idx + 1,
@@ -339,12 +425,14 @@ export const InwardForm: React.FC<InwardFormProps> = ({
         previouslyReceivedQty: prev,
         remainingOrderQty: remaining,
         currentReceiptQty: current,
+        minAllowedQty: minAllowed,
         cumulativeReceivedQty: cumulative,
         balanceAfterReceipt: balanceAfter,
-        isOver
+        isOver,
+        isBelowMin
       };
     });
-  }, [activePo, cumulativeMap, receivedQtyMap]);
+  }, [activePo, cumulativeMap, receivedQtyMap, minAllowedMap]);
 
   const unitTotals = useMemo(() => {
     const totals: Record<string, { ordered: number; prev: number; current: number; balanceAfter: number }> = {
@@ -397,6 +485,15 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     if (overLine) {
       setValidationError(
         `Over-receipt on colour '${overLine.colourName}': entered quantity (${overLine.currentReceiptQty}) exceeds remaining order quantity (${overLine.remainingOrderQty} ${overLine.unit}).`
+      );
+      return false;
+    }
+
+    // Check that entered quantity is not below present outward dispatches
+    const belowMinLine = lineDetails.find((l) => l.isBelowMin);
+    if (belowMinLine) {
+      setValidationError(
+        `Received quantity for colour '${belowMinLine.colourName}' cannot be less than ${belowMinLine.minAllowedQty} ${belowMinLine.unit} because ${belowMinLine.minAllowedQty} ${belowMinLine.unit} has already been dispatched in outward entries.`
       );
       return false;
     }
@@ -756,19 +853,37 @@ export const InwardForm: React.FC<InwardFormProps> = ({
                       <div className="relative">
                         <input
                           type="number"
-                          min="0"
+                          min={line.minAllowedQty}
                           max={line.remainingOrderQty}
                           step={line.unit === 'kg' ? '0.01' : '1'}
                           value={receivedQtyMap[line.lineId] ?? 0}
                           onChange={(e) =>
-                            handleQtyChange(line.lineId, parseFloat(e.target.value), line.remainingOrderQty)
+                            handleQtyChange(
+                              line.lineId,
+                              parseFloat(e.target.value),
+                              line.remainingOrderQty,
+                              line.minAllowedQty
+                            )
                           }
-                          className={`w-full text-right px-2.5 py-1.5 text-xs font-bold rounded border ${
+                          onBlur={() => {
+                            if (line.minAllowedQty > 0 && (receivedQtyMap[line.lineId] ?? 0) < line.minAllowedQty) {
+                              setReceivedQtyMap((prev) => ({ ...prev, [line.lineId]: line.minAllowedQty }));
+                              setValidationError(null);
+                            }
+                          }}
+                          className={`w-full text-right px-2.5 py-1.5 text-xs font-bold rounded border transition-colors ${
                             line.isOver
                               ? 'border-rose-500 bg-rose-50 text-rose-700 focus:ring-rose-500'
+                              : line.isBelowMin
+                              ? 'border-amber-500 bg-amber-50 text-amber-700 focus:ring-amber-500'
                               : 'border-slate-300 focus:ring-[#1F4E79] focus:border-[#1F4E79] bg-white'
                           }`}
                         />
+                        {line.minAllowedQty > 0 && (
+                          <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-amber-700 font-semibold whitespace-nowrap">
+                            <span>Min: {line.minAllowedQty.toLocaleString()} {line.unit} (Outward Dispatched)</span>
+                          </div>
+                        )}
                       </div>
                     </td>
 

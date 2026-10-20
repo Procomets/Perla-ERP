@@ -28,6 +28,7 @@ import { Vendor } from '../../../types/vendor';
 import { InwardEntry, OutwardEntry } from '../../../types/inwardOutward';
 import { InwardService } from '../../../services/inwardService';
 import { OutwardService } from '../../../services/outwardService';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 import { useAuth } from '../../../context/AuthContext';
 import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
@@ -35,7 +36,8 @@ import { Modal } from '../../../components/ui/Modal';
 import {
   formatCurrency,
   formatQuantity,
-  formatDate
+  formatDate,
+  formatDateTime
 } from '../../../utils/formatters';
 import { hasInwardForPO } from '../../../utils/calculations';
 
@@ -58,6 +60,7 @@ interface PODetailsProps {
   onPrint: () => void;
   canManage: boolean;
   isAdmin?: boolean;
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export const PODetails: React.FC<PODetailsProps> = ({
@@ -78,8 +81,10 @@ export const PODetails: React.FC<PODetailsProps> = ({
   onAmend,
   onPrint,
   canManage,
-  isAdmin
+  isAdmin,
+  lockedPOMap = {}
 }) => {
+  const lockStatus = POLockService.isLocked(po, lockedPOMap);
   const { isDemoMode } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'audit' | 'downstream'>('overview');
 
@@ -141,6 +146,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
 
   const linkedInwards = liveInwards.filter((inE) => {
     if (inE.status === 'reversed' || inE.status === 'cancelled') return false;
+    if (['inw-paramount-0001', 'inw-apex-0002', 'inw-101'].includes(inE.id || inE.inwardId)) return false;
     const inwPoId = (inE.poId || '').trim().toLowerCase();
     const inwPoNum = (inE.poNumberSnapshot || inE.poNumber || '').trim().toLowerCase();
     return (
@@ -194,10 +200,6 @@ export const PODetails: React.FC<PODetailsProps> = ({
   const hasInwardTaken =
     linkedInwards.length > 0 ||
     totalReceivedQty > 0 ||
-    statusLower === 'partially_received' ||
-    statusLower === 'fully_received' ||
-    statusLower === 'in_progress' ||
-    statusLower === 'completed' ||
     hasInwardForPO(po, liveInwards);
 
   const handleConfirmReject = () => {
@@ -274,7 +276,18 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </Button>
 
             {canManage && !isCancelled && (
-              hasInwardTaken && !isAdmin ? (
+              lockStatus ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  title={lockStatus.reason}
+                  className="opacity-60 cursor-not-allowed text-slate-400 border-slate-200"
+                >
+                  Edit PO (Locked)
+                </Button>
+              ) : hasInwardTaken && !isAdmin ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -310,8 +323,8 @@ export const PODetails: React.FC<PODetailsProps> = ({
               </Button>
             )}
 
-            {/* Cancel Approval (Admin only, when approved and NO inward taken) */}
-            {isAdmin && isApproved && !hasInwardTaken && onRevokeApproval && (
+            {/* Cancel Approval (Admin only, when approved and NO inward taken and NOT locked) */}
+            {isAdmin && isApproved && !hasInwardTaken && !lockStatus && onRevokeApproval && (
               <Button
                 variant="outline"
                 size="sm"
@@ -343,8 +356,8 @@ export const PODetails: React.FC<PODetailsProps> = ({
               </Button>
             )}
 
-            {/* Cancel PO (Admin only, when not cancelled and NO inward taken) */}
-            {isAdmin && !isCancelled && !hasInwardTaken && (
+            {/* Cancel PO (Admin only, when not cancelled, NO inward taken, and NOT locked) */}
+            {isAdmin && !isCancelled && !hasInwardTaken && !lockStatus && (
               <Button
                 variant="outline"
                 size="sm"
@@ -356,7 +369,18 @@ export const PODetails: React.FC<PODetailsProps> = ({
             )}
 
             {isAdmin && onDeletePO && (
-              hasInwardTaken ? (
+              lockStatus ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  title={lockStatus.reason}
+                  className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+                >
+                  Delete PO
+                </Button>
+              ) : hasInwardTaken ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -381,6 +405,17 @@ export const PODetails: React.FC<PODetailsProps> = ({
             )}
           </div>
         </div>
+
+        {/* Lock Banner if Statement is Approved or Invoiced */}
+        {lockStatus && (
+          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-xs text-amber-900 font-medium shadow-2xs">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold block text-amber-950">Purchase Order Locked from Modification</span>
+              <span className="text-amber-800">{lockStatus.reason}</span>
+            </div>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex border-b border-slate-100 gap-6 text-xs font-semibold pt-2">
@@ -709,8 +744,9 @@ export const PODetails: React.FC<PODetailsProps> = ({
                       <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
                         {log.action}
                       </span>
-                      <span className="text-[11px] text-slate-400">
-                        {formatDate(log.performedAt)}
+                      <span className="text-[11px] text-slate-500 font-medium inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        {formatDateTime(log.performedAt)}
                       </span>
                     </div>
                     <p className="text-slate-700 font-medium">{log.summary}</p>
@@ -741,8 +777,9 @@ export const PODetails: React.FC<PODetailsProps> = ({
                       <span className="font-bold text-amber-900">
                         Revision {amend.amendmentNumber}
                       </span>
-                      <span className="text-[11px] text-slate-400">
-                        {formatDate(amend.requestedAt)}
+                      <span className="text-[11px] text-slate-500 font-medium inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-600" />
+                        {formatDateTime(amend.requestedAt)}
                       </span>
                     </div>
                     <p className="text-slate-700">Reason: {amend.reason}</p>

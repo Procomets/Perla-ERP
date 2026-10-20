@@ -7,7 +7,8 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 export type InwardSortField =
   | 'inwardNo'
@@ -36,9 +37,11 @@ interface InwardListProps {
   onPrint: (inwardId: string) => void;
   onEdit: (inwardId: string) => void;
   onDelete: (inwardId: string) => void;
+  deletableInwardMap?: Record<string, boolean>;
   canManage: boolean;
   isAdmin: boolean;
   isLoading?: boolean;
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export const InwardList: React.FC<InwardListProps> = ({
@@ -54,9 +57,11 @@ export const InwardList: React.FC<InwardListProps> = ({
   onPrint,
   onEdit,
   onDelete,
+  deletableInwardMap,
   canManage,
   isAdmin,
-  isLoading
+  isLoading,
+  lockedPOMap = {}
 }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [deleteTargetInward, setDeleteTargetInward] = useState<InwardEntry | null>(null);
@@ -212,7 +217,12 @@ export const InwardList: React.FC<InwardListProps> = ({
 
   const sortedInwards = useMemo(() => {
     if (!sortField || !sortDirection) {
-      return inwards;
+      // Default: Most recent entry first based on timestamp
+      return [...inwards].sort((a, b) => {
+        const timeA = new Date((a as any).inwardTime || a.createdAt || a.updatedAt || a.inwardDate || 0).getTime();
+        const timeB = new Date((b as any).inwardTime || b.createdAt || b.updatedAt || b.inwardDate || 0).getTime();
+        return timeB - timeA;
+      });
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
@@ -746,23 +756,54 @@ export const InwardList: React.FC<InwardListProps> = ({
                               View
                             </button>
 
-                            {canManage && (
-                              <button
-                                onClick={() => onEdit(row.inwardId || row.id)}
-                                className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
-                              >
-                                Edit
-                              </button>
-                            )}
+                            {canManage && (() => {
+                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                              if (lockStatus) {
+                                return (
+                                  <span
+                                    title={lockStatus.reason}
+                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                    Edit
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => onEdit(row.inwardId || row.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              );
+                            })()}
 
-                            {isAdmin && (
-                              <button
-                                onClick={() => setDeleteTargetInward(row)}
-                                className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
-                              >
-                                Delete
-                              </button>
-                            )}
+                            {isAdmin && (() => {
+                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                              if (lockStatus) {
+                                return (
+                                  <span
+                                    title={lockStatus.reason}
+                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                    Delete
+                                  </span>
+                                );
+                              }
+                              const inwKey = row.inwardId || row.id;
+                              const isDeletable = deletableInwardMap ? deletableInwardMap[inwKey] !== false : true;
+                              if (!isDeletable) return null;
+                              return (
+                                <button
+                                  onClick={() => setDeleteTargetInward(row)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              );
+                            })()}
 
                             <button
                               onClick={() => onPrint(row.inwardId || row.id)}

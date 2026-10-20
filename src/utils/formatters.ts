@@ -40,6 +40,46 @@ export function formatDate(val: any): string {
   }
 }
 
+export function formatDateTime(val: any, includeSeconds: boolean = true): string {
+  if (!val) return '-';
+  try {
+    let d: Date;
+    if (typeof val === 'object') {
+      if (typeof val.toDate === 'function') {
+        d = val.toDate();
+      } else if (typeof val.seconds === 'number') {
+        d = new Date(val.seconds * 1000 + (val.nanoseconds || 0) / 1000000);
+      } else if (val instanceof Date) {
+        d = val;
+      } else {
+        return '-';
+      }
+    } else if (typeof val === 'number') {
+      d = new Date(val);
+    } else if (typeof val === 'string') {
+      d = new Date(val);
+    } else {
+      return '-';
+    }
+
+    if (isNaN(d.getTime())) return '-';
+
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: includeSeconds ? '2-digit' : undefined,
+      hour12: true
+    }).format(d);
+
+    return formatted.replace(/\b(am|pm)\b/gi, (m) => m.toUpperCase());
+  } catch {
+    return '-';
+  }
+}
+
 export function formatQuantity(qty: number, unit: string = 'piece'): string {
   return `${qty.toLocaleString('en-IN')} ${unit}${qty > 1 ? 's' : ''}`;
 }

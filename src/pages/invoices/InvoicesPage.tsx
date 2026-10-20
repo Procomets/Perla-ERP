@@ -73,6 +73,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   const [isCancelOpen, setIsCancelOpen] = useState<boolean>(false);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [generatingLabel, setGeneratingLabel] = useState<string | null>(null);
 
   // Toast notification
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -86,13 +87,8 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
   // Sync prop invoices into state if parent updates
   useEffect(() => {
-    if (propInvoices && propInvoices.length > 0) {
-      setInvoicesList((prev) => {
-        const mergedMap = new Map<string, Invoice>();
-        propInvoices.forEach((inv) => mergedMap.set(inv.id, inv));
-        prev.forEach((inv) => mergedMap.set(inv.id, inv));
-        return Array.from(mergedMap.values());
-      });
+    if (propInvoices) {
+      setInvoicesList(propInvoices);
     }
   }, [propInvoices]);
 
@@ -104,9 +100,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         { companyId: filters.companyId, poNumber: filters.poNumber, styleNo: filters.styleNo },
         false
       );
-      setEligibleItems(items);
+      setEligibleItems(items || []);
     } catch (err) {
       console.warn('Failed to load eligible items:', err);
+      setEligibleItems([]);
     } finally {
       setLoadingEligible(false);
     }
@@ -117,16 +114,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
     try {
       setLoadingInvoices(true);
       const result = await InvoiceService.getInvoices(filters, { page: 1, pageSize: 200 }, false);
-      if (result.invoices && result.invoices.length > 0) {
-        setInvoicesList((prev) => {
-          const mergedMap = new Map<string, Invoice>();
-          result.invoices.forEach((inv) => mergedMap.set(inv.id, inv));
-          prev.forEach((inv) => mergedMap.set(inv.id, inv));
-          return Array.from(mergedMap.values());
-        });
-      }
+      setInvoicesList(result.invoices || []);
     } catch (err) {
       console.warn('Failed to load invoices:', err);
+      setInvoicesList([]);
     } finally {
       setLoadingInvoices(false);
     }
@@ -202,7 +193,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         displayName: user?.displayName || 'Authorized User'
       };
 
-      const draft = await InvoiceService.createInvoiceDraft(selectedApprovalIds, authUser, false);
+      const draft = await InvoiceService.createInvoiceDraft(selectedApprovalIds, authUser, false, eligibleItems);
       setDraftInvoice(draft);
       setIsPreviewOpen(true);
     } catch (err: any) {
@@ -210,27 +201,45 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
     }
   };
 
-  // Direct download action from eligible table row
-  const handleDownloadDirectInvoice = async (item: InvoiceEligibleItem) => {
+  // Direct download action from eligible table row (supports single item or multiple colours combined)
+  const handleDownloadDirectInvoice = async (items: InvoiceEligibleItem | InvoiceEligibleItem[]) => {
     try {
       const authUser = {
         uid: user?.uid || 'usr-authorized',
         displayName: user?.displayName || 'Authorized User'
       };
 
-      showToast('info', `Generating Tax Invoice for ${item.colour} (${item.styleNo})...`);
+      const itemList = Array.isArray(items) ? items : [items];
+      if (itemList.length === 0) return;
 
-      const draft = await InvoiceService.createInvoiceDraft([item.approvalId], authUser, false);
+      const approvalIds = itemList.map((i) => i.approvalId);
+      const label =
+        itemList.length > 1
+          ? `${itemList.length} colours (${itemList[0].poNumber})`
+          : `${itemList[0].colour} (${itemList[0].styleNo})`;
+
+      setGeneratingLabel(label);
+      showToast('info', `Generating Tax Invoice for ${label}...`);
+
+      // Pass already loaded items to generate draft instantly without network round-trips
+      const draft = await InvoiceService.createInvoiceDraft(approvalIds, authUser, false, eligibleItems);
       const finalized = await InvoiceService.finalizeInvoice(draft, authUser, false);
 
       onAddInvoice(finalized);
       setInvoicesList((prev) => [finalized, ...prev.filter((i) => i.id !== finalized.id)]);
-      await refreshEligibleItems();
+      
+      // Instantly remove consumed lines from UI without waiting for network re-fetch
+      setEligibleItems((prev) => prev.filter((item) => !approvalIds.includes(item.approvalId)));
 
-      InvoicePdfService.downloadInvoicePdf(finalized);
+      await InvoicePdfService.downloadInvoicePdf(finalized);
       showToast('success', `Tax Invoice ${finalized.invoiceNo} generated & downloaded successfully!`);
+
+      // Sync in background
+      refreshEligibleItems();
     } catch (err: any) {
       showToast('error', err?.message || 'Failed to download invoice.');
+    } finally {
+      setGeneratingLabel(null);
     }
   };
 
@@ -278,19 +287,20 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   };
 
   // 4. Download PDF
-  const handleDownloadPdf = (inv: Invoice) => {
+  const handleDownloadPdf = async (inv: Invoice) => {
     try {
-      InvoicePdfService.downloadInvoicePdf(inv);
       showToast('info', `Downloading PDF for ${inv.invoiceNo}...`);
+      await InvoicePdfService.downloadInvoicePdf(inv);
+      showToast('success', `PDF for ${inv.invoiceNo} downloaded successfully!`);
     } catch (err) {
       showToast('error', 'Failed to generate PDF document.');
     }
   };
 
   // 5. Print PDF
-  const handlePrintPdf = (inv: Invoice) => {
+  const handlePrintPdf = async (inv: Invoice) => {
     try {
-      InvoicePdfService.printInvoicePdf(inv);
+      await InvoicePdfService.printInvoicePdf(inv);
     } catch (err) {
       showToast('error', 'Failed to open printable invoice document.');
     }
@@ -311,23 +321,55 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Toast Notification */}
+      {/* Center Screen Modal Overlay: Active Invoice Generation */}
+      {generatingLabel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-emerald-500 p-8 max-w-md w-full mx-4 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-500 flex items-center justify-center mx-auto">
+              <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+
+            <div>
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Generating Tax Invoice
+              </span>
+              <h3 className="text-lg font-extrabold text-slate-900 mt-2">
+                Processing Invoice &amp; PDF
+              </h3>
+              <p className="text-sm text-slate-600 mt-1 font-medium">
+                {generatingLabel}
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                <div className="bg-emerald-500 h-2 rounded-full w-2/3 animate-pulse" />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Calculating GST breakdown and preparing official tax document...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Notification Banner: Bright & Highly Visible */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg border flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200 ${
-            toast.type === 'success'
-              ? 'bg-emerald-900 text-white border-emerald-700'
-              : toast.type === 'error'
-              ? 'bg-rose-900 text-white border-rose-700'
-              : 'bg-slate-900 text-white border-slate-700'
+          className={`fixed top-6 right-6 sm:right-1/2 sm:translate-x-1/2 z-50 px-5 py-3.5 rounded-xl shadow-2xl border-2 flex items-center gap-3 text-sm font-bold animate-in fade-in slide-in-from-top-4 duration-200 ${
+            toast.type === 'error'
+              ? 'bg-rose-600 text-white border-rose-800 shadow-rose-600/30'
+              : 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-600/40'
           }`}
         >
-          {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 text-white shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 text-rose-400" />
+            <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-4 h-4 text-white" />
+            </div>
           )}
-          <span>{toast.message}</span>
+          <span className="tracking-wide">{toast.message}</span>
         </div>
       )}
 
@@ -336,9 +378,6 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Invoice Generation & Billing Module</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-[#1F4E79]">
-              Perla ERP
-            </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Generate and track official GST tax invoices for approved textile processing services.
@@ -363,10 +402,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => navigate('/erp/settings?tab=tax')}
               icon={<Settings className="w-4 h-4" />}
             >
-              Tax & Issuer Settings
+              Tax &amp; Issuer Settings
             </Button>
           )}
 
@@ -397,15 +436,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           onClick={() => setActiveTab('eligible')}
           className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
             activeTab === 'eligible'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-black text-black'
+              : 'border-transparent text-slate-500 hover:text-black'
           }`}
         >
           <FileCheck2 className="w-4 h-4" />
           Invoice-Eligible Items
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'eligible' ? 'bg-[#1F4E79] text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'eligible' ? 'bg-black text-white' : 'bg-slate-200 text-slate-700'
             }`}
           >
             {eligibleItems.length}
@@ -417,15 +456,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           onClick={() => setActiveTab('history')}
           className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
             activeTab === 'history'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-black text-black'
+              : 'border-transparent text-slate-500 hover:text-black'
           }`}
         >
           <FileText className="w-4 h-4" />
           Generated Invoices History
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'history' ? 'bg-[#1F4E79] text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'history' ? 'bg-black text-white' : 'bg-slate-200 text-slate-700'
             }`}
           >
             {filteredInvoices.length}

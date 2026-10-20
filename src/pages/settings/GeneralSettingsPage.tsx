@@ -12,8 +12,10 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
-  Layers
+  Layers,
+  Receipt
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -27,13 +29,24 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
+import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
 
 export const GeneralSettingsPage: React.FC = () => {
   const { user } = useAuth();
   const currentUserId = user?.uid || 'user';
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Simple navigation tab
-  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'attendance'>('colours');
+  // Navigation tab from query param or default to 'colours'
+  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'tax' | 'attendance' | null;
+  const validTabs: Array<'colours' | 'processes' | 'tax' | 'attendance'> = ['colours', 'processes', 'tax', 'attendance'];
+  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'tax' | 'attendance'>(
+    paramTab && validTabs.includes(paramTab) ? paramTab : 'colours'
+  );
+
+  const handleSelectTab = (tab: 'colours' | 'processes' | 'tax' | 'attendance') => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   // Wash / Process Master State
   const [processes, setProcesses] = useState<ProcessItem[]>([]);
@@ -556,7 +569,7 @@ export const GeneralSettingsPage: React.FC = () => {
            
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveTab('colours')}
+              onClick={() => handleSelectTab('colours')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'colours'
                   ? 'bg-[#252525] text-white shadow-xs'
@@ -567,7 +580,7 @@ export const GeneralSettingsPage: React.FC = () => {
               <span>Colour Master</span>
             </button>
             <button
-              onClick={() => setActiveTab('processes')}
+              onClick={() => handleSelectTab('processes')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'processes'
                   ? 'bg-[#252525] text-white shadow-xs'
@@ -578,7 +591,18 @@ export const GeneralSettingsPage: React.FC = () => {
               <span>Wash / Process</span>
             </button>
             <button
-              onClick={() => setActiveTab('attendance')}
+              onClick={() => handleSelectTab('tax')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
+                activeTab === 'tax'
+                  ? 'bg-[#252525] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Receipt className="w-4 h-4 shrink-0" />
+              <span>Tax &amp; Issue Settings</span>
+            </button>
+            <button
+              onClick={() => handleSelectTab('attendance')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'attendance'
                   ? 'bg-[#252525] text-white shadow-xs'
@@ -1095,6 +1119,13 @@ export const GeneralSettingsPage: React.FC = () => {
             </form>
           )}
         </Card>
+      )}
+
+      {/* ========================================================== */}
+      {/* TAB 4: TAX & ISSUE SETTINGS */}
+      {/* ========================================================== */}
+      {activeTab === 'tax' && (
+        <TaxAndIssuerSettings onNotify={showNotification} />
       )}
         </div>
       </div>

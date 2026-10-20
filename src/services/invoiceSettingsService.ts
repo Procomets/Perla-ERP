@@ -1,6 +1,11 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { CompanyInvoiceSettings } from '../types/invoice';
+
+export const GENERAL_SETTINGS_COLLECTION = 'generalSettings';
+export const TAX_SETTINGS_DOC_ID = 'tax_settings';
+export const LEGACY_SETTINGS_COLLECTION = 'invoice_settings';
+export const LEGACY_SETTINGS_DOC_ID = 'company_profile';
 
 export const DEFAULT_INVOICE_SETTINGS: CompanyInvoiceSettings = {
   companyName: 'PERLA TEXTILES PROCESSOR',
@@ -41,18 +46,59 @@ const SETTINGS_STORAGE_KEY = 'perla_invoice_settings';
 
 export class InvoiceSettingsService {
   /**
-   * Retrieves company invoice settings from Firestore or LocalStorage
+   * Reference to the primary Firestore document under generalSettings collection
+   */
+  private static getDocRef() {
+    return doc(db, GENERAL_SETTINGS_COLLECTION, TAX_SETTINGS_DOC_ID);
+  }
+
+  /**
+   * Reference to legacy Firestore document (for migration fallback)
+   */
+  private static getLegacyDocRef() {
+    return doc(db, LEGACY_SETTINGS_COLLECTION, LEGACY_SETTINGS_DOC_ID);
+  }
+
+  /**
+   * Retrieves company invoice & tax settings from Firestore (generalSettings -> tax_settings)
+   * or LocalStorage / defaults
    */
   static async getSettings(isDemo: boolean = false): Promise<CompanyInvoiceSettings> {
     if (!isDemo) {
       try {
-        const docRef = doc(db, 'invoice_settings', 'company_profile');
+        // 1. Primary source: generalSettings -> tax_settings
+        const docRef = this.getDocRef();
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          return { ...DEFAULT_INVOICE_SETTINGS, ...(snap.data() as Partial<CompanyInvoiceSettings>) };
+          const data = snap.data() as Partial<CompanyInvoiceSettings>;
+          const merged = { ...DEFAULT_INVOICE_SETTINGS, ...data };
+          try {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+          } catch {
+            // ignore localStorage quota errors
+          }
+          return merged;
+        }
+
+        // 2. Fallback / Migration: check legacy invoice_settings -> company_profile
+        const legacyRef = this.getLegacyDocRef();
+        const legacySnap = await getDoc(legacyRef);
+        if (legacySnap.exists()) {
+          const legacyData = legacySnap.data() as Partial<CompanyInvoiceSettings>;
+          const merged = { ...DEFAULT_INVOICE_SETTINGS, ...legacyData };
+          // Migrate into generalSettings -> tax_settings for next time
+          setDoc(docRef, merged, { merge: true }).catch((err) =>
+            console.warn('Auto-migration to generalSettings failed:', err)
+          );
+          try {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+          return merged;
         }
       } catch (err) {
-        console.warn('Failed to fetch invoice settings from Firestore, checking local storage:', err);
+        console.warn('Failed to fetch tax & invoice settings from Firestore generalSettings, checking local storage:', err);
       }
     }
 
@@ -69,7 +115,7 @@ export class InvoiceSettingsService {
   }
 
   /**
-   * Updates company invoice settings
+   * Updates company invoice & tax settings in Firestore (generalSettings -> tax_settings)
    */
   static async updateSettings(
     updatedSettings: Partial<CompanyInvoiceSettings>,
@@ -86,13 +132,42 @@ export class InvoiceSettingsService {
 
     if (!isDemo) {
       try {
-        const docRef = doc(db, 'invoice_settings', 'company_profile');
-        await setDoc(docRef, merged, { merge: true });
+        // Primary persistence: generalSettings collection -> tax_settings document
+        await setDoc(this.getDocRef(), merged, { merge: true });
+        
+        // Secondary mirror: keep legacy document updated in parallel
+        await setDoc(this.getLegacyDocRef(), merged, { merge: true }).catch(() => {});
       } catch (err) {
-        console.warn('Failed to persist settings to Firestore:', err);
+        console.warn('Failed to persist settings to Firestore generalSettings:', err);
       }
     }
 
     return merged;
   }
+
+  /**
+   * Realtime subscription to generalSettings -> tax_settings document
+   */
+  static subscribeSettings(
+    onUpdate: (settings: CompanyInvoiceSettings) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const docRef = this.getDocRef();
+    return onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as Partial<CompanyInvoiceSettings>;
+          onUpdate({ ...DEFAULT_INVOICE_SETTINGS, ...data });
+        } else {
+          onUpdate(DEFAULT_INVOICE_SETTINGS);
+        }
+      },
+      (error) => {
+        console.warn('Firestore subscription error on generalSettings tax_settings:', error);
+        if (onError) onError(error);
+      }
+    );
+  }
 }
+

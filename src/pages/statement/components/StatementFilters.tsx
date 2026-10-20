@@ -117,7 +117,7 @@ export const StatementFilters: React.FC<StatementFiltersProps> = ({
             size="sm"
             onClick={onExportCsv}
             disabled={isLoading || !hasData}
-            className="text-xs flex items-center gap-1.5 bg-[#1F4E79] hover:bg-[#163858] text-white"
+            className="text-xs flex items-center gap-1.5 bg-black hover:bg-neutral-800 text-white border-black"
             title="Export statement to Excel / CSV"
           >
             <Download className="w-3.5 h-3.5" />

@@ -10,6 +10,7 @@ interface PurchaseOrdersPageProps {
   inwards?: InwardEntry[];
   outwards?: OutwardEntry[];
   onAddPo?: (newPo: PurchaseOrder) => void;
+  onUpdatePo?: (updatedPo: PurchaseOrder) => void;
 }
 
 export const PurchaseOrdersPage: React.FC<PurchaseOrdersPageProps> = ({
@@ -17,7 +18,8 @@ export const PurchaseOrdersPage: React.FC<PurchaseOrdersPageProps> = ({
   vendors,
   inwards,
   outwards,
-  onAddPo
+  onAddPo,
+  onUpdatePo
 }) => {
   return (
     <PurchaseOrdersContainer
@@ -26,6 +28,7 @@ export const PurchaseOrdersPage: React.FC<PurchaseOrdersPageProps> = ({
       inwards={inwards}
       outwards={outwards}
       onAddPo={onAddPo}
+      onUpdatePo={onUpdatePo}
     />
   );
 };

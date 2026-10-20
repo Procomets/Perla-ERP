@@ -434,55 +434,36 @@ export class VendorService {
   ): Promise<{ vendors: Vendor[]; pagination: VendorPagination; parentCompanies?: string[] }> {
     let allVendors: Vendor[] = [];
 
-    try {
-      const snap = await getDocs(collection(db, 'vendors'));
-      if (!snap.empty) {
-        allVendors = (snap.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const docId = docSnap.id;
-          return {
-            ...data,
-            id: docId,
-            vendorId: data.vendorId || docId,
-            docId
-          };
-        }) as unknown) as Vendor[];
-      } else {
-        // Automatically seed live Firestore database with initial vendors if empty!
-        console.log('Seeding vendors collection into live Firebase Firestore...');
-        for (const v of initialMockVendors) {
-          const vRef = doc(db, 'vendors', v.vendorId);
-          await setDoc(vRef, v);
-          if (v.primaryContactName) {
-            const cRef = doc(collection(db, 'vendors', v.vendorId, 'contacts'));
-            await setDoc(cRef, {
-              contactId: cRef.id,
-              vendorId: v.vendorId,
-              personName: v.primaryContactName,
-              contactNumber: v.primaryContactPhone || '9842212345',
-              email: v.primaryContactEmail || '',
-              isPrimary: true,
-              status: 'active',
-              createdAt: new Date().toISOString(),
-              createdBy: 'admin',
-              updatedAt: new Date().toISOString(),
-              updatedBy: 'admin'
-            });
+    if (!isDemo) {
+      try {
+        const snap = await getDocs(collection(db, 'vendors'));
+        if (!snap.empty) {
+          allVendors = (snap.docs.map((docSnap) => {
+            const data = docSnap.data();
+            const docId = docSnap.id;
+            return {
+              ...data,
+              id: docId,
+              vendorId: data.vendorId || docId,
+              docId
+            };
+          }) as unknown) as Vendor[];
+          saveLocalDemoVendors(allVendors);
+        } else {
+          allVendors = [];
+          if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+            try {
+              localStorage.removeItem(DEMO_VENDORS_KEY);
+            } catch (e) {
+              // ignore
+            }
           }
         }
-
-        // Initialize vendor code counter
-        const counterRef = doc(db, 'vendor_counters', 'vendor_code');
-        await setDoc(counterRef, {
-          counterKey: 'vendor_code',
-          currentValue: initialMockVendors.length,
-          updatedAt: new Date().toISOString()
-        });
-
-        allVendors = [...initialMockVendors];
+      } catch (err) {
+        console.warn('Firestore fetch failed:', err);
+        allVendors = [];
       }
-    } catch (err) {
-      console.warn('Firestore fetch failed, using local storage backup:', err);
+    } else {
       allVendors = getLocalDemoVendors();
     }
 
@@ -659,47 +640,49 @@ export class VendorService {
       console.warn('Firestore fetch vendor by ID failed:', err);
     }
 
-    if (!vendor) {
+    if (!vendor && isDemo) {
       const allVendors = getLocalDemoVendors();
       vendor = allVendors.find((v) => v.vendorId === vendorId) || null;
     }
 
     if (vendor) {
-      const allVendors = getLocalDemoVendors();
-      subcompanies = allVendors.filter((v) => v.parentVendorId === vendorId);
-      parentVendor = vendor.parentVendorId
-        ? allVendors.find((v) => v.vendorId === vendor.parentVendorId) || null
-        : null;
+      if (isDemo) {
+        const allVendors = getLocalDemoVendors();
+        subcompanies = allVendors.filter((v) => v.parentVendorId === vendorId);
+        parentVendor = vendor.parentVendorId
+          ? allVendors.find((v) => v.vendorId === vendor.parentVendorId) || null
+          : null;
 
-      if (contacts.length === 0) {
-        contacts = initialMockContacts[vendorId] || [
-          {
-            contactId: `cnt_${vendorId}`,
-            vendorId,
-            personName: vendor.primaryContactName || 'Primary Representative',
-            contactNumber: vendor.primaryContactPhone || vendor.communication?.mobileNumber || '9842200000',
-            email: vendor.primaryContactEmail || vendor.communication?.officialEmail || '',
-            isPrimary: true,
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            createdBy: 'system',
-            updatedAt: new Date().toISOString(),
-            updatedBy: 'system'
-          }
-        ];
-      }
+        if (contacts.length === 0) {
+          contacts = initialMockContacts[vendorId] || [
+            {
+              contactId: `cnt_${vendorId}`,
+              vendorId,
+              personName: vendor.primaryContactName || 'Primary Representative',
+              contactNumber: vendor.primaryContactPhone || vendor.communication?.mobileNumber || '9842200000',
+              email: vendor.primaryContactEmail || vendor.communication?.officialEmail || '',
+              isPrimary: true,
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              createdBy: 'system',
+              updatedAt: new Date().toISOString(),
+              updatedBy: 'system'
+            }
+          ];
+        }
 
-      if (logs.length === 0) {
-        logs = initialMockLogs[vendorId] || [
-          {
-            auditId: `log_${vendorId}`,
-            vendorId,
-            action: 'created',
-            performedBy: 'System',
-            performedAt: vendor.createdAt || new Date().toISOString(),
-            summary: `Vendor ${vendor.companyName} record created.`
-          }
-        ];
+        if (logs.length === 0) {
+          logs = initialMockLogs[vendorId] || [
+            {
+              auditId: `log_${vendorId}`,
+              vendorId,
+              action: 'created',
+              performedBy: 'System',
+              performedAt: vendor.createdAt || new Date().toISOString(),
+              summary: `Vendor ${vendor.companyName} record created.`
+            }
+          ];
+        }
       }
     }
 

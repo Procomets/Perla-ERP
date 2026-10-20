@@ -95,12 +95,29 @@ exports.getEligibleOutwardPurchaseOrders = functions.https.onCall(async (data, c
             }
         }
         let hasAvailableQty = false;
-        for (const poLine of po.lines || []) {
-            const inQty = inwardMap[poLine.lineId] || 0;
-            const outQty = outwardMap[poLine.lineId] || 0;
-            if (inQty - outQty > 0) {
+        const poLines = (po.lines && po.lines.length > 0) ? po.lines : (po.colourLines || []);
+        if (poLines.length > 0) {
+            for (const poLine of poLines) {
+                const lineKey = poLine.lineId || poLine.id;
+                const inQty = inwardMap[lineKey] || 0;
+                const outQty = outwardMap[lineKey] || 0;
+                if (inQty - outQty > 0) {
+                    hasAvailableQty = true;
+                    break;
+                }
+            }
+        }
+        else {
+            let totalIn = 0;
+            for (const inDoc of inwardSnap.docs) {
+                totalIn += Number(inDoc.data().totalQuantity) || 0;
+            }
+            let totalOut = 0;
+            for (const outDoc of outwardSnap.docs) {
+                totalOut += Number(outDoc.data().totalQuantity) || 0;
+            }
+            if (totalIn - totalOut > 0) {
                 hasAvailableQty = true;
-                break;
             }
         }
         if (hasAvailableQty) {

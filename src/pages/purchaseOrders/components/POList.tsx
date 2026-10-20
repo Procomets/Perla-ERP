@@ -24,6 +24,7 @@ import {
   ArrowDown,
   Lock
 } from 'lucide-react';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 import {
   PurchaseOrder,
   POFilterOptions,
@@ -61,6 +62,7 @@ interface POListProps {
   onAddNewPO: () => void;
   canManage: boolean; // Admin or Manager
   isAdmin?: boolean; // Admin only
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export type POSortField =
@@ -94,7 +96,8 @@ export const POList: React.FC<POListProps> = ({
   onPrintPO,
   onAddNewPO,
   canManage,
-  isAdmin
+  isAdmin,
+  lockedPOMap = {}
 }) => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
@@ -192,7 +195,12 @@ export const POList: React.FC<POListProps> = ({
 
   const sortedPOs = useMemo(() => {
     if (!sortField || !sortDirection) {
-      return pos;
+      // Default: Most recent entry first based on timestamp (createdAt / updatedAt / orderDate)
+      return [...pos].sort((a, b) => {
+        const timeA = new Date(a.createdAt || a.updatedAt || a.orderDate || 0).getTime();
+        const timeB = new Date(b.createdAt || b.updatedAt || b.orderDate || 0).getTime();
+        return timeB - timeA;
+      });
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
@@ -794,18 +802,33 @@ export const POList: React.FC<POListProps> = ({
                               </button>
 
                               {/* 2. Edit - If inward is entered, ONLY admin can edit */}
-                              {canManage && !isCancelled && (
-                                hasInward && !isAdmin ? (
-                                  <button
-                                    type="button"
-                                    disabled
-                                    title="Inward has been entered for this PO. Only Admin can edit."
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed opacity-60 inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-3 h-3 text-slate-400" />
-                                    Edit
-                                  </button>
-                                ) : (
+                              {canManage && !isCancelled && (() => {
+                                const lockStatus = POLockService.isLocked(po, lockedPOMap);
+                                if (lockStatus) {
+                                  return (
+                                    <span
+                                      title={lockStatus.reason}
+                                      className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                    >
+                                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                      Edit
+                                    </span>
+                                  );
+                                }
+                                if (hasInward && !isAdmin) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      title="Inward has been entered for this PO. Only Admin can edit."
+                                      className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed opacity-60 inline-flex items-center gap-1"
+                                    >
+                                      <Lock className="w-3 h-3 text-slate-400" />
+                                      Edit
+                                    </button>
+                                  );
+                                }
+                                return (
                                   <button
                                     type="button"
                                     onClick={() => onEditPO(po.id || po.poId)}
@@ -813,20 +836,35 @@ export const POList: React.FC<POListProps> = ({
                                   >
                                     Edit
                                   </button>
-                                )
-                              )}
+                                );
+                              })()}
 
-                              {/* 3. Delete (Admin only - Not permitted if inward entered) */}
-                              {isAdmin && onDeletePO && (
-                                hasInward ? (
-                                  <span
-                                    title="Cannot delete: Inward has already been entered for this PO"
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
-                                    Delete
-                                  </span>
-                                ) : (
+                              {/* 3. Delete (Admin only - Not permitted if inward entered or locked) */}
+                              {isAdmin && onDeletePO && (() => {
+                                const lockStatus = POLockService.isLocked(po, lockedPOMap);
+                                if (lockStatus) {
+                                  return (
+                                    <span
+                                      title={lockStatus.reason}
+                                      className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                    >
+                                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                      Delete
+                                    </span>
+                                  );
+                                }
+                                if (hasInward) {
+                                  return (
+                                    <span
+                                      title="Cannot delete: Inward has already been entered for this PO"
+                                      className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                    >
+                                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                      Delete
+                                    </span>
+                                  );
+                                }
+                                return (
                                   <button
                                     type="button"
                                     onClick={() => setPoToDelete(po)}
@@ -834,8 +872,8 @@ export const POList: React.FC<POListProps> = ({
                                   >
                                     Delete
                                   </button>
-                                )
-                              )}
+                                );
+                              })()}
 
                               {/* 4. Print */}
                               <button

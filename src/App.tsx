@@ -46,6 +46,11 @@ import { Invoice } from './types/invoice';
 import { InventoryItem, ChemicalEntry } from './types/stock';
 import { Vendor } from './types/vendor';
 import { StatementService } from './services/statementService';
+import { POService } from './services/poService';
+import { VendorService } from './services/vendorService';
+import { InwardService } from './services/inwardService';
+import { OutwardService } from './services/outwardService';
+import { InvoiceService } from './services/invoiceService';
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Executive Dashboard', subtitle: 'Overview of operational trends, PO balances, and quick actions' },
@@ -82,8 +87,11 @@ interface ErpLayoutProps {
   approvedPoLineIds: string[];
   invoicedPoLineIds: string[];
   onAddPo: (po: PurchaseOrder) => void;
+  onUpdatePo?: (po: PurchaseOrder) => void;
   onAddInward: (inward: InwardEntry) => void;
+  onUpdateInward?: (inward: InwardEntry) => void;
   onAddOutward: (outward: OutwardEntry) => void;
+  onUpdateOutward?: (outward: OutwardEntry) => void;
   onApproveForInvoice: (id: string) => void;
   onAddInvoice: (inv: Invoice) => void;
   onAddChemicalEntry: (entry: ChemicalEntry) => void;
@@ -115,9 +123,9 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
         <main className="flex-1 overflow-y-auto bg-[#F8F9FA]">
           <div className="max-w-7xl mx-auto p-6 md:p-8">
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
-            {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} />}
-            {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} />}
-            {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} vendors={props.vendors} onAddOutward={props.onAddOutward} />}
+            {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} onUpdatePo={props.onUpdatePo} />}
+            {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} onUpdateInward={props.onUpdateInward} />}
+            {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} vendors={props.vendors} onAddOutward={props.onAddOutward} onUpdateOutward={props.onUpdateOutward} />}
             {moduleId === 'statement' && (
               <StatementPage
                 pos={props.pos}
@@ -157,39 +165,125 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
 };
 
 const AppContent: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isDemoMode } = useAuth();
   const navigate = useNavigate();
   
-  // Application Operational Data State
-  const [pos, setPos] = useState<PurchaseOrder[]>(INITIAL_POS);
-  const [vendors, setVendors] = useState<Vendor[]>(INITIAL_VENDORS);
-  const [inwards, setInwards] = useState<InwardEntry[]>(INITIAL_INWARDS);
-  const [outwards, setOutwards] = useState<OutwardEntry[]>(INITIAL_OUTWARDS);
+  // Application Operational Data State - Starts empty in live mode
+  const [pos, setPos] = useState<PurchaseOrder[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [inwards, setInwards] = useState<InwardEntry[]>([]);
+  const [outwards, setOutwards] = useState<OutwardEntry[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
-  const [chemicalEntries, setChemicalEntries] = useState<ChemicalEntry[]>(INITIAL_CHEMICAL_ENTRIES);
-  const [employees] = useState(INITIAL_EMPLOYEES);
-  const [ebEntries] = useState(INITIAL_EB_ENTRIES);
-  const [transportExpenses] = useState(INITIAL_TRANSPORT);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [chemicalEntries, setChemicalEntries] = useState<ChemicalEntry[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [ebEntries, setEbEntries] = useState<any[]>([]);
+  const [transportExpenses, setTransportExpenses] = useState<any[]>([]);
 
   // Reconciliation approvals & invoice state tracker
-  const [approvedPoLineIds, setApprovedPoLineIds] = useState<string[]>(['pol-1']);
+  const [approvedPoLineIds, setApprovedPoLineIds] = useState<string[]>([]);
   const [invoicedPoLineIds, setInvoicedPoLineIds] = useState<string[]>([]);
 
   useEffect(() => {
-    StatementService.getApprovedPoLineIds(true)
+    if (!user) return;
+
+    if (isDemoMode) {
+      setPos(INITIAL_POS);
+      setVendors(INITIAL_VENDORS);
+      setInwards(INITIAL_INWARDS);
+      setOutwards(INITIAL_OUTWARDS);
+      setInventory(INITIAL_INVENTORY);
+      setChemicalEntries(INITIAL_CHEMICAL_ENTRIES);
+      setEmployees(INITIAL_EMPLOYEES);
+      setEbEntries(INITIAL_EB_ENTRIES);
+      setTransportExpenses(INITIAL_TRANSPORT);
+      setApprovedPoLineIds(['pol-1']);
+      return;
+    }
+
+    // Live mode: fetch directly from Firestore via services
+    POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, false)
+      .then((res) => setPos(res.pos || []))
+      .catch((err) => console.error('Failed to sync POs:', err));
+
+    VendorService.getVendors({}, { page: 1, pageSize: 500 }, false)
+      .then((res) => setVendors(res.vendors || []))
+      .catch((err) => console.error('Failed to sync Vendors:', err));
+
+    InwardService.getInwardEntries({}, { page: 1, pageSize: 500 }, false)
+      .then((res) => setInwards(res.inwards || []))
+      .catch((err) => console.error('Failed to sync Inwards:', err));
+
+    OutwardService.getOutwardEntries({}, { page: 1, pageSize: 500 }, false)
+      .then((res) => setOutwards(res.outwards || []))
+      .catch((err) => console.error('Failed to sync Outwards:', err));
+
+    InvoiceService.getInvoices({}, { page: 1, pageSize: 500 }, false)
+      .then((res) => setInvoices(res.invoices || []))
+      .catch((err) => console.error('Failed to sync Invoices:', err));
+
+    StatementService.getApprovedPoLineIds(false)
       .then((ids) => {
-        if (ids && ids.length > 0) {
-          setApprovedPoLineIds((prev) => Array.from(new Set([...prev, ...ids])));
-        }
+        setApprovedPoLineIds(ids || []);
       })
       .catch((err) => console.error('Failed to sync approved lines:', err));
-  }, []);
+  }, [user, isDemoMode]);
 
-  // Callbacks for adding operational data
+  // Callbacks for operational data
   const handleAddPo = (newPo: PurchaseOrder) => setPos((prev) => [newPo, ...prev]);
+  const handleUpdatePo = (updatedPo: PurchaseOrder) => {
+    setPos((prev) => {
+      const idx = prev.findIndex(
+        (p) =>
+          p.id === updatedPo.id ||
+          p.poId === updatedPo.id ||
+          (updatedPo.poNumber && p.poNumber === updatedPo.poNumber)
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedPo;
+        return copy;
+      }
+      return [updatedPo, ...prev];
+    });
+  };
+
   const handleAddInward = (newInward: InwardEntry) => setInwards((prev) => [newInward, ...prev]);
+  const handleUpdateInward = (updatedInward: InwardEntry) => {
+    setInwards((prev) => {
+      const idx = prev.findIndex(
+        (i) =>
+          i.id === updatedInward.id ||
+          i.inwardId === updatedInward.id ||
+          (updatedInward.inwardNo && i.inwardNo === updatedInward.inwardNo)
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedInward;
+        return copy;
+      }
+      return [updatedInward, ...prev];
+    });
+  };
+
   const handleAddOutward = (newOutward: OutwardEntry) => setOutwards((prev) => [newOutward, ...prev]);
+  const handleUpdateOutward = (updatedOutward: OutwardEntry) => {
+    setOutwards((prev) => {
+      const idx = prev.findIndex(
+        (o) =>
+          o.id === updatedOutward.id ||
+          o.outwardId === updatedOutward.id ||
+          (updatedOutward.outwardNo && o.outwardNo === updatedOutward.outwardNo)
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedOutward;
+        return copy;
+      }
+      return [updatedOutward, ...prev];
+    });
+  };
+
   const handleApproveForInvoice = (poLineId: string) => {
     if (!approvedPoLineIds.includes(poLineId)) {
       setApprovedPoLineIds((prev) => [...prev, poLineId]);
@@ -206,7 +300,7 @@ const AppContent: React.FC = () => {
         newInvoice.id,
         newInvoice.invoiceNo,
         newInvoice.invoiceDate,
-        true
+        isDemoMode
       ).catch((err) => console.error('Failed to mark approval as invoiced:', err));
     });
   };
@@ -251,8 +345,11 @@ const AppContent: React.FC = () => {
             approvedPoLineIds={approvedPoLineIds}
             invoicedPoLineIds={invoicedPoLineIds}
             onAddPo={handleAddPo}
+            onUpdatePo={handleUpdatePo}
             onAddInward={handleAddInward}
+            onUpdateInward={handleUpdateInward}
             onAddOutward={handleAddOutward}
+            onUpdateOutward={handleUpdateOutward}
             onApproveForInvoice={handleApproveForInvoice}
             onAddInvoice={handleAddInvoice}
             onAddChemicalEntry={handleAddChemicalEntry}

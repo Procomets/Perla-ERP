@@ -28,13 +28,13 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
       if (item.invoiceId) {
         const inv = await InvoiceService.getInvoiceById(item.invoiceId);
         if (inv) {
-          InvoicePdfService.downloadInvoicePdf(inv);
+          await InvoicePdfService.downloadInvoicePdf(inv);
           return;
         }
       }
       const authUser = { uid: 'usr', displayName: 'Authorized User' };
       const draft = await InvoiceService.createInvoiceDraft([item.approvalId], authUser, true);
-      InvoicePdfService.downloadInvoicePdf(draft);
+      await InvoicePdfService.downloadInvoicePdf(draft);
     } catch (e) {
       console.error('Failed to download invoice:', e);
     }

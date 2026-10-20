@@ -42,6 +42,7 @@ import {
 } from '../../../schemas/poSchema';
 import { formatCurrency, formatQuantity } from '../../../utils/formatters';
 import { hasInwardForPO } from '../../../utils/calculations';
+import { InwardService } from '../../../services/inwardService';
 
 interface POFormProps {
   initialPO?: PurchaseOrder | null;
@@ -381,6 +382,94 @@ export const POForm: React.FC<POFormProps> = ({
   const [masterColours, setMasterColours] = useState<ColourItem[]>([]);
   const [masterProcesses, setMasterProcesses] = useState<ProcessItem[]>([]);
 
+  // Live inward quantities received per colour line
+  const [liveInwardMap, setLiveInwardMap] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!initialPO) {
+      setLiveInwardMap({});
+      return;
+    }
+
+    const fetchInwards = async () => {
+      try {
+        const poId = initialPO.id || initialPO.poId || '';
+        const poNumber = initialPO.poNumber;
+        const map = await InwardService.getCumulativePostedInwardMap(
+          poId,
+          undefined,
+          false,
+          poNumber
+        );
+        if (isMounted) {
+          setLiveInwardMap(map);
+        }
+      } catch (err) {
+        console.warn('Could not load live inward balances for PO edit:', err);
+      }
+    };
+
+    fetchInwards();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialPO?.id, initialPO?.poId, initialPO?.poNumber]);
+
+  // Synchronous fallback map from inwards prop
+  const inwardMapFromProps = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!initialPO || !inwards || inwards.length === 0) return map;
+
+    const poId = (initialPO.id || initialPO.poId || '').toLowerCase().trim();
+    const poNum = (initialPO.poNumber || '').toLowerCase().trim();
+
+    for (const inw of inwards) {
+      if (inw.status === 'reversed' || inw.status === 'cancelled') continue;
+      const inwPoId = (inw.poId || '').toLowerCase().trim();
+      const inwPoNum = (inw.poNumber || (inw as any).poNumberSnapshot || '').toLowerCase().trim();
+
+      const matches =
+        (poId && inwPoId && inwPoId === poId) ||
+        (poNum && inwPoNum && inwPoNum === poNum && !poNum.includes('pending'));
+
+      if (matches) {
+        for (const line of inw.lines || []) {
+          const lid = line.poLineId || line.lineId;
+          const qty = Number(line.receivedQty) || 0;
+          if (lid) {
+            map[lid] = (map[lid] || 0) + qty;
+          }
+          const cName = (line.colour || (line as any).colourNameSnapshot || '').trim().toLowerCase();
+          if (cName) {
+            map[`colour_${cName}`] = (map[`colour_${cName}`] || 0) + qty;
+            map[cName] = (map[cName] || 0) + qty;
+          }
+        }
+      }
+    }
+    return map;
+  }, [initialPO, inwards]);
+
+  // Helper to determine minimum allowable quantity for a colour line based on inward received
+  const getMinAllowedQtyForLine = (line: POColourLine): number => {
+    if (!initialPO) return 0;
+    const lineId = line.id || line.lineId || '';
+    const colourKey = (line.colourName || '').trim().toLowerCase();
+
+    return Math.max(
+      0,
+      liveInwardMap[lineId] ??
+      liveInwardMap[`colour_${colourKey}`] ??
+      liveInwardMap[colourKey] ??
+      inwardMapFromProps[lineId] ??
+      inwardMapFromProps[`colour_${colourKey}`] ??
+      inwardMapFromProps[colourKey] ??
+      0
+    );
+  };
+
   // Other Colour Modal State
   const [isOtherColourModalOpen, setIsOtherColourModalOpen] = useState(false);
   const [newColourName, setNewColourName] = useState('');
@@ -544,6 +633,14 @@ export const POForm: React.FC<POFormProps> = ({
       alert('A Purchase Order must contain at least one colour line.');
       return;
     }
+    const targetLine = lines[index];
+    const minQty = getMinAllowedQtyForLine(targetLine);
+    if (minQty > 0) {
+      alert(
+        `Cannot remove colour '${targetLine.colourName || `Row #${index + 1}`}': ${minQty.toLocaleString()} ${targetLine.unit} has already been received in Inward entries.`
+      );
+      return;
+    }
     setLines(lines.filter((_, i) => i !== index));
   };
 
@@ -585,6 +682,19 @@ export const POForm: React.FC<POFormProps> = ({
     if (hasInward && !isUserAdmin) {
       alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
       return;
+    }
+
+    // Validate that no colour line has its quantity reduced below inward received
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const minQty = getMinAllowedQtyForLine(line);
+      const currentQty = Number(line.quantity) || 0;
+      if (minQty > 0 && currentQty < minQty) {
+        const errMsg = `Quantity for colour '${line.colourName || `Row #${i + 1}`}' cannot be less than ${minQty.toLocaleString()} ${line.unit} because ${minQty.toLocaleString()} ${line.unit} has already been received in Inward entries.`;
+        setValidationErrors([errMsg]);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
     }
 
     const payload = {
@@ -1049,6 +1159,10 @@ export const POForm: React.FC<POFormProps> = ({
         {/* Dynamic Colour Rows */}
         <div className="space-y-3">
           {lines.map((line, idx) => {
+            const minQty = getMinAllowedQtyForLine(line);
+            const hasInwardForThisRow = minQty > 0;
+            const isBelowInward = hasInwardForThisRow && (Number(line.quantity) || 0) < minQty;
+
             const isPerKg =
               line.rateBasis === 'per_kg' ||
               line.rateBasis === 'perKg' ||
@@ -1058,12 +1172,23 @@ export const POForm: React.FC<POFormProps> = ({
             return (
               <div
                 key={line.id || line.lineId || idx}
-                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition-colors space-y-2 text-xs"
+                className={`p-3.5 rounded-xl border transition-colors space-y-2 text-xs ${
+                  isBelowInward
+                    ? 'border-amber-300 bg-amber-50/50'
+                    : 'border-slate-200 bg-slate-50/70 hover:bg-slate-50'
+                }`}
               >
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-                  <span className="font-bold text-[#1F4E79]">
-                    Row #{idx + 1}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[#1F4E79]">
+                      Row #{idx + 1}
+                    </span>
+                    {hasInwardForThisRow && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        Inward Received: {minQty.toLocaleString()} {line.unit}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-slate-500">
                       Line Total:{' '}
@@ -1074,33 +1199,47 @@ export const POForm: React.FC<POFormProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRemoveLine(idx)}
-                      disabled={lines.length <= 1}
+                      disabled={lines.length <= 1 || hasInwardForThisRow}
                       className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                      title="Remove Row"
+                      title={
+                        hasInwardForThisRow
+                          ? `Cannot remove: ${minQty.toLocaleString()} ${line.unit} already received in Inward entries`
+                          : lines.length <= 1
+                          ? 'PO must have at least one line'
+                          : 'Remove Row'
+                      }
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-start">
                   {/* Colour Name */}
                   <div className="md:col-span-1 space-y-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between h-5">
                       <label className="text-[11px] font-semibold text-slate-600">
                         Colour Name *
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddOther(idx)}
-                        className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
-                        title="Add a new colour to General Settings > Colour Master"
-                      >
-                        + Other
-                      </button>
+                      {!hasInwardForThisRow && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddOther(idx)}
+                          className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
+                          title="Add a new colour to General Settings > Colour Master"
+                        >
+                          + Other
+                        </button>
+                      )}
                     </div>
                     <select
                       value={line.colourName}
+                      disabled={hasInwardForThisRow}
+                      title={
+                        hasInwardForThisRow
+                          ? `Colour cannot be changed: ${minQty.toLocaleString()} ${line.unit} already received in Inward.`
+                          : undefined
+                      }
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === '__other__') {
@@ -1116,7 +1255,11 @@ export const POForm: React.FC<POFormProps> = ({
                           setLines(updated);
                         }
                       }}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
+                        hasInwardForThisRow
+                          ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
+                          : ''
+                      }`}
                       required
                     >
                       <option value="">Select Colour...</option>
@@ -1135,17 +1278,21 @@ export const POForm: React.FC<POFormProps> = ({
                             {c.name}
                           </option>
                         ))}
-                      <option value="__other__" className="text-[#1F4E79] font-bold">
-                        + Other (Enter New Colour)...
-                      </option>
+                      {!hasInwardForThisRow && (
+                        <option value="__other__" className="text-[#1F4E79] font-bold">
+                          + Other (Enter New Colour)...
+                        </option>
+                      )}
                     </select>
                   </div>
 
                   {/* Wash / Process Type */}
                   <div className="md:col-span-1 space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-600">
-                      Wash / Process *
-                    </label>
+                    <div className="flex items-center justify-between h-5">
+                      <label className="text-[11px] font-semibold text-slate-600">
+                        Wash / Process *
+                      </label>
+                    </div>
                     <select
                       value={line.processType}
                       onChange={(e) => {
@@ -1156,7 +1303,7 @@ export const POForm: React.FC<POFormProps> = ({
                           handleLineChange(idx, 'processType', val);
                         }
                       }}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                      className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
                       required
                     >
                       <option value="">Select Process...</option>
@@ -1183,27 +1330,53 @@ export const POForm: React.FC<POFormProps> = ({
 
                   {/* Quantity & Unit */}
                   <div className="md:col-span-1 space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-600">
-                      Quantity & Unit *
-                    </label>
-                    <div className="flex gap-1">
+                    <div className="flex items-center justify-between h-5">
+                      <label className="text-[11px] font-semibold text-slate-600">
+                        Quantity & Unit *
+                      </label>
+                      {hasInwardForThisRow && (
+                        <span
+                          className="text-[10px] text-amber-700 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300 whitespace-nowrap"
+                          title={`Minimum allowable: ${minQty.toLocaleString()} ${line.unit}`}
+                        >
+                          Min: {minQty.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-1 h-9">
                       <input
                         type="number"
-                        min="1"
+                        min={hasInwardForThisRow ? minQty : 1}
                         placeholder="Qty"
                         value={line.quantity}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
                           handleLineChange(
                             idx,
                             'quantity',
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        className="w-2/3 bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                            isNaN(val) ? 0 : val
+                          );
+                        }}
+                        onBlur={() => {
+                          if (hasInwardForThisRow && (Number(line.quantity) || 0) < minQty) {
+                            handleLineChange(idx, 'quantity', minQty);
+                          }
+                        }}
+                        className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors ${
+                          isBelowInward
+                            ? 'border-2 border-amber-500 bg-amber-50 text-amber-900 focus:border-amber-600'
+                            : 'border border-slate-200 text-slate-900 focus:border-[#1F4E79]'
+                        }`}
                         required
                       />
                       <select
                         value={line.unit}
+                        disabled={hasInwardForThisRow}
+                        title={
+                          hasInwardForThisRow
+                            ? 'Unit locked because inward entries have already been received in this unit.'
+                            : undefined
+                        }
                         onChange={(e) =>
                           handleLineChange(
                             idx,
@@ -1211,7 +1384,9 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as QuantityUnit
                           )
                         }
-                        className="w-1/3 bg-white border border-slate-200 rounded-lg p-1 text-[11px] font-medium text-slate-700"
+                        className={`w-1/3 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700 ${
+                          hasInwardForThisRow ? 'disabled:bg-slate-100 disabled:cursor-not-allowed' : ''
+                        }`}
                       >
                         <option value="piece">Pcs</option>
                         <option value="kg">Kg</option>
@@ -1221,10 +1396,12 @@ export const POForm: React.FC<POFormProps> = ({
 
                   {/* Rate & Rate Basis */}
                   <div className="md:col-span-1 space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-600">
-                      Rate Basis & Rate (₹) *
-                    </label>
-                    <div className="flex gap-1">
+                    <div className="flex items-center justify-between h-5">
+                      <label className="text-[11px] font-semibold text-slate-600">
+                        Rate Basis & Rate (₹) *
+                      </label>
+                    </div>
+                    <div className="flex gap-1 h-9">
                       <select
                         value={line.rateBasis}
                         onChange={(e) =>
@@ -1234,7 +1411,7 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as RateBasis
                           )
                         }
-                        className="w-1/2 bg-white border border-slate-200 rounded-lg p-1 text-[11px] font-medium text-slate-700"
+                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700"
                       >
                         <option value="per_piece">/ Pc</option>
                         <option value="per_kg">/ Kg</option>
@@ -1252,7 +1429,7 @@ export const POForm: React.FC<POFormProps> = ({
                             parseFloat(e.target.value) || 0
                           )
                         }
-                        className="w-1/2 bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
                         required
                       />
                     </div>
@@ -1260,42 +1437,37 @@ export const POForm: React.FC<POFormProps> = ({
 
                   {/* Remarks / Billable Weight */}
                   <div className="md:col-span-1 space-y-1">
+                    <div className="flex items-center justify-between h-5">
+                      <label className={`text-[11px] font-semibold ${showBillableWeight ? 'text-amber-700' : 'text-slate-600'}`}>
+                        {showBillableWeight ? 'Billable Wt (kg) *' : 'Row Remarks'}
+                      </label>
+                    </div>
                     {showBillableWeight ? (
-                      <>
-                        <label className="text-[11px] font-semibold text-amber-700">
-                          Billable Wt (kg) *
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Billable kg"
-                          value={line.billableWeightKg || ''}
-                          onChange={(e) =>
-                            handleLineChange(
-                              idx,
-                              'billableWeightKg',
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs font-medium text-amber-900 focus:outline-hidden"
-                          required
-                        />
-                      </>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Billable kg"
+                        value={line.billableWeightKg || ''}
+                        onChange={(e) =>
+                          handleLineChange(
+                            idx,
+                            'billableWeightKg',
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        className="w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden"
+                        required
+                      />
                     ) : (
-                      <>
-                        <label className="text-[11px] font-semibold text-slate-600">
-                          Row Remarks
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Optional remarks"
-                          value={line.notes || line.remarks || ''}
-                          onChange={(e) =>
-                            handleLineChange(idx, 'notes', e.target.value)
-                          }
-                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-700"
-                        />
-                      </>
+                      <input
+                        type="text"
+                        placeholder="Optional remarks"
+                        value={line.notes || line.remarks || ''}
+                        onChange={(e) =>
+                          handleLineChange(idx, 'notes', e.target.value)
+                        }
+                        className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-700"
+                      />
                     )}
                   </div>
                 </div>

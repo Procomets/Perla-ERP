@@ -7,7 +7,8 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 export type OutwardSortField =
   | 'outwardNo'
@@ -41,6 +42,7 @@ interface OutwardListProps {
   canManage: boolean;
   isAdmin: boolean;
   isLoading?: boolean;
+  lockedPOMap?: Record<string, POLockStatus>;
 }
 
 export const OutwardList: React.FC<OutwardListProps> = ({
@@ -59,7 +61,8 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   onReverse,
   canManage,
   isAdmin,
-  isLoading
+  isLoading,
+  lockedPOMap = {}
 }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [deleteTargetOutward, setDeleteTargetOutward] = useState<OutwardEntry | null>(null);
@@ -224,7 +227,12 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
   const sortedOutwards = useMemo(() => {
     if (!sortField || !sortDirection) {
-      return outwards;
+      // Default: Most recent entry first based on timestamp
+      return [...outwards].sort((a, b) => {
+        const timeA = new Date((a as any).outwardTime || a.createdAt || a.updatedAt || a.outwardDate || 0).getTime();
+        const timeB = new Date((b as any).outwardTime || b.createdAt || b.updatedAt || b.outwardDate || 0).getTime();
+        return timeB - timeA;
+      });
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
@@ -386,7 +394,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           <Button
             onClick={onNewOutward}
             size="sm"
-            className="bg-[#1F4E79] hover:bg-[#163858] text-white flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto shadow-2xs font-semibold"
+            className="bg-black hover:bg-neutral-800 text-white border-black flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto shadow-2xs font-semibold"
           >
             <Plus className="w-4 h-4" />
             New Outward Entry
@@ -488,7 +496,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
               <Button
                 onClick={onNewOutward}
                 size="sm"
-                className="bg-[#1F4E79] text-white text-xs mt-2"
+                className="bg-black hover:bg-neutral-800 text-white border-black text-xs mt-2"
               >
                 Create First Outward Entry
               </Button>
@@ -791,23 +799,51 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                               View
                             </button>
 
-                            {canManage && (
-                              <button
-                                onClick={() => onEdit(row.outwardId || row.id)}
-                                className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
-                              >
-                                Edit
-                              </button>
-                            )}
+                            {canManage && (() => {
+                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                              if (lockStatus) {
+                                return (
+                                  <span
+                                    title={lockStatus.reason}
+                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                    Edit
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => onEdit(row.outwardId || row.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              );
+                            })()}
 
-                            {isAdmin && (
-                              <button
-                                onClick={() => setDeleteTargetOutward(row)}
-                                className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
-                              >
-                                Delete
-                              </button>
-                            )}
+                            {isAdmin && (() => {
+                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                              if (lockStatus) {
+                                return (
+                                  <span
+                                    title={lockStatus.reason}
+                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                    Delete
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => setDeleteTargetOutward(row)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              );
+                            })()}
 
                             <button
                               onClick={() => onPrint(row.outwardId || row.id)}

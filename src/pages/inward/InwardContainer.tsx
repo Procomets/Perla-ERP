@@ -20,19 +20,22 @@ import { InwardPrintView } from './components/InwardPrintView';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { POLockService, POLockStatus } from '../../services/poLockService';
 
 interface InwardContainerProps {
   initialPOs?: PurchaseOrder[];
   initialInwards?: InwardEntry[];
   initialVendors?: Vendor[];
   onAddInward?: (newInward: InwardEntry) => void;
+  onUpdateInward?: (inward: InwardEntry) => void;
 }
 
 export const InwardContainer: React.FC<InwardContainerProps> = ({
   initialPOs,
   initialInwards,
   initialVendors,
-  onAddInward
+  onAddInward,
+  onUpdateInward
 }) => {
   const { user, activeRole, isDemoMode } = useAuth();
   const canManage = activeRole === 'Admin' || activeRole === 'Manager';
@@ -71,6 +74,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
   // Selected Inward Details & Logs
   const [selectedInwardDetails, setSelectedInwardDetails] = useState<{
@@ -82,6 +86,9 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   const [reverseTargetId, setReverseTargetId] = useState<string | null>(null);
   const [reverseModalReason, setReverseModalReason] = useState('');
   const [reverseModalError, setReverseModalError] = useState<string | null>(null);
+
+  // Inward deletability map based on outward entry presence, timestamp and quantity
+  const [deletableInwardMap, setDeletableInwardMap] = useState<Record<string, boolean>>({});
 
   // Load Inward data, POs, and Vendors
   const loadData = async () => {
@@ -102,14 +109,26 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       // 3. Fetch latest POs
       const poResult = await POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode);
-      if (poResult.pos && poResult.pos.length > 0) {
-        setPos(poResult.pos);
-      }
+      setPos(poResult.pos || []);
 
       // 4. Fetch latest Vendors
       const vResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode);
-      if (vResult.vendors && vResult.vendors.length > 0) {
-        setVendors(vResult.vendors);
+      setVendors(vResult.vendors || []);
+
+      // 5. Fetch outward dependencies to check inward delete eligibility
+      try {
+        const outwDeps = await InwardService.getInwardOutwardDependencies(undefined, isDemoMode);
+        setDeletableInwardMap(outwDeps.deletableInwardMap);
+      } catch (depErr) {
+        console.warn('Failed to load inward outward dependencies:', depErr);
+      }
+
+      // 6. Fetch PO lock map based on statement approvals & invoices
+      try {
+        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
+        setLockedPOMap(lockMap);
+      } catch (lockErr) {
+        console.warn('Failed to load PO lock map:', lockErr);
       }
     } catch (err) {
       console.error('Failed to load inward data:', err);
@@ -121,6 +140,18 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   useEffect(() => {
     loadData();
   }, [filters, pagination.page, isDemoMode]);
+
+  useEffect(() => {
+    if (initialPOs && initialPOs.length > 0) {
+      setPos(initialPOs);
+    }
+  }, [initialPOs]);
+
+  useEffect(() => {
+    if (initialInwards && initialInwards.length > 0) {
+      setInwards(initialInwards);
+    }
+  }, [initialInwards]);
 
   // Load single inward details
   const loadSingleInward = async (inwardId: string) => {
@@ -148,11 +179,24 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   };
 
   const handleEditDraft = async (inwardId: string) => {
+    const target = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId) || selectedInwardDetails.inward;
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
     await loadSingleInward(inwardId);
     setCurrentView('edit');
   };
 
   const handleDeleteInward = async (inwardId: string) => {
+    const target = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId) || selectedInwardDetails.inward;
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const activeUser = {
@@ -225,6 +269,14 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   // Reversal handler from Details view
   const handleReverseReceipt = async (reason: string) => {
     if (!selectedInwardId) return;
+
+    const target = selectedInwardDetails.inward;
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      alert(lock.reason);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const activeUser = {
@@ -234,7 +286,9 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const reversed = await InwardService.reverseInwardReceipt(selectedInwardId, reason, activeUser, isDemoMode);
 
-      if (onAddInward) {
+      if (onUpdateInward) {
+        onUpdateInward(reversed);
+      } else if (onAddInward) {
         onAddInward(reversed);
       }
 
@@ -260,7 +314,9 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const posted = await InwardService.postExistingDraft(targetId, activeUser, isDemoMode);
 
-      if (onAddInward) {
+      if (onUpdateInward) {
+        onUpdateInward(posted);
+      } else if (onAddInward) {
         onAddInward(posted);
       }
 
@@ -276,6 +332,14 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   // Quick reversal from list view
   const handleConfirmListReverse = async () => {
     if (!reverseTargetId) return;
+
+    const target = inwards.find((i) => i.inwardId === reverseTargetId || i.id === reverseTargetId);
+    const lock = POLockService.isLocked(target, lockedPOMap);
+    if (lock) {
+      setReverseModalError(lock.reason);
+      return;
+    }
+
     if (!reverseModalReason || reverseModalReason.trim().length < 5) {
       setReverseModalError('Please enter a detailed reversal reason of at least 5 characters.');
       return;
@@ -296,7 +360,9 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
         isDemoMode
       );
 
-      if (onAddInward) {
+      if (onUpdateInward) {
+        onUpdateInward(reversed);
+      } else if (onAddInward) {
         onAddInward(reversed);
       }
 
@@ -309,6 +375,19 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
       setIsSaving(false);
     }
   };
+
+  const selectedCustomerVendor = selectedInwardDetails.inward
+    ? vendors.find(
+        (v) =>
+          (v.id && (v.id === selectedInwardDetails.inward?.customerId || v.id === selectedInwardDetails.inward?.customerVendorId)) ||
+          (v.vendorId && (v.vendorId === selectedInwardDetails.inward?.customerId || v.vendorId === selectedInwardDetails.inward?.customerVendorId)) ||
+          (v.vendorCode && (v.vendorCode === selectedInwardDetails.inward?.customerId || v.vendorCode === selectedInwardDetails.inward?.customerVendorId)) ||
+          (v.companyName && (
+            v.companyName.trim().toLowerCase() === (selectedInwardDetails.inward?.customerCompanyNameSnapshot || '').trim().toLowerCase() ||
+            v.companyName.trim().toLowerCase() === (selectedInwardDetails.inward?.customerName || '').trim().toLowerCase()
+          ))
+      ) || null
+    : null;
 
   return (
     <div className="space-y-6">
@@ -335,9 +414,11 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
           onPrint={handlePrint}
           onEdit={handleEditDraft}
           onDelete={handleDeleteInward}
+          deletableInwardMap={deletableInwardMap}
           canManage={canManage}
           isAdmin={isAdmin}
           isLoading={loading}
+          lockedPOMap={lockedPOMap}
         />
       )}
 
@@ -351,6 +432,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
           onPostReceipt={handlePostReceipt}
           onCancel={() => setCurrentView('list')}
           isSaving={isSaving}
+          isDemoMode={isDemoMode}
         />
       )}
 
@@ -359,6 +441,8 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
         <InwardDetails
           inward={selectedInwardDetails.inward}
           auditLogs={selectedInwardDetails.logs}
+          customerVendor={selectedCustomerVendor}
+          lockedPOMap={lockedPOMap}
           onBack={() => setCurrentView('list')}
           onPrint={() => setCurrentView('print')}
           onEditDraft={() => setCurrentView('edit')}
@@ -373,6 +457,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
       {currentView === 'print' && selectedInwardDetails.inward && (
         <InwardPrintView
           inward={selectedInwardDetails.inward}
+          customerVendor={selectedCustomerVendor}
           onBack={() => setCurrentView('details')}
         />
       )}
