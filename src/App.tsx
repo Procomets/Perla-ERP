@@ -154,7 +154,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
             {moduleId === 'eb' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
             {moduleId === 'transport' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
             {moduleId === 'vendors' && <VendorMasterPage />}
-            {moduleId === 'items' && <ItemMasterPage items={props.inventory} onAddItem={props.onAddItem} />}
+            {moduleId === 'items' && <ItemMasterPage />}
             {moduleId === 'users' && <UsersPage />}
             {moduleId === 'settings' && <GeneralSettingsPage />}
           </div>

@@ -199,6 +199,41 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Item Master Collection
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Chemical Details Collection
+    match /chemical_details/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Item Categories Collection
+    match /item_categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Units of Measure Collection
+    match /units_of_measure/{unitId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthorizedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Item Audit Logs (Immutable)
+    match /item_audit_logs/{auditId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthorizedUser();
+      allow update, delete: if false;
+    }
+
     // Default allow authenticated users
     match /{document=**} {
       allow read, write: if isAuthenticated();

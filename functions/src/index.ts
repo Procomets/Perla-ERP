@@ -2262,4 +2262,23 @@ export {
   getInvoiceHistory
 } from './invoiceFunctions';
 
+// Item Master & Chemical Master Cloud Functions
+export {
+  createItem,
+  updateItem,
+  getItem,
+  listItems,
+  deactivateItem,
+  reactivateItem,
+  createChemicalDetails,
+  updateChemicalDetails,
+  createItemCategory,
+  updateItemCategory,
+  createUnitOfMeasure,
+  updateUnitOfMeasure,
+  getItemStockSummary,
+  getItemUsageHistory
+} from './itemFunctions';
+
+
 
