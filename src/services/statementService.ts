@@ -600,8 +600,14 @@ export class StatementService {
           : collection(db, 'invoice_approvals');
         const snap = await getDocs(q);
         // Always trust Firestore (even if empty = all records deleted).
-        // Overwrite local storage cache so stale deleted approvals are removed.
-        list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as InvoiceApprovalRecord));
+        list = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            approvalId: data.approvalId || d.id,
+            ...data,
+            id: d.id
+          } as unknown as InvoiceApprovalRecord;
+        });
         saveLocalApprovals(list);
       } catch (e) {
         console.warn('Firestore getInvoiceApprovals error:', e);
