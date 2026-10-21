@@ -3,19 +3,19 @@ import { ItemService } from '../itemService';
 export async function runItemMasterTests() {
   console.log('--- Starting Item & Chemical Master Test Suite ---');
 
-  // 1. Initial Listing
+  // 1. Initial Listing starts empty (zero dummy entries)
   const initialRes = await ItemService.getItems({}, { page: 1, pageSize: 20 }, true);
-  console.assert(initialRes.items.length > 0, 'Initial items should be seeded');
-  console.log(`[PASS] Fetched ${initialRes.items.length} initial master items.`);
+  console.assert(initialRes.items.length === 0, 'Initial items should be empty without dummy data');
+  console.log(`[PASS] Verified zero dummy items at start (${initialRes.items.length} items).`);
 
-  // 2. Fetch categories and units
+  // 2. Fetch categories and units starts empty (zero dummy entries)
   const categories = await ItemService.getCategories(true);
-  console.assert(categories.length >= 4, 'Should have standard default categories');
-  console.log(`[PASS] Fetched ${categories.length} item categories.`);
+  console.assert(categories.length === 0, 'Categories should start empty');
+  console.log(`[PASS] Verified zero dummy categories at start (${categories.length} categories).`);
 
   const units = await ItemService.getUnitsOfMeasure(true);
-  console.assert(units.length >= 6, 'Should have standard default units of measure');
-  console.log(`[PASS] Fetched ${units.length} units of measure.`);
+  console.assert(units.length === 0, 'Units of measure should start empty');
+  console.log(`[PASS] Verified zero dummy units at start (${units.length} units).`);
 
   // 3. Create General Item
   const newGeneral = await ItemService.createItem(

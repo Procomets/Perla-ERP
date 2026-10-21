@@ -433,11 +433,18 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs font-medium focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
                   required
                 >
-                  {categories.map((c) => (
-                    <option key={c.categoryId} value={c.categoryId}>
-                      {c.categoryName} ({c.categoryCode})
-                    </option>
-                  ))}
+                  {categories.length === 0 ? (
+                    <option value="">-- No Categories Created Yet --</option>
+                  ) : (
+                    <>
+                      <option value="">-- Select Category --</option>
+                      {categories.map((c) => (
+                        <option key={c.categoryId} value={c.categoryId}>
+                          {c.categoryName} ({c.categoryCode})
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -466,18 +473,30 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                   Base UOM <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={baseUnit}
-                  onChange={(e) => setBaseUnit(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-[#1F4E79]"
-                  required
-                >
-                  {units.map((u) => (
-                    <option key={u.symbol} value={u.symbol}>
-                      {u.unitName} ({u.symbol})
-                    </option>
-                  ))}
-                </select>
+                {units.length > 0 ? (
+                  <select
+                    value={baseUnit}
+                    onChange={(e) => setBaseUnit(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-[#1F4E79]"
+                    required
+                  >
+                    <option value="">-- Select UOM --</option>
+                    {units.map((u) => (
+                      <option key={u.symbol} value={u.symbol}>
+                        {u.unitName} ({u.symbol})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={baseUnit}
+                    onChange={(e) => setBaseUnit(e.target.value)}
+                    placeholder="e.g. kg, pcs"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-[#1F4E79]"
+                    required
+                  />
+                )}
               </div>
 
               <div>

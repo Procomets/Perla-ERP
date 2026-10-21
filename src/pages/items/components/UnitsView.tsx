@@ -3,13 +3,14 @@ import { UnitOfMeasure } from '../../../types/item';
 import { Table, Column } from '../../../components/ui/Table';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Button } from '../../../components/ui/Button';
-import { Scale, Plus, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { Scale, Plus, Edit2, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 
 interface UnitsViewProps {
   units: UnitOfMeasure[];
   onAddUnit: () => void;
   onEditUnit: (unit: UnitOfMeasure) => void;
   onToggleStatus: (unit: UnitOfMeasure) => void;
+  onDeleteUnit?: (unit: UnitOfMeasure) => void;
   isAdminOrManager?: boolean;
 }
 
@@ -18,6 +19,7 @@ export const UnitsView: React.FC<UnitsViewProps> = ({
   onAddUnit,
   onEditUnit,
   onToggleStatus,
+  onDeleteUnit,
   isAdminOrManager
 }) => {
   const columns: Column<UnitOfMeasure>[] = [
@@ -84,6 +86,19 @@ export const UnitsView: React.FC<UnitsViewProps> = ({
               >
                 {row.status === 'active' ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
               </button>
+              {onDeleteUnit && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to permanently delete unit '${row.unitName}' (${row.symbol})?`)) {
+                      onDeleteUnit(row);
+                    }
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  title="Delete Unit"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>

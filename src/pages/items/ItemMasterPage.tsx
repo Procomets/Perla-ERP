@@ -232,6 +232,16 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
     }
   };
 
+  const handleDeleteCategory = async (cat: ItemCategoryRecord) => {
+    try {
+      await ItemService.deleteCategory(cat.id, isDemoMode);
+      setCategories((prev) => prev.filter((c) => c.id !== cat.id && c.categoryId !== cat.categoryId));
+      showToast('success', `Category '${cat.categoryName}' deleted successfully.`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete category.');
+    }
+  };
+
   const handleToggleUnit = async (uom: UnitOfMeasure) => {
     const newStatus = uom.status === 'active' ? 'inactive' : 'active';
     try {
@@ -240,6 +250,16 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
       showToast('success', `Unit '${uom.unitName}' marked as ${newStatus}.`);
     } catch (err: any) {
       showToast('error', err?.message || 'Failed to update unit status.');
+    }
+  };
+
+  const handleDeleteUnit = async (uom: UnitOfMeasure) => {
+    try {
+      await ItemService.deleteUnitOfMeasure(uom.id, isDemoMode);
+      setUnits((prev) => prev.filter((u) => u.id !== uom.id && u.unitId !== uom.unitId));
+      showToast('success', `Unit '${uom.unitName}' deleted successfully.`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to delete unit.');
     }
   };
 
@@ -662,6 +682,7 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
                 setIsCategoryModalOpen(true);
               }}
               onToggleStatus={handleToggleCategory}
+              onDeleteCategory={handleDeleteCategory}
               isAdminOrManager={isAdminOrManager}
             />
           ) : activeTab === 'units' ? (
@@ -676,6 +697,7 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
                 setIsUnitModalOpen(true);
               }}
               onToggleStatus={handleToggleUnit}
+              onDeleteUnit={handleDeleteUnit}
               isAdminOrManager={isAdminOrManager}
             />
           ) : activeTab === 'inactive' ? (

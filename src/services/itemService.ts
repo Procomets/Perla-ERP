@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy
@@ -25,357 +26,34 @@ const CATEGORIES_STORAGE_KEY = 'perla_item_categories_data';
 const UNITS_STORAGE_KEY = 'perla_item_units_data';
 const AUDIT_STORAGE_KEY = 'perla_item_audit_logs';
 
-export const DEFAULT_CATEGORIES: ItemCategoryRecord[] = [
-  {
-    id: 'cat_chemical',
-    categoryId: 'cat_chemical',
-    categoryName: 'Chemicals',
-    categoryCode: 'CHM',
-    description: 'Processing chemicals, dyes, auxiliaries, enzymes, and softeners',
-    parentCategoryId: null,
-    status: 'active',
-    itemCount: 4,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_firewood',
-    categoryId: 'cat_firewood',
-    categoryName: 'Firewood & Boiler Fuel',
-    categoryCode: 'FWD',
-    description: 'Casuarina logs, wood briquettes, and boiler thermal fuel',
-    parentCategoryId: null,
-    status: 'active',
-    itemCount: 2,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_raw_material',
-    categoryId: 'cat_raw_material',
-    categoryName: 'Raw Materials',
-    categoryCode: 'RAW',
-    description: 'Customer base fabrics, processing salts, and chemical intermediates',
-    parentCategoryId: null,
-    status: 'active',
-    itemCount: 2,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_packaging',
-    categoryId: 'cat_packaging',
-    categoryName: 'Packing Materials',
-    categoryCode: 'PKG',
-    description: 'Polybags, carton boxes, packing tape, and dispatched goods wrapping',
-    parentCategoryId: null,
-    status: 'active',
-    itemCount: 1,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_consumables',
-    categoryId: 'cat_consumables',
-    categoryName: 'Consumables & Spares',
-    categoryCode: 'CON',
-    description: 'Machine filters, grease, lubricants, and daily maintenance consumables',
-    parentCategoryId: null,
-    status: 'active',
-    itemCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  }
+export const DEFAULT_CATEGORIES: ItemCategoryRecord[] = [];
+export const DEFAULT_UNITS: UnitOfMeasure[] = [];
+export const INITIAL_ITEMS: MasterItem[] = [];
+
+export const LEGACY_DUMMY_CATEGORY_IDS = [
+  'cat_chemical',
+  'cat_firewood',
+  'cat_raw_material',
+  'cat_packaging',
+  'cat_consumables'
 ];
 
-export const DEFAULT_UNITS: UnitOfMeasure[] = [
-  {
-    id: 'uom_kg',
-    unitId: 'uom_kg',
-    unitCode: 'KG',
-    unitName: 'Kilogram',
-    symbol: 'kg',
-    unitType: 'weight',
-    baseUnit: 'kg',
-    conversionFactorToBase: 1,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_g',
-    unitId: 'uom_g',
-    unitCode: 'G',
-    unitName: 'Gram',
-    symbol: 'g',
-    unitType: 'weight',
-    baseUnit: 'kg',
-    conversionFactorToBase: 0.001,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_litre',
-    unitId: 'uom_litre',
-    unitCode: 'L',
-    unitName: 'Litre',
-    symbol: 'L',
-    unitType: 'volume',
-    baseUnit: 'L',
-    conversionFactorToBase: 1,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_ml',
-    unitId: 'uom_ml',
-    unitCode: 'ML',
-    unitName: 'Millilitre',
-    symbol: 'ml',
-    unitType: 'volume',
-    baseUnit: 'L',
-    conversionFactorToBase: 0.001,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_tonne',
-    unitId: 'uom_tonne',
-    unitCode: 'TONNE',
-    unitName: 'Metric Tonne',
-    symbol: 't',
-    unitType: 'weight',
-    baseUnit: 'kg',
-    conversionFactorToBase: 1000,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_piece',
-    unitId: 'uom_piece',
-    unitCode: 'PCS',
-    unitName: 'Piece',
-    symbol: 'pcs',
-    unitType: 'count',
-    baseUnit: 'pcs',
-    conversionFactorToBase: 1,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_bag',
-    unitId: 'uom_bag',
-    unitCode: 'BAG',
-    unitName: 'Bag (50kg)',
-    symbol: 'bag',
-    unitType: 'package',
-    baseUnit: 'kg',
-    conversionFactorToBase: 50,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'uom_drum',
-    unitId: 'uom_drum',
-    unitCode: 'DRUM',
-    unitName: 'Drum (200L)',
-    symbol: 'drum',
-    unitType: 'package',
-    baseUnit: 'L',
-    conversionFactorToBase: 200,
-    status: 'active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z'
-  }
+export const LEGACY_DUMMY_UNIT_IDS = [
+  'uom_kg',
+  'uom_g',
+  'uom_litre',
+  'uom_ml',
+  'uom_tonne',
+  'uom_piece',
+  'uom_bag',
+  'uom_drum'
 ];
 
-export const INITIAL_ITEMS: MasterItem[] = [
-  {
-    id: 'item-chm-01',
-    itemId: 'item-chm-01',
-    itemCode: 'CHM-ENZ-01',
-    itemName: 'Neutral Bio-Enzyme Powder',
-    categoryId: 'cat_chemical',
-    categoryName: 'Chemicals',
-    itemType: 'chemical',
-    description: 'High activity neutral cellulase enzyme for biopolishing and denim wash depilling',
-    baseUnitId: 'uom_kg',
-    baseUnit: 'kg',
-    baseUnitSymbol: 'kg',
-    conversionFactor: 1,
-    defaultPurchaseRate: 160,
-    minimumStockLevel: 50,
-    reorderLevel: 100,
-    preferredSupplierId: 'v-101',
-    preferredSupplierName: 'Sree Kumar Texind Corporation',
-    storageLocation: 'Chemical Store - Rack A2',
-    hsnCode: '35079099',
-    taxRatePercent: 18,
-    batchTrackingEnabled: true,
-    expiryTrackingEnabled: true,
-    status: 'active',
-    currentStock: 220,
-    chemicalDetails: {
-      itemId: 'item-chm-01',
-      chemicalCode: 'CHM-ENZ-01',
-      chemicalName: 'Neutral Bio-Enzyme Powder',
-      chemicalDisplayName: 'Bio-Enzyme Powder (Neutral)',
-      chemicalCategory: 'Enzyme',
-      chemicalType: 'Biopolishing Enzyme',
-      chemicalGrade: 'Textile Processing Grade',
-      manufacturer: 'Novozymes Bio India',
-      brand: 'CelluSmart 400',
-      purchaseUnit: 'kg',
-      consumptionUnit: 'kg',
-      conversionFactor: 1,
-      defaultPurchaseRate: 160,
-      minimumStockLevel: 50,
-      reorderLevel: 100,
-      batchTrackingRequired: true,
-      expiryTrackingRequired: true,
-      shelfLifeMonths: 12,
-      shelfLife: '12 Months from Mfg',
-      safetyInstructions: 'Avoid inhaling powder dust. Store below 25°C in sealed containers away from sunlight.',
-      storageInstructions: 'Dry, cool, moisture-free warehouse area.',
-      handlingPrecautions: 'Wear dust mask, safety goggles, and nitrile gloves during batch dispensary.',
-      hazardClassification: 'Mild respiratory irritant on airborne dusting',
-      phRange: '6.0 - 7.5',
-      active: true,
-      createdAt: '2026-01-10T10:00:00.000Z',
-      updatedAt: '2026-01-10T10:00:00.000Z'
-    },
-    createdBy: 'admin-uid',
-    createdByName: 'Authorized Admin',
-    createdAt: '2026-01-10T10:00:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Authorized Admin',
-    updatedAt: '2026-01-10T10:00:00.000Z'
-  },
-  {
-    id: 'item-chm-02',
-    itemId: 'item-chm-02',
-    itemCode: 'CHM-SOF-02',
-    itemName: 'Macro-Emulsion Silicone Softener',
-    categoryId: 'cat_chemical',
-    categoryName: 'Chemicals',
-    itemType: 'chemical',
-    description: 'Concentrated silicone fluid delivering superior inner softness and surface bounciness',
-    baseUnitId: 'uom_kg',
-    baseUnit: 'kg',
-    baseUnitSymbol: 'kg',
-    conversionFactor: 1,
-    defaultPurchaseRate: 110,
-    minimumStockLevel: 80,
-    reorderLevel: 150,
-    preferredSupplierId: 'v-102',
-    preferredSupplierName: 'Paramount Apparel Processing',
-    storageLocation: 'Chemical Store - Tank Bay B',
-    hsnCode: '34031100',
-    taxRatePercent: 18,
-    batchTrackingEnabled: true,
-    expiryTrackingEnabled: false,
-    status: 'active',
-    currentStock: 340,
-    chemicalDetails: {
-      itemId: 'item-chm-02',
-      chemicalCode: 'CHM-SOF-02',
-      chemicalName: 'Macro-Emulsion Silicone Softener',
-      chemicalDisplayName: 'Silicone Softener Liquid',
-      chemicalCategory: 'Softener',
-      chemicalType: 'Amino Modified Silicone',
-      chemicalGrade: 'Textile Processing Grade',
-      manufacturer: 'Rossari Biotech Ltd',
-      brand: 'SuperSil Touch',
-      purchaseUnit: 'kg',
-      consumptionUnit: 'kg',
-      conversionFactor: 1,
-      defaultPurchaseRate: 110,
-      minimumStockLevel: 80,
-      reorderLevel: 150,
-      batchTrackingRequired: true,
-      expiryTrackingRequired: false,
-      shelfLifeMonths: 24,
-      shelfLife: '24 Months',
-      safetyInstructions: 'Avoid eye contact. In case of spill, wash with abundant water.',
-      storageInstructions: 'Keep drums sealed tight, room temperature.',
-      handlingPrecautions: 'Wear gloves and apron.',
-      phRange: '5.5 - 6.5',
-      active: true,
-      createdAt: '2026-01-11T10:00:00.000Z',
-      updatedAt: '2026-01-11T10:00:00.000Z'
-    },
-    createdBy: 'admin-uid',
-    createdByName: 'Authorized Admin',
-    createdAt: '2026-01-11T10:00:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Authorized Admin',
-    updatedAt: '2026-01-11T10:00:00.000Z'
-  },
-  {
-    id: 'item-fwd-01',
-    itemId: 'item-fwd-01',
-    itemCode: 'FWD-CAS-01',
-    itemName: 'Casuarina Firewood Logs (Boiler Fuel)',
-    categoryId: 'cat_firewood',
-    categoryName: 'Firewood & Boiler Fuel',
-    itemType: 'firewood',
-    description: 'Dry seasoned casuarina wood logs for industrial steam boiler generation',
-    baseUnitId: 'uom_tonne',
-    baseUnit: 't',
-    baseUnitSymbol: 't',
-    conversionFactor: 1000,
-    defaultPurchaseRate: 4500,
-    minimumStockLevel: 5,
-    reorderLevel: 10,
-    preferredSupplierId: 'v-101',
-    preferredSupplierName: 'Sree Kumar Texind Corporation',
-    storageLocation: 'Boiler Wood Yard Bay 1',
-    hsnCode: '44011100',
-    taxRatePercent: 5,
-    status: 'active',
-    currentStock: 18.5,
-    remarks: 'Moisture content should remain below 18% for efficient combustion calorific value',
-    createdBy: 'admin-uid',
-    createdByName: 'Authorized Admin',
-    createdAt: '2026-01-12T10:00:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Authorized Admin',
-    updatedAt: '2026-01-12T10:00:00.000Z'
-  },
-  {
-    id: 'item-raw-01',
-    itemId: 'item-raw-01',
-    itemCode: 'RAW-SLT-01',
-    itemName: 'Industrial Refined Sodium Sulphate Salt',
-    categoryId: 'cat_raw_material',
-    categoryName: 'Raw Materials',
-    itemType: 'raw_material',
-    description: 'Electrolyte salt used in reactive dyeing bath exhaustion',
-    baseUnitId: 'uom_kg',
-    baseUnit: 'kg',
-    baseUnitSymbol: 'kg',
-    conversionFactor: 1,
-    defaultPurchaseRate: 9.5,
-    minimumStockLevel: 500,
-    reorderLevel: 1200,
-    storageLocation: 'Salt Yard Warehouse Bay 3',
-    hsnCode: '28331100',
-    taxRatePercent: 18,
-    status: 'active',
-    currentStock: 2400,
-    createdBy: 'admin-uid',
-    createdByName: 'Authorized Admin',
-    createdAt: '2026-01-12T10:00:00.000Z',
-    updatedBy: 'admin-uid',
-    updatedByName: 'Authorized Admin',
-    updatedAt: '2026-01-12T10:00:00.000Z'
-  }
+export const LEGACY_DUMMY_ITEM_IDS = [
+  'item-chm-01',
+  'item-chm-02',
+  'item-fwd-01',
+  'item-raw-01'
 ];
 
 const memoryStore: Record<string, string> = {};
@@ -425,26 +103,30 @@ export class ItemService {
               itemId: data.itemId || d.id
             } as MasterItem;
           });
-          safeSetStorage(ITEMS_STORAGE_KEY, JSON.stringify(list));
-        } else {
-          // If Firestore collection is empty, seed initial defaults to Firestore
-          list = [...INITIAL_ITEMS];
-          for (const item of list) {
-            await setDoc(doc(db, 'items', item.id), item);
-            if (item.chemicalDetails) {
-              await setDoc(doc(db, 'chemical_details', item.id), item.chemicalDetails);
+          // Purge any legacy dummy items if present in Firestore
+          const legacyDummies = list.filter((it) => LEGACY_DUMMY_ITEM_IDS.includes(it.id));
+          if (legacyDummies.length > 0) {
+            for (const d of legacyDummies) {
+              deleteDoc(doc(db, 'items', d.id)).catch(() => {});
+              deleteDoc(doc(db, 'chemical_details', d.id)).catch(() => {});
             }
+            list = list.filter((it) => !LEGACY_DUMMY_ITEM_IDS.includes(it.id));
           }
           safeSetStorage(ITEMS_STORAGE_KEY, JSON.stringify(list));
+        } else {
+          list = [];
+          safeSetStorage(ITEMS_STORAGE_KEY, JSON.stringify([]));
         }
       } catch (err) {
         console.warn('Firestore getItems error, using local cache:', err);
         const cached = safeGetStorage(ITEMS_STORAGE_KEY);
-        list = cached ? JSON.parse(cached) : [...INITIAL_ITEMS];
+        list = cached ? JSON.parse(cached) : [];
+        list = list.filter((it) => !LEGACY_DUMMY_ITEM_IDS.includes(it.id));
       }
     } else {
       const cached = safeGetStorage(ITEMS_STORAGE_KEY);
-      list = cached ? JSON.parse(cached) : [...INITIAL_ITEMS];
+      list = cached ? JSON.parse(cached) : [];
+      list = list.filter((it) => !LEGACY_DUMMY_ITEM_IDS.includes(it.id));
     }
 
     // Apply filtering
@@ -877,23 +559,32 @@ export class ItemService {
       try {
         const snap = await getDocs(collection(db, 'item_categories'));
         if (!snap.empty) {
-          const list = snap.docs.map((d) => d.data() as ItemCategoryRecord);
+          let list = snap.docs.map((d) => d.data() as ItemCategoryRecord);
+          // Purge legacy dummy categories if present
+          const dummies = list.filter((c) => LEGACY_DUMMY_CATEGORY_IDS.includes(c.id) || LEGACY_DUMMY_CATEGORY_IDS.includes(c.categoryId));
+          if (dummies.length > 0) {
+            for (const d of dummies) {
+              deleteDoc(doc(db, 'item_categories', d.id || d.categoryId)).catch(() => {});
+            }
+            list = list.filter((c) => !LEGACY_DUMMY_CATEGORY_IDS.includes(c.id) && !LEGACY_DUMMY_CATEGORY_IDS.includes(c.categoryId));
+          }
           safeSetStorage(CATEGORIES_STORAGE_KEY, JSON.stringify(list));
           return list;
         } else {
-          // Seed defaults
-          for (const cat of DEFAULT_CATEGORIES) {
-            await setDoc(doc(db, 'item_categories', cat.id), cat);
-          }
-          safeSetStorage(CATEGORIES_STORAGE_KEY, JSON.stringify(DEFAULT_CATEGORIES));
-          return DEFAULT_CATEGORIES;
+          safeSetStorage(CATEGORIES_STORAGE_KEY, JSON.stringify([]));
+          return [];
         }
       } catch (err) {
         console.warn('Firestore getCategories error:', err);
       }
     }
     const stored = safeGetStorage(CATEGORIES_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : DEFAULT_CATEGORIES;
+    const list: ItemCategoryRecord[] = stored ? JSON.parse(stored) : [];
+    const filtered = list.filter((c) => !LEGACY_DUMMY_CATEGORY_IDS.includes(c.id) && !LEGACY_DUMMY_CATEGORY_IDS.includes(c.categoryId));
+    if (filtered.length !== list.length) {
+      safeSetStorage(CATEGORIES_STORAGE_KEY, JSON.stringify(filtered));
+    }
+    return filtered;
   }
 
   static async createCategory(
@@ -959,6 +650,22 @@ export class ItemService {
     return updated;
   }
 
+  static async deleteCategory(
+    categoryId: string,
+    isDemo: boolean = false
+  ): Promise<void> {
+    if (!isDemo) {
+      try {
+        await deleteDoc(doc(db, 'item_categories', categoryId));
+      } catch (e) {
+        console.warn('Failed to delete category in Firestore:', e);
+      }
+    }
+    const current = await this.getCategories(true);
+    const updated = current.filter((c) => c.id !== categoryId && c.categoryId !== categoryId);
+    safeSetStorage(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+  }
+
   /**
    * Units of Measure Management
    */
@@ -967,22 +674,32 @@ export class ItemService {
       try {
         const snap = await getDocs(collection(db, 'units_of_measure'));
         if (!snap.empty) {
-          const list = snap.docs.map((d) => d.data() as UnitOfMeasure);
+          let list = snap.docs.map((d) => d.data() as UnitOfMeasure);
+          // Purge legacy dummy units if present
+          const dummies = list.filter((u) => LEGACY_DUMMY_UNIT_IDS.includes(u.id) || LEGACY_DUMMY_UNIT_IDS.includes(u.unitId));
+          if (dummies.length > 0) {
+            for (const d of dummies) {
+              deleteDoc(doc(db, 'units_of_measure', d.id || d.unitId)).catch(() => {});
+            }
+            list = list.filter((u) => !LEGACY_DUMMY_UNIT_IDS.includes(u.id) && !LEGACY_DUMMY_UNIT_IDS.includes(u.unitId));
+          }
           safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify(list));
           return list;
         } else {
-          for (const u of DEFAULT_UNITS) {
-            await setDoc(doc(db, 'units_of_measure', u.id), u);
-          }
-          safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify(DEFAULT_UNITS));
-          return DEFAULT_UNITS;
+          safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify([]));
+          return [];
         }
       } catch (err) {
         console.warn('Firestore getUnitsOfMeasure error:', err);
       }
     }
     const stored = safeGetStorage(UNITS_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : DEFAULT_UNITS;
+    const list: UnitOfMeasure[] = stored ? JSON.parse(stored) : [];
+    const filtered = list.filter((u) => !LEGACY_DUMMY_UNIT_IDS.includes(u.id) && !LEGACY_DUMMY_UNIT_IDS.includes(u.unitId));
+    if (filtered.length !== list.length) {
+      safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify(filtered));
+    }
+    return filtered;
   }
 
   static async createUnitOfMeasure(
@@ -1047,6 +764,40 @@ export class ItemService {
     if (idx >= 0) list[idx] = updated;
     safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify(list));
     return updated;
+  }
+
+  static async deleteUnitOfMeasure(
+    unitId: string,
+    isDemo: boolean = false
+  ): Promise<void> {
+    if (!isDemo) {
+      try {
+        await deleteDoc(doc(db, 'units_of_measure', unitId));
+      } catch (e) {
+        console.warn('Failed to delete UOM from Firestore:', e);
+      }
+    }
+    const current = await this.getUnitsOfMeasure(true);
+    const updated = current.filter((u) => u.id !== unitId && u.unitId !== unitId);
+    safeSetStorage(UNITS_STORAGE_KEY, JSON.stringify(updated));
+  }
+
+  static async deleteItem(
+    itemId: string,
+    isDemo: boolean = false
+  ): Promise<void> {
+    if (!isDemo) {
+      try {
+        await deleteDoc(doc(db, 'items', itemId));
+        await deleteDoc(doc(db, 'chemical_details', itemId));
+      } catch (e) {
+        console.warn('Failed to delete item from Firestore:', e);
+      }
+    }
+    const cached = safeGetStorage(ITEMS_STORAGE_KEY);
+    const list: MasterItem[] = cached ? JSON.parse(cached) : [];
+    const updated = list.filter((i) => i.id !== itemId && i.itemId !== itemId);
+    safeSetStorage(ITEMS_STORAGE_KEY, JSON.stringify(updated));
   }
 
   /**

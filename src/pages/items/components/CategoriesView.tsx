@@ -4,7 +4,7 @@ import { Table, Column } from '../../../components/ui/Table';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Button } from '../../../components/ui/Button';
 import { formatDate } from '../../../utils/formatters';
-import { Tag, Plus, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { Tag, Plus, Edit2, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 
 interface CategoriesViewProps {
   categories: ItemCategoryRecord[];
@@ -12,6 +12,7 @@ interface CategoriesViewProps {
   onAddCategory: () => void;
   onEditCategory: (cat: ItemCategoryRecord) => void;
   onToggleStatus: (cat: ItemCategoryRecord) => void;
+  onDeleteCategory?: (cat: ItemCategoryRecord) => void;
   isAdminOrManager?: boolean;
 }
 
@@ -21,6 +22,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
   onAddCategory,
   onEditCategory,
   onToggleStatus,
+  onDeleteCategory,
   isAdminOrManager
 }) => {
   // Count items dynamically per category
@@ -94,6 +96,19 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
               >
                 {row.status === 'active' ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
               </button>
+              {onDeleteCategory && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to permanently delete category '${row.categoryName}'?`)) {
+                      onDeleteCategory(row);
+                    }
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  title="Delete Category"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>
