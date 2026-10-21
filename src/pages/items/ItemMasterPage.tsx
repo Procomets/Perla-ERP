@@ -367,7 +367,7 @@ export const ItemMasterPage: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
             <span>Total Active</span>
-            <Package className="w-4 h-4 text-[#1F4E79]" />
+            <Package className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-2xl font-black text-slate-900">{totalActiveCount}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Master items registered</div>
@@ -376,27 +376,27 @@ export const ItemMasterPage: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
             <span>Chemicals</span>
-            <FlaskConical className="w-4 h-4 text-indigo-600" />
+            <FlaskConical className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="text-2xl font-black text-indigo-700">{chemicalItemsCount}</div>
+          <div className="text-2xl font-black text-slate-900">{chemicalItemsCount}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Processing chemicals & dyes</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
             <span>Raw Wood</span>
-            <Flame className="w-4 h-4 text-amber-600" />
+            <Flame className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="text-2xl font-black text-amber-600">{firewoodItemsCount}</div>
+          <div className="text-2xl font-black text-slate-900">{firewoodItemsCount}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Boiler fuel supplies</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
             <span>Low Stock</span>
-            <AlertTriangle className="w-4 h-4 text-rose-500" />
+            <AlertTriangle className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="text-2xl font-black text-rose-600">{lowStockCount}</div>
+          <div className="text-2xl font-black text-slate-900">{lowStockCount}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">At or below min stock</div>
         </div>
       </div>
