@@ -51,6 +51,41 @@ export const ItemModal: React.FC<ItemModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [codeWarning, setCodeWarning] = useState<string | null>(null);
 
+  // Fallback categories and units when Firestore has no configured master records yet
+  const fallbackCategories: ItemCategoryRecord[] = [
+    {
+      id: 'cat_chemicals',
+      categoryId: 'cat_chemicals',
+      categoryName: 'Textile Processing Chemicals',
+      categoryCode: 'CHM',
+      status: 'active',
+      itemCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'cat_firewood',
+      categoryId: 'cat_firewood',
+      categoryName: 'Raw Wood / Boiler Fuel',
+      categoryCode: 'RWD',
+      status: 'active',
+      itemCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  const fallbackUnits: UnitOfMeasure[] = [
+    { id: 'uom_kg', unitId: 'uom_kg', unitCode: 'KG', unitName: 'Kilograms', symbol: 'kg', unitType: 'weight', status: 'active', createdAt: '', updatedAt: '' },
+    { id: 'uom_t', unitId: 'uom_t', unitCode: 'T', unitName: 'Metric Tonnes', symbol: 't', unitType: 'weight', status: 'active', createdAt: '', updatedAt: '' },
+    { id: 'uom_l', unitId: 'uom_l', unitCode: 'L', unitName: 'Litres', symbol: 'L', unitType: 'volume', status: 'active', createdAt: '', updatedAt: '' },
+    { id: 'uom_m', unitId: 'uom_m', unitCode: 'M', unitName: 'Metres', symbol: 'm', unitType: 'length', status: 'active', createdAt: '', updatedAt: '' },
+    { id: 'uom_pcs', unitId: 'uom_pcs', unitCode: 'PCS', unitName: 'Pieces', symbol: 'pcs', unitType: 'count', status: 'active', createdAt: '', updatedAt: '' }
+  ];
+
+  const effectiveCategories = categories && categories.length > 0 ? categories : fallbackCategories;
+  const effectiveUnits = units && units.length > 0 ? units : fallbackUnits;
+
   // Reset or fill on open
   useEffect(() => {
     if (initialItem) {
@@ -69,12 +104,12 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setMinimumStockLevel(0);
 
       // Auto-assign category matching type
-      const matchedCat = categories.find((c) => {
+      const matchedCat = effectiveCategories.find((c) => {
         if (initType === 'chemical') return c.categoryName.toLowerCase().includes('chemical');
         if (initType === 'firewood') return c.categoryName.toLowerCase().includes('wood') || c.categoryName.toLowerCase().includes('firewood');
         return true;
       });
-      setCategoryId(matchedCat?.categoryId || categories[0]?.categoryId || '');
+      setCategoryId(matchedCat?.categoryId || effectiveCategories[0]?.categoryId || '');
       setBaseUnit(initType === 'firewood' ? 't' : 'kg');
 
       // Auto-generate next item code
@@ -95,11 +130,11 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setItemCode(code);
       if (newType === 'firewood') {
         setBaseUnit('t');
-        const woodCat = categories.find((c) => c.categoryName.toLowerCase().includes('wood') || c.categoryName.toLowerCase().includes('firewood'));
+        const woodCat = effectiveCategories.find((c) => c.categoryName.toLowerCase().includes('wood') || c.categoryName.toLowerCase().includes('firewood'));
         if (woodCat) setCategoryId(woodCat.categoryId);
       } else {
         setBaseUnit('kg');
-        const chemCat = categories.find((c) => c.categoryName.toLowerCase().includes('chemical'));
+        const chemCat = effectiveCategories.find((c) => c.categoryName.toLowerCase().includes('chemical'));
         if (chemCat) setCategoryId(chemCat.categoryId);
       }
     }
@@ -135,7 +170,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setIsSubmitting(true);
       setError(null);
 
-      const selectedCat = categories.find((c) => c.categoryId === categoryId);
+      const selectedCat = effectiveCategories.find((c) => c.categoryId === categoryId);
 
       const payload: Partial<MasterItem> = {
         itemCode: itemCode.trim().toUpperCase(),
@@ -194,25 +229,25 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEditing ? `Edit Item: ${initialItem?.itemCode}` : 'Create Master Item'}
-      maxWidth="lg"
+      maxWidth="2xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6 pt-1">
         {error && (
-          <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="flex items-center gap-2.5 p-3.5 bg-red-50 text-red-700 text-sm rounded-xl border border-red-200">
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-600" />
+            <span className="font-medium">{error}</span>
           </div>
         )}
 
         {/* 1. Item Classification Type */}
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
             Item Classification Type
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             {[
-              { id: 'chemical', label: 'Chemical', icon: FlaskConical },
-              { id: 'firewood', label: 'Raw Wood', icon: Flame }
+              { id: 'chemical', label: 'Chemical', subtitle: 'Processing Chemicals & Auxiliaries', icon: FlaskConical },
+              { id: 'firewood', label: 'Raw Wood', subtitle: 'Boiler Firewood & Fuel Timber', icon: Flame }
             ].map((t) => {
               const Icon = t.icon;
               const isSelected = itemType === t.id;
@@ -222,141 +257,154 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   type="button"
                   disabled={isEditing}
                   onClick={() => handleTypeChange(t.id as ItemType)}
-                  className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-3.5 p-3.5 rounded-xl border-2 text-left transition-all ${
                     isSelected
-                      ? 'bg-[#EEF5FB] border-[#1F4E79] text-[#1F4E79] shadow-2xs font-bold ring-2 ring-[#1F4E79]/20'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  } ${isEditing ? 'opacity-70 cursor-not-allowed' : ''}`}
+                      ? 'bg-blue-50/80 border-[#1F4E79] text-[#1F4E79] shadow-sm ring-2 ring-[#1F4E79]/20'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                  } ${isEditing ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{t.label}</span>
+                  <div className={`p-2.5 rounded-lg shrink-0 ${isSelected ? 'bg-[#1F4E79] text-white shadow-xs' : 'bg-slate-100 text-slate-600'}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold leading-tight">{t.label}</div>
+                    <div className="text-xs text-slate-500 font-normal mt-0.5">{t.subtitle}</div>
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Row 1: Item Code (Autogenerated) & Full Item / Material Name */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Input
-              label="Item Code (Autogenerated)"
+        {/* 2. Item Code & Item Category */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Item Code (Autogenerated)
+            </label>
+            <input
+              type="text"
               value={itemCode}
               onChange={(e) => setItemCode(e.target.value.toUpperCase())}
               onBlur={handleCodeBlur}
               placeholder="e.g. CHM-001"
               required
+              className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl px-3.5 text-sm font-mono font-bold text-[#1F4E79] tracking-wider focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:bg-white focus:border-[#1F4E79] transition shadow-2xs"
             />
-            {codeWarning && <p className="text-[11px] text-amber-600 mt-1">{codeWarning}</p>}
+            {codeWarning && <p className="text-xs text-amber-600 font-medium mt-1">{codeWarning}</p>}
           </div>
 
-          <div>
-            <Input
-              label="Full Item / Material Name"
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-              placeholder={itemType === 'chemical' ? 'e.g. Neutral Bio-Enzyme Powder' : 'e.g. Casuarina Firewood Logs'}
-              required
-            />
-          </div>
-        </div>
-
-        {/* Row 2: Item Category * & Base UOM * */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="w-full space-y-1">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
               Item Category <span className="text-red-500">*</span>
             </label>
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition"
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs"
               required
             >
-              {categories.length === 0 ? (
-                <option value="">-- No Categories Created Yet --</option>
-              ) : (
-                <>
-                  <option value="">-- Select Category --</option>
-                  {categories.map((c) => (
-                    <option key={c.categoryId} value={c.categoryId}>
-                      {c.categoryName} ({c.categoryCode})
-                    </option>
-                  ))}
-                </>
-              )}
+              <option value="">-- Select Category --</option>
+              {effectiveCategories.map((c) => (
+                <option key={c.categoryId} value={c.categoryId}>
+                  {c.categoryName} ({c.categoryCode})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 3. Full Item / Material Name (Full width for maximum readability!) */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Full Item / Material Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={itemName}
+            onChange={(e) => setItemName(e.target.value)}
+            placeholder={itemType === 'chemical' ? 'e.g. Neutral Bio-Enzyme Powder' : 'e.g. Casuarina Firewood Logs (Standard Grade)'}
+            required
+            className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs"
+          />
+        </div>
+
+        {/* 4. Base UOM & Min Stock */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Base UOM <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={baseUnit}
+              onChange={(e) => setBaseUnit(e.target.value)}
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm font-bold text-[#1F4E79] focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs"
+              required
+            >
+              <option value="">-- Select UOM --</option>
+              {effectiveUnits.map((u) => (
+                <option key={u.symbol} value={u.symbol}>
+                  {u.unitName} ({u.symbol})
+                </option>
+              ))}
             </select>
           </div>
 
-          <div className="w-full space-y-1">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Base UOM <span className="text-red-500">*</span>
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Min Stock (Alert Level)
             </label>
-            {units.length > 0 ? (
-              <select
-                value={baseUnit}
-                onChange={(e) => setBaseUnit(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-[#1F4E79] focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition"
-                required
-              >
-                <option value="">-- Select UOM --</option>
-                {units.map((u) => (
-                  <option key={u.symbol} value={u.symbol}>
-                    {u.unitName} ({u.symbol})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={baseUnit}
-                onChange={(e) => setBaseUnit(e.target.value)}
-                placeholder="e.g. kg, tonne"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-[#1F4E79] focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition"
-                required
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Row 3: Min Stock & General Description & Purpose */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Input
-              label="Min Stock"
+            <input
               type="number"
+              min="0"
+              step="any"
               value={minimumStockLevel}
               onChange={(e) => setMinimumStockLevel(Number(e.target.value))}
               placeholder="0"
-            />
-          </div>
-
-          <div>
-            <Input
-              label="General Description & Purpose"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Factory processing or boiler usage"
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs"
             />
           </div>
         </div>
 
+        {/* 5. General Description & Purpose (Full width comfortable textarea) */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            General Description & Purpose
+          </label>
+          <textarea
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g. Factory processing or boiler usage, application notes, handling requirements..."
+            className="w-full bg-white border border-slate-300 rounded-xl p-3.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition resize-none shadow-2xs"
+          />
+        </div>
+
         {/* Modal Actions */}
-        <div className="flex justify-between items-center pt-4 border-t border-slate-200">
-          <div className="text-xs text-slate-500 flex items-center gap-1">
-            <Info className="w-3.5 h-3.5 text-slate-400" />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-5 border-t border-slate-200">
+          <div className="text-xs text-slate-500 flex items-center gap-2">
+            <Info className="w-4 h-4 text-slate-400 shrink-0" />
             <span>Autogenerated unique item codes prevent catalogue collisions.</span>
           </div>
 
-          <div className="flex gap-2.5">
-            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 text-sm font-semibold"
+            >
               Cancel
             </Button>
             <Button
               type="submit"
               variant="primary"
+              size="md"
               disabled={isSubmitting}
               icon={<CheckCircle2 className="w-4 h-4" />}
+              className="px-6 py-2.5 text-sm font-semibold shadow-xs"
             >
               {isSubmitting ? 'Saving Item...' : isEditing ? 'Update Master Item' : 'Create Master Item'}
             </Button>
