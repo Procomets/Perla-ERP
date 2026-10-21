@@ -397,28 +397,28 @@ export const ItemMasterPage: React.FC = () => {
 
       {/* Main Container: Controls & Single Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Controls Toolbar: Search, Filters, and New Item buttons */}
-        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/50">
-          {/* Left: Search & Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2.5">
+        {/* Controls Toolbar: Search, Filters, and Single Add Item Button */}
+        <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+          {/* Left: Search & Filters aligned horizontally */}
+          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
             {/* Search Input */}
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-56">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Search name or code..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79]"
+                className="w-full h-9 bg-white border border-slate-300 rounded-lg pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79]"
               />
             </div>
 
             {/* Classification Filter Buttons */}
-            <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-white">
+            <div className="inline-flex h-9 items-center rounded-lg border border-slate-300 p-0.5 bg-white">
               <button
                 type="button"
                 onClick={() => setTypeFilter('all')}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                className={`h-full px-3 rounded-md text-xs font-semibold transition-colors flex items-center ${
                   typeFilter === 'all'
                     ? 'bg-[#1F4E79] text-white shadow-2xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
@@ -429,7 +429,7 @@ export const ItemMasterPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setTypeFilter('chemical')}
-                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                className={`h-full px-3 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
                   typeFilter === 'chemical'
                     ? 'bg-indigo-700 text-white shadow-2xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
@@ -441,7 +441,7 @@ export const ItemMasterPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setTypeFilter('firewood')}
-                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                className={`h-full px-3 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
                   typeFilter === 'firewood'
                     ? 'bg-amber-600 text-white shadow-2xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
@@ -456,7 +456,7 @@ export const ItemMasterPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setLowStockFilter(!lowStockFilter)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              className={`h-9 flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold border transition-all ${
                 lowStockFilter
                   ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-2xs font-bold'
                   : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
@@ -470,7 +470,7 @@ export const ItemMasterPage: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
+              className="h-9 bg-white border border-slate-300 rounded-lg px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
             >
               <option value="active">Active Only</option>
               <option value="all">All Statuses</option>
@@ -478,24 +478,16 @@ export const ItemMasterPage: React.FC = () => {
             </select>
           </div>
 
-          {/* Right: Quick Creation Buttons */}
+          {/* Right: Single Add Item Button */}
           {isAdminOrManager && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<Flame className="w-3.5 h-3.5 text-amber-600" />}
-                onClick={() => handleAddNewItem('firewood')}
-              >
-                + New Raw Wood
-              </Button>
+            <div className="flex items-center shrink-0">
               <Button
                 variant="primary"
                 size="sm"
                 icon={<Plus className="w-4 h-4" />}
-                onClick={() => handleAddNewItem('chemical')}
+                onClick={() => handleAddNewItem(typeFilter === 'firewood' ? 'firewood' : 'chemical')}
               >
-                + New Chemical
+                Add Item
               </Button>
             </div>
           )}
