@@ -60,8 +60,8 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
   };
 
   // Active Tab:
-  // 'general' | 'chemical' | 'firewood' | 'raw_material' | 'categories' | 'units' | 'inactive' | 'history'
-  const [activeTab, setActiveTab] = useState<string>('general');
+  // 'chemical' | 'firewood' | 'categories' | 'units' | 'inactive' | 'history'
+  const [activeTab, setActiveTab] = useState<string>('chemical');
 
   // Core Data State
   const [items, setItems] = useState<MasterItem[]>([]);
@@ -78,7 +78,7 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
 
   // Modals State
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [itemModalDefaultType, setItemModalDefaultType] = useState<ItemType>('general');
+  const [itemModalDefaultType, setItemModalDefaultType] = useState<ItemType>('chemical');
   const [selectedItemForEdit, setSelectedItemForEdit] = useState<MasterItem | null>(null);
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -168,9 +168,9 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
   const inactiveItems = useMemo(() => items.filter((i) => i.status === 'inactive'), [items]);
 
   // Quick Open Modal Helpers
-  const handleAddNewItem = (type: ItemType = 'general') => {
+  const handleAddNewItem = (type: ItemType = 'chemical') => {
     setSelectedItemForEdit(null);
-    setItemModalDefaultType(type);
+    setItemModalDefaultType(type === 'firewood' ? 'firewood' : 'chemical');
     setIsItemModalOpen(true);
   };
 
@@ -452,7 +452,7 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Boiler Firewood</span>
+            <span>Raw Wood / Firewood</span>
             <Flame className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-black text-amber-600">{firewoodItems.length}</div>
@@ -477,10 +477,8 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
           {/* Tabs */}
           <div className="flex flex-wrap items-center gap-1">
             {[
-              { id: 'general', label: 'General Items', icon: Package, count: filteredGeneralItems.length },
               { id: 'chemical', label: 'Chemical Master', icon: FlaskConical, count: chemicalItems.length },
-              { id: 'firewood', label: 'Firewood Fuel', icon: Flame, count: firewoodItems.length },
-              { id: 'raw_material', label: 'Raw Materials', icon: Boxes, count: rawMaterialItems.length },
+              { id: 'firewood', label: 'Raw Wood', icon: Flame, count: firewoodItems.length },
               { id: 'categories', label: 'Categories', icon: Tag, count: categories.length },
               { id: 'units', label: 'Units (UOM)', icon: Scale, count: units.length },
               { id: 'inactive', label: 'Inactive / Retired', icon: Archive, count: inactiveItems.length },
@@ -517,32 +515,14 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
           {/* Quick Creation Buttons */}
           {isAdminOrManager && (
             <div className="flex items-center gap-2 shrink-0">
-              {activeTab === 'chemical' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => handleAddNewItem('chemical')}
-                >
-                  New Chemical
-                </Button>
-              ) : activeTab === 'firewood' ? (
+              {activeTab === 'firewood' ? (
                 <Button
                   variant="primary"
                   size="sm"
                   icon={<Plus className="w-4 h-4" />}
                   onClick={() => handleAddNewItem('firewood')}
                 >
-                  New Firewood
-                </Button>
-              ) : activeTab === 'raw_material' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => handleAddNewItem('raw_material')}
-                >
-                  New Raw Material
+                  New Raw Wood
                 </Button>
               ) : activeTab === 'categories' ? (
                 <Button
@@ -566,16 +546,16 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
                     setIsUnitModalOpen(true);
                   }}
                 >
-                  New Unit
+                  New Unit of Measure
                 </Button>
               ) : (
                 <Button
                   variant="primary"
                   size="sm"
                   icon={<Plus className="w-4 h-4" />}
-                  onClick={() => handleAddNewItem('general')}
+                  onClick={() => handleAddNewItem('chemical')}
                 >
-                  Add Master Item
+                  New Chemical
                 </Button>
               )}
             </div>
