@@ -3,53 +3,31 @@ import {
   MasterItem,
   ItemCategoryRecord,
   UnitOfMeasure,
-  ItemType,
-  ItemFilterOptions
+  ItemType
 } from '../../types/item';
-import { Vendor } from '../../types/vendor';
 import { ItemService } from '../../services/itemService';
-import { VendorService } from '../../services/vendorService';
 import { useAuth } from '../../context/AuthContext';
 import { Table, Column } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { StatusChip } from '../../components/ui/StatusChip';
-import { formatCurrency } from '../../utils/formatters';
 import { ItemModal } from './components/ItemModal';
 import { ItemDetailsModal } from './components/ItemDetailsModal';
-import { CategoryModal } from './components/CategoryModal';
-import { UnitModal } from './components/UnitModal';
-import { ChemicalMasterView } from './components/ChemicalMasterView';
-import { FirewoodMasterView } from './components/FirewoodMasterView';
-import { RawMaterialMasterView } from './components/RawMaterialMasterView';
-import { CategoriesView } from './components/CategoriesView';
-import { UnitsView } from './components/UnitsView';
-import { AuditHistoryView } from './components/AuditHistoryView';
 import {
-  Package,
   FlaskConical,
   Flame,
-  Boxes,
-  Tag,
-  Scale,
-  History,
-  Archive,
   Search,
   Plus,
-  Filter,
   Eye,
   Edit2,
   RotateCcw,
   AlertTriangle,
-  Warehouse,
-  CheckCircle2
+  CheckCircle2,
+  Package,
+  Trash2,
+  Archive
 } from 'lucide-react';
 
-interface ItemMasterPageProps {
-  items?: any;
-  onAddItem?: any;
-}
-
-export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
+export const ItemMasterPage: React.FC = () => {
   const { user, isDemoMode } = useAuth();
   const userRole = (user as any)?.role || 'Admin';
   const isAdminOrManager = userRole === 'Admin' || userRole === 'admin' || userRole === 'Manager' || userRole === 'manager';
@@ -59,22 +37,17 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
     displayName: (user as any)?.displayName || (user as any)?.name || 'Authorized Staff'
   };
 
-  // Active Tab:
-  // 'chemical' | 'firewood' | 'categories' | 'units' | 'inactive' | 'history'
-  const [activeTab, setActiveTab] = useState<string>('chemical');
-
   // Core Data State
   const [items, setItems] = useState<MasterItem[]>([]);
   const [categories, setCategories] = useState<ItemCategoryRecord[]>([]);
   const [units, setUnits] = useState<UnitOfMeasure[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedType, setSelectedType] = useState<ItemType | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'chemical' | 'firewood'>('all');
   const [lowStockFilter, setLowStockFilter] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive'>('active');
 
   // Modals State
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -84,12 +57,6 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedItemForView, setSelectedItemForView] = useState<MasterItem | null>(null);
 
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [selectedCategoryForEdit, setSelectedCategoryForEdit] = useState<ItemCategoryRecord | null>(null);
-
-  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
-  const [selectedUnitForEdit, setSelectedUnitForEdit] = useState<UnitOfMeasure | null>(null);
-
   // Toast notification
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const showToast = (type: 'success' | 'error', message: string) => {
@@ -97,20 +64,18 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Initial load
+  // Load items, categories and units
   const loadMasterData = useCallback(async () => {
     try {
       setLoading(true);
-      const [itemsRes, catRes, unitRes, vendorRes] = await Promise.all([
-        ItemService.getItems({}, { page: 1, pageSize: 500 }, isDemoMode),
+      const [itemsRes, catRes, unitRes] = await Promise.all([
+        ItemService.getItems({}, { page: 1, pageSize: 1000 }, isDemoMode),
         ItemService.getCategories(isDemoMode),
-        ItemService.getUnitsOfMeasure(isDemoMode),
-        VendorService.getVendors({}, { page: 1, pageSize: 200 }, isDemoMode)
+        ItemService.getUnitsOfMeasure(isDemoMode)
       ]);
       setItems(itemsRes.items || []);
       setCategories(catRes || []);
       setUnits(unitRes || []);
-      setVendors(vendorRes.vendors || []);
     } catch (err) {
       console.warn('Failed to load item master data:', err);
     } finally {
@@ -122,9 +87,41 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
     loadMasterData();
   }, [loadMasterData]);
 
-  // Derived filtered items for General tab
-  const filteredGeneralItems = useMemo(() => {
-    let list = items.filter((i) => i.status === 'active');
+  // Derived counts
+  const chemicalItemsCount = useMemo(
+    () => items.filter((i) => i.itemType === 'chemical' && i.status === 'active').length,
+    [items]
+  );
+  const firewoodItemsCount = useMemo(
+    () => items.filter((i) => i.itemType === 'firewood' && i.status === 'active').length,
+    [items]
+  );
+  const totalActiveCount = useMemo(
+    () => items.filter((i) => i.status === 'active').length,
+    [items]
+  );
+  const lowStockCount = useMemo(
+    () => items.filter((i) => (i.currentStock || 0) <= (i.minimumStockLevel || 0) && i.status === 'active').length,
+    [items]
+  );
+
+  // Filtered Items for Single Table View
+  const filteredItems = useMemo(() => {
+    let list = [...items];
+
+    if (statusFilter === 'active') {
+      list = list.filter((i) => i.status === 'active');
+    } else if (statusFilter === 'inactive') {
+      list = list.filter((i) => i.status === 'inactive');
+    }
+
+    if (typeFilter !== 'all') {
+      list = list.filter((i) => i.itemType === typeFilter);
+    }
+
+    if (lowStockFilter) {
+      list = list.filter((i) => (i.currentStock || 0) <= (i.minimumStockLevel || 0));
+    }
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
@@ -133,41 +130,14 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
           it.itemName?.toLowerCase().includes(q) ||
           it.itemCode?.toLowerCase().includes(q) ||
           it.categoryName?.toLowerCase().includes(q) ||
-          it.preferredSupplierName?.toLowerCase().includes(q)
+          it.description?.toLowerCase().includes(q)
       );
     }
 
-    if (selectedCategory !== 'all') {
-      list = list.filter((it) => it.categoryId === selectedCategory);
-    }
-
-    if (selectedType !== 'all') {
-      list = list.filter((it) => it.itemType === selectedType);
-    }
-
-    if (lowStockFilter) {
-      list = list.filter((it) => (it.currentStock || 0) <= (it.reorderLevel || 0));
-    }
-
     return list;
-  }, [items, searchQuery, selectedCategory, selectedType, lowStockFilter]);
+  }, [items, statusFilter, typeFilter, lowStockFilter, searchQuery]);
 
-  // Subset arrays
-  const chemicalItems = useMemo(
-    () => items.filter((i) => i.itemType === 'chemical' && i.status === 'active'),
-    [items]
-  );
-  const firewoodItems = useMemo(
-    () => items.filter((i) => i.itemType === 'firewood' && i.status === 'active'),
-    [items]
-  );
-  const rawMaterialItems = useMemo(
-    () => items.filter((i) => (i.itemType === 'raw_material' || i.itemType === 'packing') && i.status === 'active'),
-    [items]
-  );
-  const inactiveItems = useMemo(() => items.filter((i) => i.status === 'inactive'), [items]);
-
-  // Quick Open Modal Helpers
+  // Modal Handlers
   const handleAddNewItem = (type: ItemType = 'chemical') => {
     setSelectedItemForEdit(null);
     setItemModalDefaultType(type === 'firewood' ? 'firewood' : 'chemical');
@@ -221,199 +191,157 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
     }
   };
 
-  const handleToggleCategory = async (cat: ItemCategoryRecord) => {
-    const newStatus = cat.status === 'active' ? 'inactive' : 'active';
+  const handleDeleteItem = async (item: MasterItem) => {
+    if (!window.confirm(`Are you sure you want to permanently delete '${item.itemName}' (${item.itemCode})?`)) return;
     try {
-      const updated = await ItemService.updateCategory(cat.id, { status: newStatus }, isDemoMode);
-      setCategories((prev) => prev.map((c) => (c.id === cat.id ? updated : c)));
-      showToast('success', `Category '${cat.categoryName}' marked as ${newStatus}.`);
+      await ItemService.deleteItem(item.id, isDemoMode);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      showToast('success', `Item '${item.itemCode}' deleted successfully.`);
     } catch (err: any) {
-      showToast('error', err?.message || 'Failed to update category status.');
+      showToast('error', err?.message || 'Failed to delete item.');
     }
   };
 
-  const handleDeleteCategory = async (cat: ItemCategoryRecord) => {
-    try {
-      await ItemService.deleteCategory(cat.id, isDemoMode);
-      setCategories((prev) => prev.filter((c) => c.id !== cat.id && c.categoryId !== cat.categoryId));
-      showToast('success', `Category '${cat.categoryName}' deleted successfully.`);
-    } catch (err: any) {
-      showToast('error', err?.message || 'Failed to delete category.');
-    }
-  };
-
-  const handleToggleUnit = async (uom: UnitOfMeasure) => {
-    const newStatus = uom.status === 'active' ? 'inactive' : 'active';
-    try {
-      const updated = await ItemService.updateUnitOfMeasure(uom.id, { status: newStatus }, isDemoMode);
-      setUnits((prev) => prev.map((u) => (u.id === uom.id ? updated : u)));
-      showToast('success', `Unit '${uom.unitName}' marked as ${newStatus}.`);
-    } catch (err: any) {
-      showToast('error', err?.message || 'Failed to update unit status.');
-    }
-  };
-
-  const handleDeleteUnit = async (uom: UnitOfMeasure) => {
-    try {
-      await ItemService.deleteUnitOfMeasure(uom.id, isDemoMode);
-      setUnits((prev) => prev.filter((u) => u.id !== uom.id && u.unitId !== uom.unitId));
-      showToast('success', `Unit '${uom.unitName}' deleted successfully.`);
-    } catch (err: any) {
-      showToast('error', err?.message || 'Failed to delete unit.');
-    }
-  };
-
-  // General Items Table Columns
-  const generalColumns: Column<MasterItem>[] = [
+  // Table Columns
+  const columns: Column<MasterItem>[] = [
     {
       header: 'Item Code',
       accessor: (row) => (
         <div>
           <span className="font-bold text-[#1F4E79] font-mono text-xs">{row.itemCode}</span>
-          <span className="text-[11px] text-slate-400 block">{row.categoryName}</span>
         </div>
       )
     },
     {
-      header: 'Item Name',
+      header: 'Full Item / Material Name',
       accessor: (row) => (
         <div>
           <span className="font-bold text-slate-900 block text-xs">{row.itemName}</span>
-          {row.description && <span className="text-[11px] text-slate-400 line-clamp-1">{row.description}</span>}
+          {row.description && (
+            <span className="text-[11px] text-slate-400 line-clamp-1">{row.description}</span>
+          )}
         </div>
       )
     },
     {
       header: 'Classification',
       accessor: (row) => {
-        const typeLabels: Record<ItemType, { label: string; icon: any; color: string }> = {
-          chemical: { label: 'Chemical', icon: FlaskConical, color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
-          firewood: { label: 'Firewood', icon: Flame, color: 'text-amber-700 bg-amber-50 border-amber-200' },
-          raw_material: { label: 'Raw Material', icon: Boxes, color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-          packing: { label: 'Packaging', icon: Package, color: 'text-blue-700 bg-blue-50 border-blue-200' },
-          consumable: { label: 'Consumable', icon: Package, color: 'text-slate-700 bg-slate-50 border-slate-200' },
-          maintenance: { label: 'Maintenance', icon: Package, color: 'text-slate-700 bg-slate-50 border-slate-200' },
-          general: { label: 'General', icon: Package, color: 'text-slate-700 bg-slate-50 border-slate-200' },
-          other: { label: 'Other', icon: Package, color: 'text-slate-700 bg-slate-50 border-slate-200' }
-        };
-        const config = typeLabels[row.itemType] || typeLabels.general;
-        const Icon = config.icon;
+        const isWood = row.itemType === 'firewood';
         return (
-          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold border ${config.color}`}>
-            <Icon className="w-3 h-3" />
-            <span>{config.label}</span>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+              isWood
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+            }`}
+          >
+            {isWood ? <Flame className="w-3.5 h-3.5 text-amber-600" /> : <FlaskConical className="w-3.5 h-3.5 text-indigo-600" />}
+            <span>{isWood ? 'Raw Wood' : 'Chemical'}</span>
           </span>
         );
       }
     },
     {
-      header: 'Base UOM',
-      accessor: (row) => <span className="font-bold text-slate-800 text-xs">{row.baseUnit}</span>
-    },
-    {
-      header: 'Standard Rate',
+      header: 'Category',
       accessor: (row) => (
-        <span className="font-bold text-slate-800 text-xs">
-          {row.defaultPurchaseRate ? formatCurrency(row.defaultPurchaseRate) : 'N/A'}
+        <span className="text-xs text-slate-700 font-medium">
+          {row.categoryName || 'General'}
         </span>
       )
     },
     {
-      header: 'Warehouse Stock',
+      header: 'Base UOM',
+      accessor: (row) => (
+        <span className="font-mono font-bold text-slate-800 text-xs uppercase">
+          {row.baseUnit}
+        </span>
+      )
+    },
+    {
+      header: 'Min Stock',
+      accessor: (row) => (
+        <span className="text-xs text-slate-600 font-mono">
+          {row.minimumStockLevel !== undefined ? row.minimumStockLevel : 0} {row.baseUnit}
+        </span>
+      )
+    },
+    {
+      header: 'Current Stock',
       accessor: (row) => {
-        const isLow = (row.currentStock || 0) <= (row.reorderLevel || 0);
+        const isLow = (row.currentStock || 0) <= (row.minimumStockLevel || 0);
         return (
-          <div>
-            <span className={`text-xs font-black ${isLow ? 'text-amber-600' : 'text-emerald-700'}`}>
-              {row.currentStock || 0} {row.baseUnit}
-            </span>
-            <span className="text-[11px] text-slate-400 block">Reorder: {row.reorderLevel}</span>
-          </div>
+          <span
+            className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${
+              isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {row.currentStock || 0} {row.baseUnit}
+          </span>
         );
       }
     },
     {
-      header: 'Preferred Supplier',
+      header: 'Status',
       accessor: (row) => (
-        <span className="text-xs text-slate-600 font-medium">
-          {row.preferredSupplierName || 'Direct Vendor'}
-        </span>
+        <StatusChip
+          status={row.status === 'active' ? 'Active' : 'Inactive'}
+          variant={row.status === 'active' ? 'green' : 'slate'}
+        />
       )
     },
     {
       header: 'Actions',
       accessor: (row) => (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => handleViewItem(row)}
             className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 transition-colors"
-            title="View Specifications"
+            title="View Details"
           >
             <Eye className="w-4 h-4" />
           </button>
           {isAdminOrManager && (
-            <button
-              onClick={() => handleEditItem(row)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-              title="Edit Specifications"
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
+            <>
+              <button
+                onClick={() => handleEditItem(row)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                title="Edit Item"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              {row.status === 'active' ? (
+                <button
+                  onClick={() => handleDeactivate(row)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  title="Deactivate Item"
+                >
+                  <Archive className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleReactivate(row)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  title="Reactivate Item"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={() => handleDeleteItem(row)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                title="Delete Item"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
           )}
         </div>
       )
     }
   ];
 
-  // Inactive Items Table Columns
-  const inactiveColumns: Column<MasterItem>[] = [
-    {
-      header: 'Item Code',
-      accessor: (row) => (
-        <span className="font-bold text-slate-500 font-mono text-xs">{row.itemCode}</span>
-      )
-    },
-    {
-      header: 'Item Name',
-      accessor: (row) => (
-        <div>
-          <span className="font-bold text-slate-700 block text-xs">{row.itemName}</span>
-          <span className="text-[11px] text-slate-400">{row.categoryName}</span>
-        </div>
-      )
-    },
-    {
-      header: 'Base UOM',
-      accessor: (row) => <span className="text-xs text-slate-500">{row.baseUnit}</span>
-    },
-    {
-      header: 'Deactivation Reason',
-      accessor: (row) => (
-        <span className="text-xs text-rose-600 font-medium italic">
-          {row.remarks || 'Retired from active catalogue'}
-        </span>
-      )
-    },
-    {
-      header: 'Actions',
-      accessor: (row) => (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleReactivate(row)}
-            icon={<RotateCcw className="w-3.5 h-3.5" />}
-            className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-          >
-            Reactivate Item
-          </Button>
-        </div>
-      )
-    }
-  ];
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Toast Notification */}
       {toast && (
         <div
@@ -428,263 +356,180 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
         </div>
       )}
 
-      {/* Top Banner & KPI Strip */}
+      {/* Top Banner KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Active Master Items</span>
+            <span>Total Active</span>
             <Package className="w-4 h-4 text-[#1F4E79]" />
           </div>
-          <div className="text-2xl font-black text-slate-900">
-            {items.filter((i) => i.status === 'active').length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Across all factory operations</div>
+          <div className="text-2xl font-black text-slate-900">{totalActiveCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Master items registered</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Chemical Master</span>
+            <span>Chemicals</span>
             <FlaskConical className="w-4 h-4 text-indigo-600" />
           </div>
-          <div className="text-2xl font-black text-indigo-700">{chemicalItems.length}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Processing dyes & auxiliaries</div>
+          <div className="text-2xl font-black text-indigo-700">{chemicalItemsCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Processing chemicals & dyes</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Raw Wood / Firewood</span>
+            <span>Raw Wood</span>
             <Flame className="w-4 h-4 text-amber-600" />
           </div>
-          <div className="text-2xl font-black text-amber-600">{firewoodItems.length}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Weighbridge thermal fuels</div>
+          <div className="text-2xl font-black text-amber-600">{firewoodItemsCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Boiler fuel supplies</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Reorder Alerts</span>
+            <span>Low Stock</span>
             <AlertTriangle className="w-4 h-4 text-rose-500" />
           </div>
-          <div className="text-2xl font-black text-rose-600">
-            {items.filter((i) => (i.currentStock || 0) <= (i.reorderLevel || 0) && i.status === 'active').length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Items needing replenishment</div>
+          <div className="text-2xl font-black text-rose-600">{lowStockCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">At or below min stock</div>
         </div>
       </div>
 
-      {/* Main Tab Bar & Action Controls */}
+      {/* Main Container: Controls & Single Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border-b border-slate-200 gap-4">
-          {/* Tabs */}
-          <div className="flex flex-wrap items-center gap-1">
-            {[
-              { id: 'chemical', label: 'Chemical Master', icon: FlaskConical, count: chemicalItems.length },
-              { id: 'firewood', label: 'Raw Wood', icon: Flame, count: firewoodItems.length },
-              { id: 'categories', label: 'Categories', icon: Tag, count: categories.length },
-              { id: 'units', label: 'Units (UOM)', icon: Scale, count: units.length },
-              { id: 'inactive', label: 'Inactive / Retired', icon: Archive, count: inactiveItems.length },
-              { id: 'history', label: 'Audit Trail', icon: History }
-            ].map((t) => {
-              const Icon = t.icon;
-              const isActive = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                    isActive
-                      ? 'bg-[#EEF5FB] text-[#1F4E79] shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{t.label}</span>
-                  {t.count !== undefined && (
-                    <span
-                      className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] ${
-                        isActive ? 'bg-[#1F4E79] text-white' : 'bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {t.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        {/* Controls Toolbar: Search, Filters, and New Item buttons */}
+        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/50">
+          {/* Left: Search & Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search name or code..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79]"
+              />
+            </div>
+
+            {/* Classification Filter Buttons */}
+            <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-white">
+              <button
+                type="button"
+                onClick={() => setTypeFilter('all')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  typeFilter === 'all'
+                    ? 'bg-[#1F4E79] text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All ({items.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter('chemical')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  typeFilter === 'chemical'
+                    ? 'bg-indigo-700 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FlaskConical className="w-3.5 h-3.5" />
+                <span>Chemicals ({chemicalItemsCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter('firewood')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  typeFilter === 'firewood'
+                    ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Raw Wood ({firewoodItemsCount})</span>
+              </button>
+            </div>
+
+            {/* Low Stock Filter */}
+            <button
+              type="button"
+              onClick={() => setLowStockFilter(!lowStockFilter)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                lowStockFilter
+                  ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-2xs font-bold'
+                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Low Stock</span>
+            </button>
+
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
+            >
+              <option value="active">Active Only</option>
+              <option value="all">All Statuses</option>
+              <option value="inactive">Inactive / Retired</option>
+            </select>
           </div>
 
-          {/* Quick Creation Buttons */}
+          {/* Right: Quick Creation Buttons */}
           {isAdminOrManager && (
             <div className="flex items-center gap-2 shrink-0">
-              {activeTab === 'firewood' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => handleAddNewItem('firewood')}
-                >
-                  New Raw Wood
-                </Button>
-              ) : activeTab === 'categories' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => {
-                    setSelectedCategoryForEdit(null);
-                    setIsCategoryModalOpen(true);
-                  }}
-                >
-                  New Category
-                </Button>
-              ) : activeTab === 'units' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => {
-                    setSelectedUnitForEdit(null);
-                    setIsUnitModalOpen(true);
-                  }}
-                >
-                  New Unit of Measure
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => handleAddNewItem('chemical')}
-                >
-                  New Chemical
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Flame className="w-3.5 h-3.5 text-amber-600" />}
+                onClick={() => handleAddNewItem('firewood')}
+              >
+                + New Raw Wood
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={() => handleAddNewItem('chemical')}
+              >
+                + New Chemical
+              </Button>
             </div>
           )}
         </div>
 
-        {/* Filters for General Tab */}
-        {activeTab === 'general' && (
-          <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search item code, name, category, or supplier..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-[#1F4E79]/20"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-              >
-                <option value="all">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.categoryId} value={c.categoryId}>
-                    {c.categoryName}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value as any)}
-                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-              >
-                <option value="all">All Item Types</option>
-                <option value="chemical">Chemicals</option>
-                <option value="firewood">Boiler Firewood</option>
-                <option value="raw_material">Raw Materials</option>
-                <option value="packing">Packaging</option>
-                <option value="consumable">Consumables</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={() => setLowStockFilter(!lowStockFilter)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                  lowStockFilter
-                    ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-2xs'
-                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Low Stock Only</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Tab Content Display */}
+        {/* Single Table View */}
         <div className="p-4">
           {loading ? (
-            <div className="py-16 text-center text-xs text-slate-400">Loading master directory...</div>
-          ) : activeTab === 'general' ? (
-            <Table columns={generalColumns} data={filteredGeneralItems} keyExtractor={(row) => row.id} />
-          ) : activeTab === 'chemical' ? (
-            <ChemicalMasterView
-              chemicals={chemicalItems}
-              onViewItem={handleViewItem}
-              onEditItem={handleEditItem}
-              onAddNew={() => handleAddNewItem('chemical')}
-              isAdminOrManager={isAdminOrManager}
-            />
-          ) : activeTab === 'firewood' ? (
-            <FirewoodMasterView
-              firewoodItems={firewoodItems}
-              onViewItem={handleViewItem}
-              onEditItem={handleEditItem}
-              onAddNew={() => handleAddNewItem('firewood')}
-              isAdminOrManager={isAdminOrManager}
-            />
-          ) : activeTab === 'raw_material' ? (
-            <RawMaterialMasterView
-              rawMaterialItems={rawMaterialItems}
-              onViewItem={handleViewItem}
-              onEditItem={handleEditItem}
-              onAddNew={() => handleAddNewItem('raw_material')}
-              isAdminOrManager={isAdminOrManager}
-            />
-          ) : activeTab === 'categories' ? (
-            <CategoriesView
-              categories={categories}
-              items={items}
-              onAddCategory={() => {
-                setSelectedCategoryForEdit(null);
-                setIsCategoryModalOpen(true);
-              }}
-              onEditCategory={(cat) => {
-                setSelectedCategoryForEdit(cat);
-                setIsCategoryModalOpen(true);
-              }}
-              onToggleStatus={handleToggleCategory}
-              onDeleteCategory={handleDeleteCategory}
-              isAdminOrManager={isAdminOrManager}
-            />
-          ) : activeTab === 'units' ? (
-            <UnitsView
-              units={units}
-              onAddUnit={() => {
-                setSelectedUnitForEdit(null);
-                setIsUnitModalOpen(true);
-              }}
-              onEditUnit={(uom) => {
-                setSelectedUnitForEdit(uom);
-                setIsUnitModalOpen(true);
-              }}
-              onToggleStatus={handleToggleUnit}
-              onDeleteUnit={handleDeleteUnit}
-              isAdminOrManager={isAdminOrManager}
-            />
-          ) : activeTab === 'inactive' ? (
-            <Table columns={inactiveColumns} data={inactiveItems} keyExtractor={(row) => row.id} />
-          ) : activeTab === 'history' ? (
-            <AuditHistoryView />
-          ) : null}
+            <div className="py-16 text-center text-xs text-slate-400">Loading master items...</div>
+          ) : filteredItems.length === 0 ? (
+            <div className="py-16 text-center">
+              <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-700">No master items found</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                {searchQuery || typeFilter !== 'all' || lowStockFilter
+                  ? 'Try clearing your search query or filters.'
+                  : 'Get started by creating your first Chemical or Raw Wood item.'}
+              </p>
+              {isAdminOrManager && (
+                <div className="mt-4 flex justify-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<Plus className="w-4 h-4" />}
+                    onClick={() => handleAddNewItem(typeFilter === 'firewood' ? 'firewood' : 'chemical')}
+                  >
+                    Add {typeFilter === 'firewood' ? 'Raw Wood' : 'Chemical'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Table columns={columns} data={filteredItems} keyExtractor={(row) => row.id} />
+          )}
         </div>
       </div>
 
@@ -697,7 +542,6 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
         defaultType={itemModalDefaultType}
         categories={categories}
         units={units}
-        vendors={vendors}
         currentUser={currentUser}
       />
 
@@ -710,46 +554,6 @@ export const ItemMasterPage: React.FC<ItemMasterPageProps> = () => {
         onDeactivate={handleDeactivate}
         onReactivate={handleReactivate}
         isAdminOrManager={isAdminOrManager}
-      />
-
-      {/* Category Modal */}
-      <CategoryModal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        onSaved={(cat) => {
-          setCategories((prev) => {
-            const idx = prev.findIndex((c) => c.id === cat.id);
-            if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = cat;
-              return copy;
-            }
-            return [...prev, cat];
-          });
-          showToast('success', `Category '${cat.categoryName}' saved.`);
-        }}
-        initialCategory={selectedCategoryForEdit}
-        currentUser={currentUser}
-      />
-
-      {/* Unit Modal */}
-      <UnitModal
-        isOpen={isUnitModalOpen}
-        onClose={() => setIsUnitModalOpen(false)}
-        onSaved={(uom) => {
-          setUnits((prev) => {
-            const idx = prev.findIndex((u) => u.id === uom.id);
-            if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = uom;
-              return copy;
-            }
-            return [...prev, uom];
-          });
-          showToast('success', `Unit of Measure '${uom.unitName}' saved.`);
-        }}
-        initialUnit={selectedUnitForEdit}
-        currentUser={currentUser}
       />
     </div>
   );
