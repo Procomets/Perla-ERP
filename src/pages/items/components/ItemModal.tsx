@@ -46,6 +46,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
   const [baseUnit, setBaseUnit] = useState(initialItem?.baseUnit || (effectiveDefaultType === 'firewood' ? 't' : 'kg'));
   const [minimumStockLevel, setMinimumStockLevel] = useState<number>(initialItem?.minimumStockLevel || 0);
   const [description, setDescription] = useState(initialItem?.description || '');
+  const [status, setStatus] = useState<'active' | 'inactive'>(initialItem?.status || 'active');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +97,14 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setDescription(initialItem.description || '');
       setBaseUnit(initialItem.baseUnit);
       setMinimumStockLevel(initialItem.minimumStockLevel || 0);
+      setStatus(initialItem.status || 'active');
     } else {
       const initType = defaultType === 'firewood' ? 'firewood' : 'chemical';
       setItemType(initType);
       setItemName('');
       setDescription('');
       setMinimumStockLevel(0);
+      setStatus('active');
 
       // Auto-assign category matching type
       const matchedCat = effectiveCategories.find((c) => {
@@ -178,6 +181,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
         categoryId,
         categoryName: selectedCat?.categoryName || (itemType === 'chemical' ? 'Chemicals' : 'Firewood & Boiler Fuel'),
         itemType,
+        status,
         description: description.trim() || undefined,
         baseUnitId: `uom_${baseUnit.toLowerCase().trim()}`,
         baseUnit: baseUnit.trim(),
@@ -202,7 +206,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           reorderLevel: Number(minimumStockLevel) || 0,
           batchTrackingRequired: true,
           expiryTrackingRequired: false,
-          active: true,
+          active: status === 'active',
           createdAt: initialItem?.chemicalDetails?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -366,7 +370,40 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           </div>
         </div>
 
-        {/* 5. General Description & Purpose (Full width comfortable textarea) */}
+        {/* 5. Status: Active or Not Active */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Item Status (Active or Not Active) <span className="text-red-500">*</span>
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => setStatus('active')}
+              className={`h-11 flex items-center justify-center gap-2.5 px-4 rounded-xl border-2 text-sm font-bold transition-all ${
+                status === 'active'
+                  ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-sm ring-2 ring-emerald-500/20'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${status === 'active' ? 'bg-emerald-600' : 'bg-slate-300'}`} />
+              <span>Active</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatus('inactive')}
+              className={`h-11 flex items-center justify-center gap-2.5 px-4 rounded-xl border-2 text-sm font-bold transition-all ${
+                status === 'inactive'
+                  ? 'bg-rose-50 border-rose-600 text-rose-800 shadow-sm ring-2 ring-rose-500/20'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${status === 'inactive' ? 'bg-rose-600' : 'bg-slate-300'}`} />
+              <span>Not Active (Inactive)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 6. General Description & Purpose (Full width comfortable textarea) */}
         <div className="space-y-1.5">
           <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
             General Description & Purpose

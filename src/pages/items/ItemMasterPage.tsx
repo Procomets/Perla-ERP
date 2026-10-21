@@ -169,10 +169,9 @@ export const ItemMasterPage: React.FC = () => {
   };
 
   const handleDeactivate = async (item: MasterItem) => {
-    const reason = window.prompt(`Confirm deactivation for '${item.itemName}' (${item.itemCode}). Enter reason (optional):`);
-    if (reason === null) return;
+    if (!window.confirm(`Are you sure you want to deactivate '${item.itemName}' (${item.itemCode})?`)) return;
     try {
-      const updated = await ItemService.deactivateItem(item.id, reason, currentUser, isDemoMode);
+      const updated = await ItemService.deactivateItem(item.id, 'Deactivated from Item Master table', currentUser, isDemoMode);
       setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
       showToast('success', `Item '${item.itemCode}' has been deactivated.`);
     } catch (err: any) {
@@ -192,7 +191,7 @@ export const ItemMasterPage: React.FC = () => {
   };
 
   const handleDeleteItem = async (item: MasterItem) => {
-    if (!window.confirm(`Are you sure you want to permanently delete '${item.itemName}' (${item.itemCode})?`)) return;
+    if (!window.confirm(`Are you sure you want to permanently delete '${item.itemName}' (${item.itemCode})? This action cannot be undone.`)) return;
     try {
       await ItemService.deleteItem(item.id, isDemoMode);
       setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -292,7 +291,8 @@ export const ItemMasterPage: React.FC = () => {
     {
       header: 'Actions',
       accessor: (row) => (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          {/* View Details */}
           <button
             onClick={() => handleViewItem(row)}
             className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 transition-colors"
@@ -300,41 +300,47 @@ export const ItemMasterPage: React.FC = () => {
           >
             <Eye className="w-4 h-4" />
           </button>
-          {isAdminOrManager && (
-            <>
-              <button
-                onClick={() => handleEditItem(row)}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                title="Edit Item"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-              {row.status === 'active' ? (
-                <button
-                  onClick={() => handleDeactivate(row)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                  title="Deactivate Item"
-                >
-                  <Archive className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleReactivate(row)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                  title="Reactivate Item"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                onClick={() => handleDeleteItem(row)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                title="Delete Item"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </>
+
+          {/* Edit */}
+          <button
+            onClick={() => handleEditItem(row)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs"
+            title="Edit Item"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>Edit</span>
+          </button>
+
+          {/* Deactivate / Reactivate */}
+          {row.status === 'active' ? (
+            <button
+              onClick={() => handleDeactivate(row)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs"
+              title="Deactivate Item"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>Deactivate</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleReactivate(row)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs"
+              title="Reactivate Item"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reactivate</span>
+            </button>
           )}
+
+          {/* Delete */}
+          <button
+            onClick={() => handleDeleteItem(row)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs"
+            title="Delete Item"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete</span>
+          </button>
         </div>
       )
     }
