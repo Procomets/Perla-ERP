@@ -11,7 +11,6 @@ import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/
 import {
   ArrowLeft,
   CheckCircle2,
-  FileClock,
   AlertTriangle,
   Info,
   Truck,
@@ -27,7 +26,7 @@ interface OutwardFormProps {
   inwards?: InwardEntry[];
   outwards?: OutwardEntry[];
   initialOutward?: OutwardEntry | null;
-  onSaveDraft: (data: any) => Promise<void>;
+  onSaveDraft?: (data: any) => Promise<void>;
   onPostOutward: (data: any) => Promise<void>;
   onCancel: () => void;
   isSaving: boolean;
@@ -686,16 +685,6 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     };
   };
 
-  const handleSaveDraftClick = async () => {
-    try {
-      setValidationError(null);
-      const data = preparePayload();
-      await onSaveDraft(data);
-    } catch (err: any) {
-      setValidationError(err.message || 'Failed to save draft outward entry.');
-    }
-  };
-
   const handlePostClick = async () => {
     try {
       setValidationError(null);
@@ -746,16 +735,6 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
             Cancel
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSaveDraftClick}
-            disabled={isSaving}
-            className="text-xs flex items-center gap-1.5 border-slate-300"
-          >
-            <FileClock className="w-3.5 h-3.5" />
-            Save Draft
           </Button>
           <Button
             size="sm"
@@ -1156,16 +1135,6 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       <div className="flex justify-end items-center gap-3 pt-2">
         <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
           Cancel
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSaveDraftClick}
-          disabled={isSaving}
-          className="text-xs flex items-center gap-1.5 border-slate-300"
-        >
-          <FileClock className="w-3.5 h-3.5" />
-          Save Draft
         </Button>
         <Button
           size="sm"

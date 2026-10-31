@@ -14,9 +14,18 @@ export const Input: React.FC<InputProps> = ({
   icon,
   className = '',
   id,
+  type,
+  onKeyDown,
   ...props
 }) => {
   const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (type === 'number' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+    }
+    onKeyDown?.(e);
+  };
 
   return (
     <div className="w-full space-y-1">
@@ -33,6 +42,8 @@ export const Input: React.FC<InputProps> = ({
         )}
         <input
           id={inputId}
+          type={type}
+          onKeyDown={handleKeyDown}
           className={`w-full bg-white border ${
             error ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-300 focus:ring-[#1F4E79] focus:border-[#1F4E79]'
           } rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition ${

@@ -34,7 +34,7 @@ interface InwardListProps {
   onPageChange: (page: number) => void;
   onNewInward: () => void;
   onViewDetails: (inwardId: string) => void;
-  onPrint: (inwardId: string) => void;
+  onPrint?: (inwardId: string) => void;
   onEdit: (inwardId: string) => void;
   onDelete: (inwardId: string) => void;
   deletableInwardMap?: Record<string, boolean>;
@@ -804,13 +804,6 @@ export const InwardList: React.FC<InwardListProps> = ({
                                 </button>
                               );
                             })()}
-
-                            <button
-                              onClick={() => onPrint(row.inwardId || row.id)}
-                              className="px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded transition-colors"
-                            >
-                              Print
-                            </button>
                           </div>
                         </td>
                       </tr>

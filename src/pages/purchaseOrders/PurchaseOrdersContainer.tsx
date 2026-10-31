@@ -38,12 +38,14 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   onAddPo,
   onUpdatePo
 }) => {
-  const { user, activeRole, isDemoMode } = useAuth();
-  const canManage = activeRole === 'Admin' || activeRole === 'Manager';
+  const { user, activeRole, isDemoMode, canEdit, canDelete } = useAuth();
+  const canManage = activeRole === 'Admin' || activeRole === 'Manager' || canEdit('po');
   const isAdmin =
     activeRole === 'Admin' ||
     (user as any)?.role === 'Admin' ||
-    (user as any)?.role === 'admin';
+    (user as any)?.role === 'admin' ||
+    (user as any)?.designation?.toLowerCase() === 'admin';
+  const canDeletePO = isAdmin || canDelete('po');
 
   // Navigation State
   const [currentView, setCurrentView] = useState<
@@ -70,7 +72,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   });
 
 
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!initialPOs || initialPOs.length === 0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
@@ -81,50 +83,47 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
     amendments: POAmendment[];
   }>({ po: null, logs: [], amendments: [] });
 
-  // Load PO list and metrics
+  // Load PO list and metrics in parallel
   const loadData = async () => {
-    setLoading(true);
+    // Only show full loading spinner if we don't have any data yet
+    if (pos.length === 0 && (!initialPOs || initialPOs.length === 0)) {
+      setLoading(true);
+    }
     try {
-      // Load POs
-      const poResult = await POService.getPurchaseOrders(
-        filters,
-        { page: pagination.page, pageSize: pagination.pageSize },
-        isDemoMode
-      );
+      // Execute all independent network queries concurrently via Promise.all
+      const [poResult, vResult, inwResult, outResult, lockMap] = await Promise.all([
+        POService.getPurchaseOrders(
+          filters,
+          { page: pagination.page, pageSize: pagination.pageSize },
+          isDemoMode
+        ),
+        VendorService.getVendors(
+          {},
+          { page: 1, pageSize: 500 },
+          isDemoMode
+        ),
+        InwardService.getInwardEntries(
+          {},
+          { page: 1, pageSize: 1000 },
+          isDemoMode
+        ),
+        OutwardService.getOutwardEntries(
+          {},
+          { page: 1, pageSize: 1000 },
+          isDemoMode
+        ),
+        POLockService.getLockedPOMap(isDemoMode).catch((lockErr) => {
+          console.warn('Error loading PO lock map:', lockErr);
+          return {};
+        })
+      ]);
+
       setPos(poResult.pos);
       setPagination(poResult.pagination);
-
-      // Load latest live Vendors from Vendor Master
-      const vResult = await VendorService.getVendors(
-        {},
-        { page: 1, pageSize: 500 },
-        isDemoMode
-      );
       setVendors(vResult.vendors || []);
-
-      // Load latest live Inward receipts
-      const inwResult = await InwardService.getInwardEntries(
-        {},
-        { page: 1, pageSize: 1000 },
-        isDemoMode
-      );
       setInwardsList(inwResult.inwards || []);
-
-      // Load latest live Outward dispatches
-      const outResult = await OutwardService.getOutwardEntries(
-        {},
-        { page: 1, pageSize: 1000 },
-        isDemoMode
-      );
       setOutwardsList(outResult.outwards || []);
-
-      // Load PO lock map based on statement approvals & invoices
-      try {
-        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
-        setLockedPOMap(lockMap);
-      } catch (lockErr) {
-        console.warn('Error loading PO lock map:', lockErr);
-      }
+      setLockedPOMap(lockMap || {});
     } catch (err) {
       console.error('Error loading PO data:', err);
     } finally {
@@ -139,6 +138,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   useEffect(() => {
     if (initialPOs && initialPOs.length > 0) {
       setPos(initialPOs);
+      setLoading(false);
     }
   }, [initialPOs]);
 
@@ -341,8 +341,8 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   };
 
   const handleDeletePO = async (poId: string) => {
-    if (!isAdmin) {
-      alert('Only administrators can delete purchase orders.');
+    if (!canDeletePO) {
+      alert('You do not have permission to delete purchase orders.');
       return;
     }
     const targetPo = pos.find((p) => p.id === poId || p.poId === poId) || selectedPoDetails.po;

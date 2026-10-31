@@ -21,6 +21,7 @@ export const DEFAULT_INVOICE_SETTINGS: CompanyInvoiceSettings = {
   gstin: '33AMMPK2032Q1ZU',
   pan: 'AMMPK2032Q',
   phone: '044-24781234',
+  dcPhone: '87545 96316',
   email: 'billing@perlatextiles.com',
   bankName: 'STATE BANK OF INDIA',
   bankBranch: 'SIDCO Thirumudivakkam, Chennai',

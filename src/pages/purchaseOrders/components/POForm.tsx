@@ -287,48 +287,68 @@ export const POForm: React.FC<POFormProps> = ({
   }, [allVendors, selectedCustomerId, selectedCustomer]);
 
   // Respective Subcontractors of this Main Company
+  // Helper to check if vendor is the currently selected customer
+  const isCurrentCustomer = (v: Vendor) => {
+    if (!selectedCustomer) return false;
+    const vKey = cleanStr(v.vendorId || v.id || v.vendorCode || v.companyName);
+    const cKey = cleanStr(selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode || selectedCustomer.companyName);
+    if (vKey && cKey && vKey === cKey) return true;
+    if (v.companyName && selectedCustomer.companyName && v.companyName.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase()) return true;
+    return false;
+  };
+
+  // 1. Respective (linked) Subcontractors of this Main Company
   const respectiveSubcontractors = useMemo(() => {
     return respectiveUnits.filter((v) => {
       const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
-      // Subcontractor, supplier, jobwork, or any linked child not strictly a subcompany
       return cat === 'subcontractor' || cat === 'supplier' || cat === 'jobwork' || cat !== 'subcompany';
     });
   }, [respectiveUnits]);
 
-  // Respective Subcompanies of this Main Company
+  // 2. Respective (linked) Subcompanies of this Main Company
   const respectiveSubcompanies = useMemo(() => {
     return respectiveUnits.filter((v) => {
       const cat = String(v.vendorCategory || (v as any).category || '').toLowerCase().replace(/[\s-]+/g, '_');
-      // Subcompany, or any linked child not strictly a subcontractor
       return cat === 'subcompany' || cat === 'sub_company' || cat !== 'subcontractor';
     });
   }, [respectiveUnits]);
 
-  const activeSubUnitList = unitType === 'subcontractor' ? respectiveSubcontractors : respectiveSubcompanies;
+  // Units directly linked to the current company
+  const linkedUnits = unitType === 'subcontractor' ? respectiveSubcontractors : respectiveSubcompanies;
+
+  // 3. All other companies/vendors in the system except the current customer and already linked units
+  const otherCompanies = useMemo(() => {
+    const linkedIds = new Set(linkedUnits.map((u) => u.vendorId || u.id));
+    return allVendors
+      .filter((v) => !isCurrentCustomer(v) && !linkedIds.has(v.vendorId || v.id))
+      .sort((a, b) => (a.companyName || '').localeCompare(b.companyName || ''));
+  }, [allVendors, linkedUnits, selectedCustomer]);
+
+  // All eligible units: linked units first, then all other companies
+  const activeSubUnitList = useMemo(() => {
+    return [...linkedUnits, ...otherCompanies];
+  }, [linkedUnits, otherCompanies]);
 
   const selectedSubUnit = useMemo(() => {
     if (!selectedSubUnitId) return null;
     return allVendors.find((v) => (v.vendorId || v.id) === selectedSubUnitId) || null;
   }, [allVendors, selectedSubUnitId]);
 
-  // When customer changes, verify if selectedSubUnitId belongs to new customer
+  // Auto-selection: when unitType or customer changes, prioritize linked units
   useEffect(() => {
     if (unitType === 'none') {
       setSelectedSubUnitId('');
       return;
     }
-    const currentList = unitType === 'subcontractor' ? respectiveSubcontractors : respectiveSubcompanies;
-    const isCurrentStillRespective = currentList.some(
-      (u) => (u.vendorId || u.id) === selectedSubUnitId
-    );
-    if (!isCurrentStillRespective) {
-      if (currentList.length > 0) {
-        setSelectedSubUnitId(currentList[0].vendorId || currentList[0].id || '');
-      } else {
-        setSelectedSubUnitId('');
-      }
+    // If current selected unit is the customer itself, clear it
+    if (selectedSubUnitId && selectedCustomer && (selectedSubUnitId === selectedCustomer.vendorId || selectedSubUnitId === selectedCustomer.id)) {
+      setSelectedSubUnitId('');
     }
-  }, [selectedCustomerId, unitType, respectiveSubcontractors, respectiveSubcompanies]);
+    // If no unit is currently selected, default to the first linked unit if available
+    if (!selectedSubUnitId && linkedUnits.length > 0) {
+      setSelectedSubUnitId(linkedUnits[0].vendorId || linkedUnits[0].id || '');
+    }
+  }, [selectedCustomerId, unitType, linkedUnits]);
   const [processCategory, setProcessCategory] = useState<ProcessCategory>(
     initialPO?.processCategory || 'washing'
   );
@@ -343,6 +363,12 @@ export const POForm: React.FC<POFormProps> = ({
   );
   const [deliveryDate, setDeliveryDate] = useState<string>(
     initialPO?.deliveryDate || initialPO?.expectedCompletionDate || ''
+  );
+  const [customerPoNumber, setCustomerPoNumber] = useState<string>(
+    initialPO?.customerPoNumber || ''
+  );
+  const [customerPoDate, setCustomerPoDate] = useState<string>(
+    initialPO?.customerPoDate || ''
   );
   const [customerReferenceNo, setCustomerReferenceNo] = useState<string>(
     initialPO?.customerReferenceNo || ''
@@ -717,6 +743,8 @@ export const POForm: React.FC<POFormProps> = ({
       orderDate,
       deliveryDate: deliveryDate || null,
       expectedCompletionDate: deliveryDate || null,
+      customerPoNumber: customerPoNumber.trim() || undefined,
+      customerPoDate: customerPoDate || undefined,
       customerReferenceNo: customerReferenceNo.trim() || undefined,
       customerInstructions: customerInstructions.trim() || undefined,
       internalRemarks: internalRemarks.trim() || undefined,
@@ -972,6 +1000,38 @@ export const POForm: React.FC<POFormProps> = ({
             />
           </div>
 
+          {/* Customer PO Number */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              Customer PO Number
+            </label>
+            <Input
+              placeholder="e.g. Test-CUST-001"
+              value={customerPoNumber}
+              onChange={(e) => setCustomerPoNumber(e.target.value)}
+            />
+            <p className="text-[11px] text-slate-400">
+              Customer's PO reference code
+            </p>
+          </div>
+
+          {/* Customer PO Date */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              Customer PO Date
+            </label>
+            <Input
+              type="date"
+              value={customerPoDate}
+              onChange={(e) => setCustomerPoDate(e.target.value)}
+            />
+            <p className="text-[11px] text-slate-400">
+              Date on customer's purchase order
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
           {/* Order Date */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
@@ -994,6 +1054,18 @@ export const POForm: React.FC<POFormProps> = ({
               type="date"
               value={deliveryDate}
               onChange={(e) => setDeliveryDate(e.target.value)}
+            />
+          </div>
+
+          {/* Customer Reference No */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              Customer Ref / Notes
+            </label>
+            <Input
+              placeholder="Optional reference / remarks"
+              value={customerReferenceNo}
+              onChange={(e) => setCustomerReferenceNo(e.target.value)}
             />
           </div>
         </div>
@@ -1088,22 +1160,48 @@ export const POForm: React.FC<POFormProps> = ({
                 className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
               >
                 <option value="">
-                  {activeSubUnitList.length === 0
-                    ? `-- No ${unitType === 'subcontractor' ? 'Subcontractors' : 'Subcompanies'} linked to ${selectedCustomer?.companyName || 'Main Company'} --`
-                    : `-- Select ${unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'} --`}
+                  -- Select {unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'} --
                 </option>
-                {activeSubUnitList.map((u) => (
-                  <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
-                    {u.companyName} ({u.vendorCode || 'Unit'})
-                  </option>
-                ))}
+
+                {/* 1. First: That company's linked subcompany/subcontractor */}
+                {linkedUnits.length > 0 && (
+                  <optgroup label={`${selectedCustomer?.companyName || 'Company'}'s Linked ${unitType === 'subcontractor' ? 'Subcontractors' : 'Subcompanies'}`}>
+                    {linkedUnits.map((u) => (
+                      <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
+                        ★ {u.companyName} ({u.vendorCode || 'Unit'}) [Linked]
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+
+                {/* 2. Next: All other companies except the current company */}
+                {otherCompanies.length > 0 && (
+                  <optgroup label={`All Other Companies & Units (${otherCompanies.length})`}>
+                    {otherCompanies.map((u) => (
+                      <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
+                        {u.companyName} ({u.vendorCode || 'Unit'}){u.vendorCategory ? ` · ${u.vendorCategory.replace('_', ' ')}` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
 
               {/* Unit snapshot */}
               {selectedSubUnit ? (
                 <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs text-slate-700 space-y-1 shadow-2xs">
                   <div className="font-bold text-[#1F4E79] flex items-center justify-between">
-                    <span>{selectedSubUnit.companyName}</span>
+                    <div className="flex items-center gap-2">
+                      <span>{selectedSubUnit.companyName}</span>
+                      {linkedUnits.some((l) => (l.vendorId || l.id) === (selectedSubUnit.vendorId || selectedSubUnit.id)) ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.2 rounded">
+                          Linked to {selectedCustomer?.companyName}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-slate-100 text-slate-600 font-medium px-1.5 py-0.2 rounded">
+                          Other Company
+                        </span>
+                      )}
+                    </div>
                     <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                       {selectedSubUnit.vendorCode}
                     </span>
@@ -1118,11 +1216,11 @@ export const POForm: React.FC<POFormProps> = ({
                     </div>
                   )}
                 </div>
-              ) : activeSubUnitList.length === 0 ? (
-                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                  No {unitType === 'subcontractor' ? 'subcontractors' : 'subcompanies'} linked to{' '}
+              ) : linkedUnits.length === 0 ? (
+                <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200 text-blue-900 text-xs leading-relaxed">
+                  Notice: No {unitType === 'subcontractor' ? 'subcontractors' : 'subcompanies'} are directly linked to{' '}
                   <strong>{selectedCustomer?.companyName}</strong> in Vendor Master yet.
-                  To link a unit, set its Category to <em>{unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'}</em> and Parent Company to <em>{selectedCustomer?.companyName}</em> in <strong>Vendor Master</strong>.
+                  You can select any other company from the list above.
                 </div>
               ) : null}
             </div>
@@ -1357,12 +1455,17 @@ export const POForm: React.FC<POFormProps> = ({
                             isNaN(val) ? 0 : val
                           );
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.keyCode === 38 || e.keyCode === 40) {
+                            e.preventDefault();
+                          }
+                        }}
                         onBlur={() => {
                           if (hasInwardForThisRow && (Number(line.quantity) || 0) < minQty) {
                             handleLineChange(idx, 'quantity', minQty);
                           }
                         }}
-                        className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors ${
+                        className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
                           isBelowInward
                             ? 'border-2 border-amber-500 bg-amber-50 text-amber-900 focus:border-amber-600'
                             : 'border border-slate-200 text-slate-900 focus:border-[#1F4E79]'
@@ -1429,7 +1532,12 @@ export const POForm: React.FC<POFormProps> = ({
                             parseFloat(e.target.value) || 0
                           )
                         }
-                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.keyCode === 38 || e.keyCode === 40) {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden"
                         required
                       />
                     </div>
@@ -1455,7 +1563,12 @@ export const POForm: React.FC<POFormProps> = ({
                             parseFloat(e.target.value) || 0
                           )
                         }
-                        className="w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden"
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.keyCode === 38 || e.keyCode === 40) {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden"
                         required
                       />
                     ) : (

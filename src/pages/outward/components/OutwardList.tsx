@@ -7,8 +7,10 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Download, FileText } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
+import { InwardEntry } from '../../../types/inward';
+import { DeliveryChallanPdfService } from '../../../services/deliveryChallanPdfService';
 
 export type OutwardSortField =
   | 'outwardNo'
@@ -29,6 +31,7 @@ interface OutwardListProps {
   outwards: OutwardEntry[];
   vendors: Vendor[];
   pos?: PurchaseOrder[];
+  inwards?: InwardEntry[];
   pagination: OutwardPagination;
   filters: OutwardFilterOptions;
   onFilterChange: (filters: OutwardFilterOptions) => void;
@@ -49,6 +52,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   outwards,
   vendors,
   pos = [],
+  inwards = [],
   pagination,
   filters,
   onFilterChange,
@@ -847,9 +851,11 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                             <button
                               onClick={() => onPrint(row.outwardId || row.id)}
-                              className="px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded transition-colors"
+                              title="Generate Delivery Challan"
+                              className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:text-black bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
                             >
-                              Print
+                              <FileText className="w-3 h-3 text-slate-600" />
+                              Generate Challan
                             </button>
                           </div>
                         </td>

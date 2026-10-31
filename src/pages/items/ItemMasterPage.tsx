@@ -6,6 +6,7 @@ import {
   ItemType
 } from '../../types/item';
 import { ItemService } from '../../services/itemService';
+import { ItemCategoryMasterService } from '../../services/itemCategoryMasterService';
 import { useAuth } from '../../context/AuthContext';
 import { Table, Column } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
@@ -46,7 +47,6 @@ export const ItemMasterPage: React.FC = () => {
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'chemical' | 'firewood'>('all');
-  const [lowStockFilter, setLowStockFilter] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive'>('active');
 
   // Modals State
@@ -64,17 +64,15 @@ export const ItemMasterPage: React.FC = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Load items, categories and units
+  // Load items and units (categories are loaded by real-time subscribeCategories listener)
   const loadMasterData = useCallback(async () => {
     try {
       setLoading(true);
-      const [itemsRes, catRes, unitRes] = await Promise.all([
+      const [itemsRes, unitRes] = await Promise.all([
         ItemService.getItems({}, { page: 1, pageSize: 1000 }, isDemoMode),
-        ItemService.getCategories(isDemoMode),
         ItemService.getUnitsOfMeasure(isDemoMode)
       ]);
       setItems(itemsRes.items || []);
-      setCategories(catRes || []);
       setUnits(unitRes || []);
     } catch (err) {
       console.warn('Failed to load item master data:', err);
@@ -86,6 +84,29 @@ export const ItemMasterPage: React.FC = () => {
   useEffect(() => {
     loadMasterData();
   }, [loadMasterData]);
+
+  // Real-time subscribe to Item Category Master updates
+  useEffect(() => {
+    const unsubscribe = ItemCategoryMasterService.subscribeCategories((cats) => {
+      if (cats && cats.length > 0) {
+        setCategories(
+          cats.map((c) => ({
+            id: c.id,
+            categoryId: c.categoryId || c.id,
+            categoryName: c.categoryName || c.name,
+            categoryCode: c.categoryCode,
+            description: c.description,
+            status: c.isActive ? 'active' : 'inactive',
+            itemCount: 0,
+            createdAt: typeof c.createdAt === 'string' ? c.createdAt : '',
+            updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : ''
+          }))
+        );
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Derived counts
   const chemicalItemsCount = useMemo(
@@ -119,10 +140,6 @@ export const ItemMasterPage: React.FC = () => {
       list = list.filter((i) => i.itemType === typeFilter);
     }
 
-    if (lowStockFilter) {
-      list = list.filter((i) => (i.currentStock || 0) <= (i.minimumStockLevel || 0));
-    }
-
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(
@@ -135,7 +152,7 @@ export const ItemMasterPage: React.FC = () => {
     }
 
     return list;
-  }, [items, statusFilter, typeFilter, lowStockFilter, searchQuery]);
+  }, [items, statusFilter, typeFilter, searchQuery]);
 
   // Modal Handlers
   const handleAddNewItem = (type: ItemType = 'chemical') => {
@@ -419,58 +436,16 @@ export const ItemMasterPage: React.FC = () => {
               />
             </div>
 
-            {/* Classification Filter Buttons */}
-            <div className="inline-flex h-9 items-center rounded-lg border border-slate-300 p-0.5 bg-white">
-              <button
-                type="button"
-                onClick={() => setTypeFilter('all')}
-                className={`h-full px-3 rounded-md text-xs font-semibold transition-colors flex items-center ${
-                  typeFilter === 'all'
-                    ? 'bg-[#1F4E79] text-white shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                All ({items.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('chemical')}
-                className={`h-full px-3 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  typeFilter === 'chemical'
-                    ? 'bg-indigo-700 text-white shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <FlaskConical className="w-3.5 h-3.5" />
-                <span>Chemicals ({chemicalItemsCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('firewood')}
-                className={`h-full px-3 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  typeFilter === 'firewood'
-                    ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Flame className="w-3.5 h-3.5" />
-                <span>Raw Wood ({firewoodItemsCount})</span>
-              </button>
-            </div>
-
-            {/* Low Stock Filter */}
-            <button
-              type="button"
-              onClick={() => setLowStockFilter(!lowStockFilter)}
-              className={`h-9 flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold border transition-all ${
-                lowStockFilter
-                  ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-2xs font-bold'
-                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-              }`}
+            {/* Classification Filter Dropdown */}
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'chemical' | 'firewood')}
+              className="h-9 bg-white border border-slate-300 rounded-lg px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
             >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Low Stock</span>
-            </button>
+              <option value="all">All ({items.length})</option>
+              <option value="chemical">Chemicals ({chemicalItemsCount})</option>
+              <option value="firewood">Raw Wood ({firewoodItemsCount})</option>
+            </select>
 
             {/* Status Filter */}
             <select
@@ -508,7 +483,7 @@ export const ItemMasterPage: React.FC = () => {
               <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-700">No master items found</p>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                {searchQuery || typeFilter !== 'all' || lowStockFilter
+                {searchQuery || typeFilter !== 'all'
                   ? 'Try clearing your search query or filters.'
                   : 'Get started by creating your first Chemical or Raw Wood item.'}
               </p>

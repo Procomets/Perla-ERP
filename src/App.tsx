@@ -5,6 +5,9 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { PageContainer } from './components/layout/PageContainer';
 import { Modal } from './components/ui/Modal';
+import { Lock } from 'lucide-react';
+import { getFirstAccessibleModule } from './utils/permissions';
+import { useEnterNavigation } from './hooks/useEnterNavigation';
 
 // Pages
 import { LandingPage } from './pages/landing/LandingPage';
@@ -102,11 +105,45 @@ interface ErpLayoutProps {
 const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
   const { moduleId = 'dashboard' } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin, canView } = useAuth();
 
   // If not logged in and trying to access ERP, redirect to login
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Check if current user has permission to view this module
+  const hasAccess = isAdmin || canView(moduleId);
+
+  if (!hasAccess) {
+    const fallbackModule = getFirstAccessibleModule(user);
+    if (fallbackModule && fallbackModule !== moduleId && canView(fallbackModule)) {
+      return <Navigate to={`/erp/${fallbackModule}`} replace />;
+    }
+    return (
+      <div className="flex h-screen bg-slate-50 font-sans items-center justify-center p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 max-w-md w-full text-center space-y-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">Module Access Restricted</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Your account ({user.email}) does not have permission to access the <strong>{pageTitles[moduleId]?.title || moduleId}</strong> module.
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => {
+                const fallback = getFirstAccessibleModule(user);
+                navigate(`/erp/${fallback}`);
+              }}
+              className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition"
+            >
+              Go to Permitted Module
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const activeTitle = pageTitles[moduleId] || { title: 'Perla ERP', subtitle: 'Textiles Processing Platform' };
@@ -164,16 +201,32 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
   );
 };
 
+function loadCache<T>(key: string): T[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
 const AppContent: React.FC = () => {
   const { user, isDemoMode } = useAuth();
   const navigate = useNavigate();
+
+  // Enable global Enter key navigation across all ERP forms
+  useEnterNavigation();
   
-  // Application Operational Data State - Starts empty in live mode
-  const [pos, setPos] = useState<PurchaseOrder[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [inwards, setInwards] = useState<InwardEntry[]>([]);
-  const [outwards, setOutwards] = useState<OutwardEntry[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  // Application Operational Data State - Loads instantly from local cache on first frame, then syncs from Firestore
+  const [pos, setPos] = useState<PurchaseOrder[]>(() => isDemoMode ? [] : loadCache<PurchaseOrder>('perla_erp_purchase_orders'));
+  const [vendors, setVendors] = useState<Vendor[]>(() => isDemoMode ? [] : loadCache<Vendor>('perla_demo_vendors_v1'));
+  const [inwards, setInwards] = useState<InwardEntry[]>(() => isDemoMode ? [] : loadCache<InwardEntry>('perla_inward_entries_data'));
+  const [outwards, setOutwards] = useState<OutwardEntry[]>(() => isDemoMode ? [] : loadCache<OutwardEntry>('perla_outward_entries_data'));
+  const [invoices, setInvoices] = useState<Invoice[]>(() => isDemoMode ? [] : loadCache<Invoice>('perla_invoices_data'));
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [chemicalEntries, setChemicalEntries] = useState<ChemicalEntry[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -201,32 +254,17 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    // Live mode: fetch directly from Firestore via services
-    POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, false)
-      .then((res) => setPos(res.pos || []))
-      .catch((err) => console.error('Failed to sync POs:', err));
-
-    VendorService.getVendors({}, { page: 1, pageSize: 500 }, false)
-      .then((res) => setVendors(res.vendors || []))
-      .catch((err) => console.error('Failed to sync Vendors:', err));
-
-    InwardService.getInwardEntries({}, { page: 1, pageSize: 500 }, false)
-      .then((res) => setInwards(res.inwards || []))
-      .catch((err) => console.error('Failed to sync Inwards:', err));
-
-    OutwardService.getOutwardEntries({}, { page: 1, pageSize: 500 }, false)
-      .then((res) => setOutwards(res.outwards || []))
-      .catch((err) => console.error('Failed to sync Outwards:', err));
-
-    InvoiceService.getInvoices({}, { page: 1, pageSize: 500 }, false)
-      .then((res) => setInvoices(res.invoices || []))
-      .catch((err) => console.error('Failed to sync Invoices:', err));
-
-    StatementService.getApprovedPoLineIds(false)
-      .then((ids) => {
-        setApprovedPoLineIds(ids || []);
-      })
-      .catch((err) => console.error('Failed to sync approved lines:', err));
+    // Live mode: fetch concurrently from Firestore via services in background
+    Promise.allSettled([
+      POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, false).then((res) => setPos(res.pos || [])),
+      VendorService.getVendors({}, { page: 1, pageSize: 500 }, false).then((res) => setVendors(res.vendors || [])),
+      InwardService.getInwardEntries({}, { page: 1, pageSize: 500 }, false).then((res) => setInwards(res.inwards || [])),
+      OutwardService.getOutwardEntries({}, { page: 1, pageSize: 500 }, false).then((res) => setOutwards(res.outwards || [])),
+      InvoiceService.getInvoices({}, { page: 1, pageSize: 500 }, false).then((res) => setInvoices(res.invoices || [])),
+      StatementService.getApprovedPoLineIds(false).then((ids) => setApprovedPoLineIds(ids || []))
+    ]).catch((err) => {
+      console.warn('Background sync error:', err);
+    });
   }, [user, isDemoMode]);
 
   // Callbacks for operational data

@@ -176,6 +176,32 @@ export const InvoiceSettingsModal: React.FC<InvoiceSettingsModalProps> = ({
                   className="w-full px-3 py-2 border border-neutral-300 rounded-md text-xs text-black font-mono font-medium bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
                 />
               </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-600 uppercase tracking-wide mb-1">
+                  Official Phone
+                </label>
+                <input
+                  type="text"
+                  value={settings.phone || ''}
+                  onChange={(e) => handleChange('phone', e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-md text-xs text-black font-medium bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                  placeholder="e.g. 044-24781234"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-600 uppercase tracking-wide mb-1">
+                  Contact No. for DC Generation (Cell)
+                </label>
+                <input
+                  type="text"
+                  value={settings.dcPhone || ''}
+                  onChange={(e) => handleChange('dcPhone', e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-md text-xs text-black font-medium bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                  placeholder="e.g. 87545 96316"
+                />
+              </div>
             </div>
           </div>
 

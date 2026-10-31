@@ -12,6 +12,7 @@ import { InvoicePreviewModal } from './components/InvoicePreviewModal';
 import { InvoiceDetailsModal } from './components/InvoiceDetailsModal';
 import { InvoiceCancelModal } from './components/InvoiceCancelModal';
 import { InvoiceSettingsModal } from './components/InvoiceSettingsModal';
+import { InvoiceEditModal } from './components/InvoiceEditModal';
 import { useAuth } from '../../context/AuthContext';
 import {
   FileCheck2,
@@ -39,7 +40,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   approvedPoLineIds,
   onAddInvoice
 }) => {
-  const { user } = useAuth();
+  const { user, isDemoMode } = useAuth();
   const navigate = useNavigate();
 
   const userRole = (user as any)?.role || 'Admin';
@@ -71,6 +72,9 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
   const [invoiceToCancel, setInvoiceToCancel] = useState<Invoice | null>(null);
   const [isCancelOpen, setIsCancelOpen] = useState<boolean>(false);
+
+  const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [generatingLabel, setGeneratingLabel] = useState<string | null>(null);
@@ -319,6 +323,29 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
     showToast('info', `Invoice ${updated.invoiceNo} marked as cancelled.`);
   };
 
+  // 7. Edit Invoice (Admin Only)
+  const handleOpenEdit = (inv: Invoice) => {
+    setInvoiceToEdit(inv);
+    setIsEditOpen(true);
+  };
+
+  const handleSavePermanent = async (updatedInvoice: Invoice) => {
+    const authUser = {
+      uid: user?.uid || 'usr-authorized',
+      displayName: user?.displayName || 'Admin'
+    };
+    const saved = await InvoiceService.updateInvoice(updatedInvoice, authUser, isDemoMode);
+    setInvoicesList((prev) => prev.map((inv) => (inv.id === saved.id ? saved : inv)));
+    onAddInvoice(saved);
+    showToast('success', `Tax Invoice ${saved.invoiceNo} successfully updated & saved to database!`);
+  };
+
+  const handleDownloadTemporary = async (tempInvoice: Invoice) => {
+    showToast('info', `Generating temporary PDF for ${tempInvoice.invoiceNo}...`);
+    await InvoicePdfService.downloadInvoicePdf(tempInvoice);
+    showToast('success', `Temporary PDF for ${tempInvoice.invoiceNo} downloaded successfully.`);
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Center Screen Modal Overlay: Active Invoice Generation */}
@@ -500,6 +527,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
             setInvoiceToCancel(inv);
             setIsCancelOpen(true);
           }}
+          onEditInvoice={handleOpenEdit}
         />
       )}
 
@@ -525,8 +553,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           setSelectedViewInvoice(null);
         }}
         invoice={selectedViewInvoice}
+        isAdmin={isAdmin}
         onDownloadPdf={handleDownloadPdf}
         onPrintPdf={handlePrintPdf}
+        onEditInvoice={handleOpenEdit}
       />
 
       {/* Modal 3: Invoice Cancellation Authorization */}
@@ -547,6 +577,19 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         onSettingsSaved={() => {
           showToast('success', 'Issuer settings updated. New invoices will use this profile.');
         }}
+      />
+
+      {/* Modal 5: Admin Edit Invoice Modal */}
+      <InvoiceEditModal
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setInvoiceToEdit(null);
+        }}
+        invoice={invoiceToEdit}
+        vendors={customerCompanies}
+        onSavePermanent={handleSavePermanent}
+        onDownloadTemporary={handleDownloadTemporary}
       />
     </div>
   );

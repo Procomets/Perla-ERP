@@ -20,6 +20,7 @@ import {
   ItemFilterOptions,
   ItemPagination
 } from '../types/item';
+import { ItemCategoryMasterService } from './itemCategoryMasterService';
 
 const ITEMS_STORAGE_KEY = 'perla_items_master_data';
 const CATEGORIES_STORAGE_KEY = 'perla_item_categories_data';
@@ -226,20 +227,32 @@ export class ItemService {
   /**
    * Generates a recommended human-readable Item Code based on category/type
    */
-  static async getNextItemCode(itemType: string, isDemo: boolean = false): Promise<string> {
+  static async getNextItemCode(typeOrPrefix: string, isDemo: boolean = false): Promise<string> {
     const prefixMap: Record<string, string> = {
       chemical: 'CHM',
-      firewood: 'FWD',
+      firewood: 'RWD',
+      raw_wood: 'RWD',
       raw_material: 'RAW',
       packing: 'PKG',
+      packaging: 'PKG',
       consumable: 'CON',
-      general: 'ITM'
+      general: 'GEN'
     };
-    const prefix = prefixMap[itemType] || 'ITM';
+    const key = (typeOrPrefix || '').toLowerCase().trim();
+    const isDirectCode = /^[A-Z0-9]{2,5}$/i.test(typeOrPrefix);
+    const prefix = isDirectCode ? typeOrPrefix.toUpperCase().trim() : (prefixMap[key] || 'ITM');
 
     const { items } = await this.getItems({}, { page: 1, pageSize: 1000 }, isDemo);
-    const count = items.filter((i) => i.itemCode?.startsWith(prefix)).length + 1;
-    return `${prefix}-${String(count).padStart(3, '0')}`;
+    const numbers = items
+      .map((i) => {
+        const match = i.itemCode?.match(new RegExp(`^${prefix}-(\\d+)`, 'i'));
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter((n) => !isNaN(n) && n > 0);
+
+    const maxNum = numbers.length > 0 ? Math.max(...numbers) : 0;
+    const nextNum = maxNum + 1;
+    return `${prefix}-${String(nextNum).padStart(3, '0')}`;
   }
 
   /**
@@ -555,6 +568,25 @@ export class ItemService {
    * Categories Management
    */
   static async getCategories(isDemo: boolean = false): Promise<ItemCategoryRecord[]> {
+    try {
+      const masterCategories = await ItemCategoryMasterService.getCategories();
+      if (masterCategories && masterCategories.length > 0) {
+        return masterCategories.map((c) => ({
+          id: c.id,
+          categoryId: c.categoryId || c.id,
+          categoryName: c.categoryName || c.name,
+          categoryCode: c.categoryCode,
+          description: c.description,
+          status: c.isActive ? 'active' : 'inactive',
+          itemCount: 0,
+          createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
+          updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString()
+        }));
+      }
+    } catch (e) {
+      console.warn('ItemCategoryMasterService.getCategories error in ItemService:', e);
+    }
+
     if (!isDemo) {
       try {
         const snap = await getDocs(collection(db, 'item_categories'));

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { OutwardEntry, OutwardAuditLog } from '../../../types/outward';
+import { InwardEntry } from '../../../types/inward';
+import { Vendor } from '../../../types/vendor';
 import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
@@ -16,13 +18,17 @@ import {
   Layers,
   Calendar,
   FileText,
-  Lock
+  Lock,
+  Download
 } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
+import { DeliveryChallanPdfService } from '../../../services/deliveryChallanPdfService';
 
 interface OutwardDetailsProps {
   outward: OutwardEntry;
   auditLogs?: OutwardAuditLog[];
+  inwards?: InwardEntry[];
+  vendors?: Vendor[];
   onBack: () => void;
   onPrint: () => void;
   onEditDraft?: () => void;
@@ -36,6 +42,8 @@ interface OutwardDetailsProps {
 export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
   outward,
   auditLogs = [],
+  inwards,
+  vendors,
   onBack,
   onPrint,
   onEditDraft,
@@ -94,9 +102,14 @@ export const OutwardDetails: React.FC<OutwardDetailsProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onPrint} className="flex items-center gap-1.5 text-xs">
-            <Printer className="w-4 h-4" />
-            Print DC
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onPrint}
+            className="flex items-center gap-1.5 text-xs text-slate-800 border-slate-300 hover:bg-slate-50 font-semibold"
+          >
+            <FileText className="w-4 h-4 text-slate-600" />
+            Generate Challan
           </Button>
 
           {outward.status === 'draft' && canManage && (

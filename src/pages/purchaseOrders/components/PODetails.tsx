@@ -551,6 +551,22 @@ export const PODetails: React.FC<PODetailsProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">
+                    Customer PO No
+                  </span>
+                  <span className="font-semibold text-slate-800 font-mono">
+                    {po.customerPoNumber || '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">
+                    Customer PO Date
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {po.customerPoDate ? formatDate(po.customerPoDate) : '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">
                     Customer Ref No
                   </span>
                   <span className="font-semibold text-slate-800">

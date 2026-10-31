@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { Invoice, CompanyInvoiceSettings } from '../types/invoice';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { InvoiceSettingsService } from './invoiceSettingsService';
+import { POService } from './poService';
 
 export class InvoicePdfService {
   /**
@@ -114,7 +115,10 @@ export class InvoicePdfService {
     doc.text('W.O Number', rightBoxX + 2, midRowY + 4.5);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.text(invoice.poNumber || 'PP217', rightBoxX + 2, midRowY + 11);
+    const woNum = invoice.customerPoNumber || invoice.woNumber || '';
+    if (woNum) {
+      doc.text(woNum, rightBoxX + 2, midRowY + 11);
+    }
 
     // Row 2, Col 2: Style
     doc.setFont('helvetica', 'normal');
@@ -434,12 +438,39 @@ export class InvoicePdfService {
     return doc;
   }
 
+  private static async resolveInvoiceWithPo(invoice: Invoice): Promise<Invoice> {
+    if (invoice.customerPoNumber || invoice.woNumber) {
+      return invoice;
+    }
+    try {
+      const poId = invoice.purchaseOrderIds && invoice.purchaseOrderIds[0];
+      const poNum = invoice.poNumber || (invoice.poNumbers && invoice.poNumbers[0]);
+      let custPo = '';
+      if (poId) {
+        const res = await POService.getPurchaseOrderById(poId);
+        custPo = res?.po?.customerPoNumber || '';
+      }
+      if (!custPo && poNum) {
+        const res = await POService.getPurchaseOrders({ searchQuery: poNum }, { page: 1, pageSize: 5 });
+        const matched = res.pos.find((p) => p.poNumber === poNum || p.id === poNum || p.poId === poNum);
+        custPo = matched?.customerPoNumber || '';
+      }
+      if (custPo) {
+        return { ...invoice, customerPoNumber: custPo, woNumber: custPo };
+      }
+    } catch (e) {
+      // ignore
+    }
+    return invoice;
+  }
+
   /**
    * Triggers a browser download of the generated PDF using live Firebase tax & issuer settings
    */
   static async downloadInvoicePdf(invoice: Invoice, settings?: CompanyInvoiceSettings): Promise<void> {
     const liveSettings = settings || (await InvoiceSettingsService.getSettings());
-    const doc = this.generateInvoicePdfDoc(invoice, liveSettings);
+    const resolvedInvoice = await this.resolveInvoiceWithPo(invoice);
+    const doc = this.generateInvoicePdfDoc(resolvedInvoice, liveSettings);
     const cleanNo = (invoice.invoiceNo || invoice.invoiceNumber || 'Invoice').replace(/[/\\?%*:|"<>]/g, '_');
     doc.save(`${cleanNo}.pdf`);
   }
@@ -449,7 +480,8 @@ export class InvoicePdfService {
    */
   static async printInvoicePdf(invoice: Invoice, settings?: CompanyInvoiceSettings): Promise<void> {
     const liveSettings = settings || (await InvoiceSettingsService.getSettings());
-    const doc = this.generateInvoicePdfDoc(invoice, liveSettings);
+    const resolvedInvoice = await this.resolveInvoiceWithPo(invoice);
+    const doc = this.generateInvoicePdfDoc(resolvedInvoice, liveSettings);
     const pdfBlob = doc.output('blob');
     const blobUrl = URL.createObjectURL(pdfBlob);
     const printWindow = window.open(blobUrl, '_blank');

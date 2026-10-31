@@ -86,6 +86,8 @@ export interface Invoice {
   poNumber: string;
   poNumbers?: string[];
   purchaseOrderIds?: string[];
+  customerPoNumber?: string | null;
+  woNumber?: string | null;
   styleNo: string;
   styleNumbers?: string[];
   customerId: string;
@@ -134,6 +136,8 @@ export interface InvoiceEligibleItem {
   companyName: string;
   poId: string;
   poNumber: string;
+  customerPoNumber?: string | null;
+  woNumber?: string | null;
   styleNo: string;
   itemName: string;
   colour: string;
@@ -187,6 +191,7 @@ export interface CompanyInvoiceSettings {
   gstin: string;
   pan?: string;
   phone: string;
+  dcPhone?: string;
   email: string;
   bankName: string;
   bankBranch: string;
@@ -208,7 +213,7 @@ export interface InvoiceAuditLog {
   auditId: string;
   invoiceId: string;
   invoiceNo?: string;
-  action: 'draft_created' | 'draft_updated' | 'finalized' | 'cancelled' | 'pdf_generated';
+  action: 'draft_created' | 'draft_updated' | 'finalized' | 'cancelled' | 'pdf_generated' | 'updated';
   userId: string;
   userName: string;
   timestamp: string;

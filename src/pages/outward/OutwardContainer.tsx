@@ -40,9 +40,14 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   onAddOutward,
   onUpdateOutward
 }) => {
-  const { user, activeRole, isDemoMode } = useAuth();
-  const canManage = activeRole === 'Admin' || activeRole === 'Manager';
-  const isAdmin = activeRole === 'Admin' || (user as any)?.role === 'Admin' || (user as any)?.role === 'admin';
+  const { user, activeRole, isDemoMode, canEdit, canDelete } = useAuth();
+  const canManage = activeRole === 'Admin' || activeRole === 'Manager' || canEdit('outward');
+  const isAdmin =
+    activeRole === 'Admin' ||
+    (user as any)?.role === 'Admin' ||
+    (user as any)?.role === 'admin' ||
+    (user as any)?.designation?.toLowerCase() === 'admin' ||
+    canDelete('outward');
 
   // Navigation Views: 'list' | 'add' | 'edit' | 'details' | 'print'
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details' | 'print'>('list');
@@ -77,7 +82,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
     totalKgAvailableToDispatch: 0
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialOutwards || initialOutwards.length === 0);
   const [isSaving, setIsSaving] = useState(false);
   const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
@@ -92,55 +97,70 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   const [reverseModalReason, setReverseModalReason] = useState('');
   const [reverseModalError, setReverseModalError] = useState<string | null>(null);
 
-  // Load outward dispatches, POs, and Vendors
+  // Load outward dispatches, POs, and Vendors in parallel
   const loadData = async () => {
-    setLoading(true);
+    if (outwards.length === 0 && (!initialOutwards || initialOutwards.length === 0)) {
+      setLoading(true);
+    }
     try {
-      // 1. Fetch Outward entries
-      const outwResult = await OutwardService.getOutwardEntries(
-        filters,
-        { page: pagination.page, pageSize: pagination.pageSize },
-        isDemoMode
-      );
+      // Execute all independent network queries concurrently via Promise.all
+      const [outwResult, poResult, vResult, inwResult, postedOutwards, lockMap] = await Promise.all([
+        OutwardService.getOutwardEntries(
+          filters,
+          { page: pagination.page, pageSize: pagination.pageSize },
+          isDemoMode
+        ),
+        POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode),
+        VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode),
+        InwardService.getInwardEntries({}, { page: 1, pageSize: 1000 }, isDemoMode),
+        OutwardService.getAllPostedOutwards(isDemoMode).catch((outwErr) => {
+          console.warn('Failed to load all posted outwards:', outwErr);
+          return [];
+        }),
+        POLockService.getLockedPOMap(isDemoMode).catch((lockErr) => {
+          console.warn('Failed to load PO lock map:', lockErr);
+          return {};
+        })
+      ]);
+
       setOutwards(outwResult.outwards);
       setPagination(outwResult.pagination);
-
-      // 2. Fetch Metrics
-      const metricResult = await OutwardService.getOutwardDashboardMetrics(isDemoMode);
-      setMetrics(metricResult);
-
-      // 3. Fetch latest POs
-      const poResult = await POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode);
       setPos(poResult.pos || []);
-
-      // 4. Fetch latest Vendors
-      const vResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode);
       setVendors(vResult.vendors || []);
+      setInwards(inwResult.inwards && inwResult.inwards.length > 0 ? inwResult.inwards : []);
+      setAllPostedOutwards(postedOutwards || []);
+      setLockedPOMap(lockMap || {});
 
-      // 5. Fetch posted Inward receipts (only posted receipts have physically received stock for outward dispatch)
-      const inwResult = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemoMode);
-      if (inwResult.inwards && inwResult.inwards.length > 0) {
-        setInwards(inwResult.inwards);
-      } else {
-        setInwards([]);
+      // Compute metrics directly in memory (eliminates redundant full database re-fetch)
+      const entries = outwResult.outwards || [];
+      let draftCount = 0;
+      let postedCount = 0;
+      let reversedCount = 0;
+      let totalPiecesDispatched = 0;
+      let totalKgDispatched = 0;
+
+      for (const item of entries) {
+        if (item.status === 'draft') draftCount++;
+        else if (item.status === 'posted') {
+          postedCount++;
+          totalPiecesDispatched += item.totalQtyByUnit?.piece || 0;
+          totalKgDispatched += item.totalQtyByUnit?.kg || 0;
+        } else if (item.status === 'reversed') reversedCount++;
       }
 
-      // 5b. Fetch all posted outward entries to calculate available dispatch balances across all POs
-      try {
-        const postedOutwards = await OutwardService.getAllPostedOutwards(isDemoMode);
-        setAllPostedOutwards(postedOutwards || []);
-      } catch (outwErr) {
-        console.warn('Failed to load all posted outwards:', outwErr);
-        setAllPostedOutwards([]);
-      }
-
-      // 6. Fetch PO lock map based on statement approvals & invoices
-      try {
-        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
-        setLockedPOMap(lockMap);
-      } catch (lockErr) {
-        console.warn('Failed to load PO lock map:', lockErr);
-      }
+      setMetrics({
+        totalOutwardsCount: outwResult.pagination?.totalCount || entries.length,
+        postedOutwardsCount: postedCount,
+        postedCount,
+        draftOutwardsCount: draftCount,
+        draftCount,
+        reversedOutwardsCount: reversedCount,
+        reversedCount,
+        totalPiecesDispatched,
+        totalKgDispatched,
+        totalPiecesAvailableToDispatch: 0,
+        totalKgAvailableToDispatch: 0
+      });
     } catch (err) {
       console.error('Failed to load outward data:', err);
     } finally {
@@ -167,6 +187,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   useEffect(() => {
     if (initialOutwards && initialOutwards.length > 0) {
       setOutwards(initialOutwards);
+      setLoading(false);
     }
   }, [initialOutwards]);
 
@@ -395,6 +416,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           outwards={outwards}
           vendors={vendors}
           pos={pos}
+          inwards={inwards}
           pagination={pagination}
           filters={filters}
           onFilterChange={setFilters}
@@ -436,6 +458,8 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         <OutwardDetails
           outward={selectedOutwardDetails.outward}
           auditLogs={selectedOutwardDetails.logs}
+          inwards={inwards}
+          vendors={vendors}
           lockedPOMap={lockedPOMap}
           onBack={() => setCurrentView('list')}
           onPrint={() => setCurrentView('print')}
@@ -451,6 +475,8 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
       {currentView === 'print' && selectedOutwardDetails.outward && (
         <OutwardPrintView
           outward={selectedOutwardDetails.outward}
+          inwards={inwards}
+          vendors={vendors}
           onBack={() => setCurrentView('details')}
         />
       )}

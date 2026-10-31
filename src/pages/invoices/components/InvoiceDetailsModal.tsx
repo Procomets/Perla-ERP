@@ -3,23 +3,27 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { Invoice } from '../../../types/invoice';
 import { formatDate } from '../../../utils/formatters';
-import { Printer, Download, AlertOctagon } from 'lucide-react';
+import { Printer, Download, AlertOctagon, Pencil } from 'lucide-react';
 import { OfficialInvoiceDocument } from './OfficialInvoiceDocument';
 
 interface InvoiceDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoice: Invoice | null;
+  isAdmin?: boolean;
   onDownloadPdf: (invoice: Invoice) => void;
   onPrintPdf: (invoice: Invoice) => void;
+  onEditInvoice?: (invoice: Invoice) => void;
 }
 
 export const InvoiceDetailsModal: React.FC<InvoiceDetailsModalProps> = ({
   isOpen,
   onClose,
   invoice,
+  isAdmin = false,
   onDownloadPdf,
-  onPrintPdf
+  onPrintPdf,
+  onEditInvoice
 }) => {
   if (!invoice) return null;
 
@@ -60,6 +64,19 @@ export const InvoiceDetailsModal: React.FC<InvoiceDetailsModalProps> = ({
           </Button>
 
           <div className="flex items-center gap-2">
+            {isAdmin && onEditInvoice && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  onClose();
+                  onEditInvoice(invoice);
+                }}
+                icon={<Pencil className="w-4 h-4 text-amber-700" />}
+                className="text-amber-800 border-amber-300 hover:bg-amber-50"
+              >
+                Edit Invoice
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => onPrintPdf(invoice)}

@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   Sparkles,
   Layers,
-  Receipt
+  Receipt,
+  FolderTree
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
@@ -30,6 +31,7 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
 import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
+import { ItemCategorySettings } from './components/ItemCategorySettings';
 
 export const GeneralSettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -37,13 +39,13 @@ export const GeneralSettingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Navigation tab from query param or default to 'colours'
-  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'tax' | 'attendance' | null;
-  const validTabs: Array<'colours' | 'processes' | 'tax' | 'attendance'> = ['colours', 'processes', 'tax', 'attendance'];
-  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'tax' | 'attendance'>(
+  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'tax' | 'attendance' | null;
+  const validTabs: Array<'colours' | 'processes' | 'categories' | 'tax' | 'attendance'> = ['colours', 'processes', 'categories', 'tax', 'attendance'];
+  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'tax' | 'attendance'>(
     paramTab && validTabs.includes(paramTab) ? paramTab : 'colours'
   );
 
-  const handleSelectTab = (tab: 'colours' | 'processes' | 'tax' | 'attendance') => {
+  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'tax' | 'attendance') => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
@@ -591,6 +593,17 @@ export const GeneralSettingsPage: React.FC = () => {
               <span>Wash / Process</span>
             </button>
             <button
+              onClick={() => handleSelectTab('categories')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
+                activeTab === 'categories'
+                  ? 'bg-[#252525] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <FolderTree className="w-4 h-4 shrink-0" />
+              <span>Item Category Master</span>
+            </button>
+            <button
               onClick={() => handleSelectTab('tax')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'tax'
@@ -1119,6 +1132,17 @@ export const GeneralSettingsPage: React.FC = () => {
             </form>
           )}
         </Card>
+      )}
+
+      {/* ========================================================== */}
+      {/* TAB 3: ITEM CATEGORY MASTER */}
+      {/* ========================================================== */}
+      {activeTab === 'categories' && (
+        <ItemCategorySettings
+          currentUserId={currentUserId}
+          usersMap={usersMap}
+          onNotify={showNotification}
+        />
       )}
 
       {/* ========================================================== */}

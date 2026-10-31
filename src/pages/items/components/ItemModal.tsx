@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MasterItem, ItemCategoryRecord, UnitOfMeasure, ItemType } from '../../../types/item';
 import { Vendor } from '../../../types/vendor';
 import { Modal } from '../../../components/ui/Modal';
@@ -10,7 +10,8 @@ import {
   Flame,
   AlertCircle,
   CheckCircle2,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 
 interface ItemModalProps {
@@ -84,8 +85,18 @@ export const ItemModal: React.FC<ItemModalProps> = ({
     { id: 'uom_pcs', unitId: 'uom_pcs', unitCode: 'PCS', unitName: 'Pieces', symbol: 'pcs', unitType: 'count', status: 'active', createdAt: '', updatedAt: '' }
   ];
 
-  const effectiveCategories = categories && categories.length > 0 ? categories : fallbackCategories;
   const effectiveUnits = units && units.length > 0 ? units : fallbackUnits;
+
+  // Selectable categories: include all active categories, plus the item's currently assigned category if editing
+  const selectableCategories = useMemo(() => {
+    const list = categories && categories.length > 0 ? categories : fallbackCategories;
+    return list.filter((c: any) => {
+      const isCurrentItemCategory =
+        initialItem && (initialItem.categoryId === (c.categoryId || c.id) || initialItem.categoryId === c.id);
+      if (isCurrentItemCategory) return true;
+      return (c as any).isActive !== false && c.status !== 'inactive';
+    });
+  }, [categories, fallbackCategories, initialItem]);
 
   // Reset or fill on open
   useEffect(() => {
@@ -107,50 +118,69 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setStatus('active');
 
       // Auto-assign category matching type
-      const matchedCat = effectiveCategories.find((c) => {
-        if (initType === 'chemical') return c.categoryName.toLowerCase().includes('chemical');
-        if (initType === 'firewood') return c.categoryName.toLowerCase().includes('wood') || c.categoryName.toLowerCase().includes('firewood');
+      const matchedCat = selectableCategories.find((c: any) => {
+        const catName = (c.categoryName || (c as any).name || '').toLowerCase();
+        if (initType === 'chemical') return catName.includes('chemical');
+        if (initType === 'firewood') return catName.includes('wood') || catName.includes('firewood');
         return true;
       });
-      setCategoryId(matchedCat?.categoryId || effectiveCategories[0]?.categoryId || '');
+      const chosenCat = matchedCat || selectableCategories[0];
+      const initialCatId = chosenCat?.categoryId || chosenCat?.id || '';
+      setCategoryId(initialCatId);
       setBaseUnit(initType === 'firewood' ? 't' : 'kg');
 
-      // Auto-generate next item code
-      ItemService.getNextItemCode(initType).then((suggested) => {
+      // Auto-generate next item code using category code or item type
+      const prefix = chosenCat?.categoryCode || (initType === 'firewood' ? 'RWD' : 'CHM');
+      ItemService.getNextItemCode(prefix).then((suggested) => {
         setItemCode(suggested);
       });
     }
     setError(null);
-    setCodeWarning(null);
-  }, [initialItem, defaultType, isOpen, categories]);
+  }, [initialItem, defaultType, isOpen, selectableCategories]);
 
   // When classification changes on new item, re-generate code and adjust default unit
   const handleTypeChange = async (newType: ItemType) => {
     if (newType !== 'chemical' && newType !== 'firewood') return;
     setItemType(newType);
     if (!isEditing) {
-      const code = await ItemService.getNextItemCode(newType);
-      setItemCode(code);
       if (newType === 'firewood') {
         setBaseUnit('t');
-        const woodCat = effectiveCategories.find((c) => c.categoryName.toLowerCase().includes('wood') || c.categoryName.toLowerCase().includes('firewood'));
-        if (woodCat) setCategoryId(woodCat.categoryId);
+        const woodCat = selectableCategories.find((c: any) => {
+          const catName = (c.categoryName || (c as any).name || '').toLowerCase();
+          return catName.includes('wood') || catName.includes('firewood');
+        });
+        const cat = woodCat || selectableCategories[0];
+        if (cat) {
+          setCategoryId(cat.categoryId || cat.id);
+          const nextCode = await ItemService.getNextItemCode(cat.categoryCode || 'RWD');
+          setItemCode(nextCode);
+        }
       } else {
         setBaseUnit('kg');
-        const chemCat = effectiveCategories.find((c) => c.categoryName.toLowerCase().includes('chemical'));
-        if (chemCat) setCategoryId(chemCat.categoryId);
+        const chemCat = selectableCategories.find((c: any) => {
+          const catName = (c.categoryName || (c as any).name || '').toLowerCase();
+          return catName.includes('chemical');
+        });
+        const cat = chemCat || selectableCategories[0];
+        if (cat) {
+          setCategoryId(cat.categoryId || cat.id);
+          const nextCode = await ItemService.getNextItemCode(cat.categoryCode || 'CHM');
+          setItemCode(nextCode);
+        }
       }
     }
   };
 
-  // Duplicate code check on blur
-  const handleCodeBlur = async () => {
-    if (!itemCode.trim()) return;
-    const dup = await ItemService.checkDuplicate(itemCode, itemName, initialItem?.id);
-    if (dup.duplicateCode) {
-      setCodeWarning(`Warning: Item Code '${itemCode}' is already registered.`);
-    } else {
-      setCodeWarning(null);
+  // When category changes, dynamically update item code prefix if creating new item
+  const handleCategoryChange = async (newCatId: string) => {
+    setCategoryId(newCatId);
+    if (!isEditing) {
+      const selectedCat = (categories && categories.length > 0 ? categories : fallbackCategories).find(
+        (c: any) => (c.categoryId || c.id) === newCatId
+      );
+      const prefix = selectedCat?.categoryCode || (itemType === 'firewood' ? 'RWD' : 'CHM');
+      const nextCode = await ItemService.getNextItemCode(prefix);
+      setItemCode(nextCode);
     }
   };
 
@@ -170,16 +200,14 @@ export const ItemModal: React.FC<ItemModalProps> = ({
     }
 
     try {
-      setIsSubmitting(true);
-      setError(null);
-
-      const selectedCat = effectiveCategories.find((c) => c.categoryId === categoryId);
+      const allKnownCats = categories && categories.length > 0 ? categories : fallbackCategories;
+      const selectedCat = allKnownCats.find((c) => c.categoryId === categoryId || c.id === categoryId);
 
       const payload: Partial<MasterItem> = {
         itemCode: itemCode.trim().toUpperCase(),
         itemName: itemName.trim(),
         categoryId,
-        categoryName: selectedCat?.categoryName || (itemType === 'chemical' ? 'Chemicals' : 'Firewood & Boiler Fuel'),
+        categoryName: selectedCat?.categoryName || (selectedCat as any)?.name || (itemType === 'chemical' ? 'Chemicals' : 'Firewood & Boiler Fuel'),
         itemType,
         status,
         description: description.trim() || undefined,
@@ -283,19 +311,22 @@ export const ItemModal: React.FC<ItemModalProps> = ({
         {/* 2. Item Code & Item Category */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Item Code (Autogenerated)
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+              <span>Item Code (Autogenerated)</span>
+              <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 border border-slate-200/80">
+                <Lock className="w-3 h-3 text-slate-400" />
+                Read Only
+              </span>
             </label>
             <input
               type="text"
               value={itemCode}
-              onChange={(e) => setItemCode(e.target.value.toUpperCase())}
-              onBlur={handleCodeBlur}
+              readOnly
+              tabIndex={-1}
               placeholder="e.g. CHM-001"
               required
-              className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl px-3.5 text-sm font-mono font-bold text-[#1F4E79] tracking-wider focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:bg-white focus:border-[#1F4E79] transition shadow-2xs"
+              className="w-full h-11 bg-slate-100/90 border border-slate-200 text-slate-700 rounded-xl px-3.5 text-sm font-mono font-bold tracking-wider cursor-not-allowed select-all focus:outline-none shadow-2xs"
             />
-            {codeWarning && <p className="text-xs text-amber-600 font-medium mt-1">{codeWarning}</p>}
           </div>
 
           <div className="space-y-1.5">
@@ -304,16 +335,21 @@ export const ItemModal: React.FC<ItemModalProps> = ({
             </label>
             <select
               value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
+              onChange={(e) => handleCategoryChange(e.target.value)}
               className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs"
               required
             >
               <option value="">-- Select Category --</option>
-              {effectiveCategories.map((c) => (
-                <option key={c.categoryId} value={c.categoryId}>
-                  {c.categoryName} ({c.categoryCode})
-                </option>
-              ))}
+              {selectableCategories.map((c: any) => {
+                const catId = c.categoryId || c.id;
+                const catName = c.categoryName || (c as any).name;
+                const catCode = c.categoryCode;
+                return (
+                  <option key={catId} value={catId}>
+                    {catName}{catCode ? ` (${catCode})` : ''}
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>

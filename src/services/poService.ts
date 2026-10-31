@@ -387,10 +387,24 @@ export function timestampToDateString(val: any): string {
   return String(val);
 }
 
+export function toFirestoreTimestamp(val: any): Timestamp | null {
+  if (!val) return null;
+  if (val instanceof Timestamp) return val;
+  if (typeof val.toDate === 'function') return val;
+  if (val instanceof Date) return Timestamp.fromDate(val);
+  if (typeof val === 'string' && val.trim()) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return Timestamp.fromDate(d);
+  }
+  return null;
+}
+
 export function normalizePODocument(docId: string, data: any): PurchaseOrder {
   const orderDate = timestampToDateString(data.orderDate) || new Date().toISOString().split('T')[0];
   const deliveryDate = data.deliveryDate ? timestampToDateString(data.deliveryDate) : null;
   const expectedCompletionDate = data.expectedCompletionDate ? timestampToDateString(data.expectedCompletionDate) : deliveryDate;
+  const customerPoDate = data.customerPoDate ? timestampToDateString(data.customerPoDate) : null;
+  const customerPoNumber = data.customerPoNumber ? String(data.customerPoNumber).trim() : null;
   const createdAt = timestampToString(data.createdAt) || new Date().toISOString();
   const updatedAt = timestampToString(data.updatedAt) || createdAt;
   const submittedAt = data.submittedAt ? timestampToString(data.submittedAt) : undefined;
@@ -447,6 +461,8 @@ export function normalizePODocument(docId: string, data: any): PurchaseOrder {
     orderDate,
     deliveryDate,
     expectedCompletionDate,
+    customerPoNumber,
+    customerPoDate,
     colourLines,
     lines: colourLines,
     totalQtyByUnit: data.totalQtyByUnit || totals.totalQtyByUnit,
@@ -630,6 +646,7 @@ export class POService {
       filtered = filtered.filter(
         (po) =>
           po.poNumber.toLowerCase().includes(q) ||
+          (po.customerPoNumber && po.customerPoNumber.toLowerCase().includes(q)) ||
           po.customerName.toLowerCase().includes(q) ||
           (po.styleNo && po.styleNo.toLowerCase().includes(q)) ||
           (po.styleNumber && po.styleNumber.toLowerCase().includes(q)) ||
@@ -840,6 +857,8 @@ export class POService {
       totalQuantity: totals.totalQuantity,
       totalAmount: totals.totalAmount,
       currency: 'INR',
+      customerPoNumber: poData.customerPoNumber ? poData.customerPoNumber.trim() : null,
+      customerPoDate: poData.customerPoDate ? timestampToDateString(poData.customerPoDate) : null,
       customerReferenceNo: poData.customerReferenceNo || '',
       customerInstructions: poData.customerInstructions || '',
       internalRemarks: poData.internalRemarks || '',
@@ -869,7 +888,11 @@ export class POService {
 
     // Save to Firestore if connected
     try {
-      await setDoc(poRef, cleanFirestoreData(newPO));
+      const firestorePOData = {
+        ...newPO,
+        customerPoDate: poData.customerPoDate ? toFirestoreTimestamp(poData.customerPoDate) : null
+      };
+      await setDoc(poRef, cleanFirestoreData(firestorePOData));
       console.log(`Successfully saved PO ${poNumber} to Firestore.`);
       try {
         const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
@@ -1094,6 +1117,14 @@ export class POService {
     const merged: PurchaseOrder = {
       ...existing.po,
       ...updates,
+      customerPoNumber:
+        updates.customerPoNumber !== undefined
+          ? (updates.customerPoNumber ? updates.customerPoNumber.trim() : null)
+          : (existing.po.customerPoNumber || null),
+      customerPoDate:
+        updates.customerPoDate !== undefined
+          ? (updates.customerPoDate ? timestampToDateString(updates.customerPoDate) : null)
+          : (existing.po.customerPoDate ? timestampToDateString(existing.po.customerPoDate) : null),
       styleNo,
       styleNumber: styleNo,
       colourLines: processedColourLines,
@@ -1139,7 +1170,11 @@ export class POService {
     };
 
     try {
-      await updateDoc(doc(db, 'purchase_orders', poId), cleanFirestoreData(merged) as any);
+      const firestoreUpdateData = {
+        ...merged,
+        customerPoDate: merged.customerPoDate ? toFirestoreTimestamp(merged.customerPoDate) : null
+      };
+      await updateDoc(doc(db, 'purchase_orders', poId), cleanFirestoreData(firestoreUpdateData) as any);
       try {
         const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
         await setDoc(auditRef, cleanFirestoreData(auditEntry));

@@ -359,6 +359,22 @@ export const TaxAndIssuerSettings: React.FC<TaxAndIssuerSettingsProps> = ({ onNo
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wide mb-1">
+                Contact No. for DC Generation (Cell)
+              </label>
+              <input
+                type="text"
+                value={settings.dcPhone || ''}
+                onChange={(e) => handleChange('dcPhone', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-transparent transition-all shadow-2xs"
+                placeholder="e.g. 87545 96316"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Printed on Delivery Challan header (Cell : ...)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wide mb-1">
                 Billing Email
               </label>
               <input

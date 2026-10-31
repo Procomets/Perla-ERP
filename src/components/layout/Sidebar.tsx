@@ -19,7 +19,8 @@ import {
   LogOut,
   Shirt,
   UserCheck,
-  Settings
+  Settings,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -27,7 +28,6 @@ export interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
-  rolesAllowed: ('Admin' | 'Manager' | 'Supervisor')[];
 }
 
 interface SidebarProps {
@@ -37,44 +37,44 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, onGoToLogin }) => {
-  const { activeRole, logout } = useAuth();
+  const { user, designation, isAdmin, canView, logout } = useAuth();
 
   const navCategories = [
     [
-      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, rolesAllowed: ['Admin'] }
+      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> }
     ],
     [
-      { id: 'po', label: 'Purchase Orders', icon: <FileText className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'inward', label: 'Inward Receipts', icon: <ArrowDownLeft className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'outward', label: 'Outward Dispatches', icon: <ArrowUpRight className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'statement', label: 'Statement & Approval', icon: <Scale className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'invoices', label: 'Invoice Generation', icon: <Receipt className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
+      { id: 'po', label: 'Purchase Orders', icon: <FileText className="w-4 h-4" /> },
+      { id: 'inward', label: 'Inward Receipts', icon: <ArrowDownLeft className="w-4 h-4" /> },
+      { id: 'outward', label: 'Outward Dispatches', icon: <ArrowUpRight className="w-4 h-4" /> },
+      { id: 'statement', label: 'Statement & Approval', icon: <Scale className="w-4 h-4" /> },
+      { id: 'invoices', label: 'Invoice Generation', icon: <Receipt className="w-4 h-4" /> },
     ],
     [
-      { id: 'chemical', label: 'Chemical Entry', icon: <FlaskConical className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager', 'Supervisor'] },
-      { id: 'warehouse', label: 'Warehouse & Stock', icon: <Warehouse className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'purchases', label: 'Purchases (Raw/Wood)', icon: <ShoppingBag className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
+      { id: 'chemical', label: 'Chemical Entry', icon: <FlaskConical className="w-4 h-4" /> },
+      { id: 'warehouse', label: 'Warehouse & Stock', icon: <Warehouse className="w-4 h-4" /> },
+      { id: 'purchases', label: 'Purchases (Raw/Wood)', icon: <ShoppingBag className="w-4 h-4" /> },
     ],
     [
-      { id: 'employees', label: 'Employee Master', icon: <UserCheck className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'attendance', label: 'Attendance', icon: <Users className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'salary', label: 'Salary', icon: <Banknote className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
+      { id: 'employees', label: 'Employee Master', icon: <UserCheck className="w-4 h-4" /> },
+      { id: 'attendance', label: 'Attendance', icon: <Users className="w-4 h-4" /> },
+      { id: 'salary', label: 'Salary', icon: <Banknote className="w-4 h-4" /> },
     ],
     [
-      { id: 'eb', label: 'EB / Electricity Entry', icon: <Zap className="w-4 h-4" />, rolesAllowed: ['Admin', 'Supervisor'] },
-      { id: 'transport', label: 'Transport Expenses', icon: <Truck className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
+      { id: 'eb', label: 'EB / Electricity Entry', icon: <Zap className="w-4 h-4" /> },
+      { id: 'transport', label: 'Transport Expenses', icon: <Truck className="w-4 h-4" /> },
     ],
     [
-      { id: 'vendors', label: 'Vendor Master', icon: <Building2 className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'items', label: 'Item / Chemical Master', icon: <Package className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
-      { id: 'users', label: 'User Management', icon: <Users className="w-4 h-4" />, rolesAllowed: ['Admin'] },
-      { id: 'settings', label: 'General Settings', icon: <Settings className="w-4 h-4" />, rolesAllowed: ['Admin', 'Manager'] },
+      { id: 'vendors', label: 'Vendor Master', icon: <Building2 className="w-4 h-4" /> },
+      { id: 'items', label: 'Item / Chemical Master', icon: <Package className="w-4 h-4" /> },
+      { id: 'users', label: 'User Management', icon: <Users className="w-4 h-4" /> },
+      { id: 'settings', label: 'General Settings', icon: <Settings className="w-4 h-4" /> },
     ]
   ];
 
-  // Filter items in each category based on role and remove empty categories
+  // Filter items in each category: if Admin show everything, otherwise check canView(id)
   const visibleCategories = navCategories
-    .map(category => category.filter(item => item.rolesAllowed.includes(activeRole)))
+    .map(category => category.filter(item => isAdmin || canView(item.id)))
     .filter(category => category.length > 0);
 
   return (
@@ -117,14 +117,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, onGoTo
         ))}
       </div>
 
-      {/* Footer Controls */}
-      <div className="p-3 border-t border-slate-200/80 space-y-1 bg-[#F8F9FA]">
+      {/* User Info & Footer Controls */}
+      <div className="p-3 border-t border-slate-200/80 space-y-2 bg-[#F8F9FA]">
+        <div className="px-3 py-2 bg-white rounded-xl border border-slate-200/60 flex items-center justify-between gap-2 shadow-xs">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-slate-900 truncate">
+              {user?.displayName || 'User'}
+            </div>
+            <div className="text-[10px] text-slate-400 truncate">
+              {user?.email}
+            </div>
+          </div>
+          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-black text-white shrink-0 uppercase tracking-tight">
+            {designation}
+          </span>
+        </div>
+
         <button
           onClick={async () => {
             await logout();
             onGoToLogin();
           }}
-          className="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition"
+          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition"
         >
           <LogOut className="w-4 h-4 text-rose-500" />
           <span>Sign Out</span>

@@ -37,9 +37,14 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   onAddInward,
   onUpdateInward
 }) => {
-  const { user, activeRole, isDemoMode } = useAuth();
-  const canManage = activeRole === 'Admin' || activeRole === 'Manager';
-  const isAdmin = activeRole === 'Admin' || (user as any)?.role === 'Admin' || (user as any)?.role === 'admin';
+  const { user, activeRole, isDemoMode, canEdit, canDelete } = useAuth();
+  const canManage = activeRole === 'Admin' || activeRole === 'Manager' || canEdit('inward');
+  const isAdmin =
+    activeRole === 'Admin' ||
+    (user as any)?.role === 'Admin' ||
+    (user as any)?.role === 'admin' ||
+    (user as any)?.designation?.toLowerCase() === 'admin' ||
+    canDelete('inward');
 
   // Navigation Views
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details' | 'print'>('list');
@@ -72,7 +77,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
     pendingInwardKg: 0
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialInwards || initialInwards.length === 0);
   const [isSaving, setIsSaving] = useState(false);
   const [lockedPOMap, setLockedPOMap] = useState<Record<string, POLockStatus>>({});
 
@@ -90,46 +95,70 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   // Inward deletability map based on outward entry presence, timestamp and quantity
   const [deletableInwardMap, setDeletableInwardMap] = useState<Record<string, boolean>>({});
 
-  // Load Inward data, POs, and Vendors
+  // Load Inward data, POs, and Vendors in parallel
   const loadData = async () => {
-    setLoading(true);
+    if (inwards.length === 0 && (!initialInwards || initialInwards.length === 0)) {
+      setLoading(true);
+    }
     try {
-      // 1. Fetch Inward entries
-      const inwResult = await InwardService.getInwardEntries(
-        filters,
-        { page: pagination.page, pageSize: pagination.pageSize },
-        isDemoMode
-      );
+      // Execute all independent network queries concurrently via Promise.all
+      const [inwResult, poResult, vResult, outwDeps, lockMap] = await Promise.all([
+        InwardService.getInwardEntries(
+          filters,
+          { page: pagination.page, pageSize: pagination.pageSize },
+          isDemoMode
+        ),
+        POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode),
+        VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode),
+        InwardService.getInwardOutwardDependencies(undefined, isDemoMode).catch((depErr) => {
+          console.warn('Failed to load inward outward dependencies:', depErr);
+          return {
+            deletableInwardMap: {},
+            inwardMinAllowedMap: {},
+            inwardConsumedByOutwardMap: {},
+            outwardCountByPo: {}
+          };
+        }),
+        POLockService.getLockedPOMap(isDemoMode).catch((lockErr) => {
+          console.warn('Failed to load PO lock map:', lockErr);
+          return {};
+        })
+      ]);
+
       setInwards(inwResult.inwards);
       setPagination(inwResult.pagination);
-
-      // 2. Fetch metrics
-      const metricResult = await InwardService.getInwardDashboardMetrics(isDemoMode);
-      setMetrics(metricResult);
-
-      // 3. Fetch latest POs
-      const poResult = await POService.getPurchaseOrders({}, { page: 1, pageSize: 500 }, isDemoMode);
       setPos(poResult.pos || []);
-
-      // 4. Fetch latest Vendors
-      const vResult = await VendorService.getVendors({}, { page: 1, pageSize: 500 }, isDemoMode);
       setVendors(vResult.vendors || []);
+      setDeletableInwardMap(outwDeps.deletableInwardMap || {});
+      setLockedPOMap(lockMap || {});
 
-      // 5. Fetch outward dependencies to check inward delete eligibility
-      try {
-        const outwDeps = await InwardService.getInwardOutwardDependencies(undefined, isDemoMode);
-        setDeletableInwardMap(outwDeps.deletableInwardMap);
-      } catch (depErr) {
-        console.warn('Failed to load inward outward dependencies:', depErr);
+      // Compute dashboard metrics directly in memory (eliminates redundant full database re-fetch)
+      const entries = inwResult.inwards || [];
+      let draftCount = 0;
+      let postedCount = 0;
+      let reversedCount = 0;
+      let totalPiecesReceived = 0;
+      let totalKgReceived = 0;
+
+      for (const item of entries) {
+        if (item.status === 'draft') draftCount++;
+        else if (item.status === 'posted') {
+          postedCount++;
+          totalPiecesReceived += item.totalQtyByUnit?.piece || 0;
+          totalKgReceived += item.totalQtyByUnit?.kg || 0;
+        } else if (item.status === 'reversed') reversedCount++;
       }
 
-      // 6. Fetch PO lock map based on statement approvals & invoices
-      try {
-        const lockMap = await POLockService.getLockedPOMap(isDemoMode);
-        setLockedPOMap(lockMap);
-      } catch (lockErr) {
-        console.warn('Failed to load PO lock map:', lockErr);
-      }
+      setMetrics({
+        totalInwardCount: inwResult.pagination?.totalRecords || entries.length,
+        draftCount,
+        postedCount,
+        reversedCount,
+        totalPiecesReceived,
+        totalKgReceived,
+        pendingInwardPieces: 0,
+        pendingInwardKg: 0
+      });
     } catch (err) {
       console.error('Failed to load inward data:', err);
     } finally {
@@ -150,6 +179,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   useEffect(() => {
     if (initialInwards && initialInwards.length > 0) {
       setInwards(initialInwards);
+      setLoading(false);
     }
   }, [initialInwards]);
 

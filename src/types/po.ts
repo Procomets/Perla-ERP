@@ -90,6 +90,8 @@ export interface PurchaseOrder {
   totalAmount: number;
   currency: 'INR';
 
+  customerPoNumber?: string | null;
+  customerPoDate?: string | null;
   customerReferenceNo?: string;
   customerInstructions?: string;
   internalRemarks?: string;

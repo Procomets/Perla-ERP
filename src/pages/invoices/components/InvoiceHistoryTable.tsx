@@ -9,12 +9,12 @@ import {
   Download,
   Printer,
   Eye,
-  XCircle,
   Clock,
   CheckCircle2,
   AlertOctagon,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Pencil
 } from 'lucide-react';
 
 interface InvoiceHistoryTableProps {
@@ -28,7 +28,8 @@ interface InvoiceHistoryTableProps {
   onViewInvoice: (invoice: Invoice) => void;
   onDownloadPdf: (invoice: Invoice) => void;
   onPrintPdf: (invoice: Invoice) => void;
-  onOpenCancel: (invoice: Invoice) => void;
+  onOpenCancel?: (invoice: Invoice) => void;
+  onEditInvoice?: (invoice: Invoice) => void;
 }
 
 export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
@@ -42,7 +43,8 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
   onViewInvoice,
   onDownloadPdf,
   onPrintPdf,
-  onOpenCancel
+  onOpenCancel,
+  onEditInvoice
 }) => {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
@@ -194,14 +196,14 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                         >
                           <Printer className="w-4 h-4" />
                         </button>
-                        {isAdmin && !isCancelled && (
+                        {isAdmin && (
                           <button
                             type="button"
-                            onClick={() => onOpenCancel(inv)}
-                            title="Cancel Invoice"
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                            onClick={() => onEditInvoice?.(inv)}
+                            title="Edit Invoice Data (Admin Only)"
+                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
                           >
-                            <XCircle className="w-4 h-4" />
+                            <Pencil className="w-4 h-4" />
                           </button>
                         )}
                       </div>

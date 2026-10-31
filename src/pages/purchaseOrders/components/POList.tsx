@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -68,6 +68,7 @@ interface POListProps {
 export type POSortField =
   | 'poNumber'
   | 'customerName'
+  | 'customerPoNumber'
   | 'processCategory'
   | 'styleNo'
   | 'orderDate'
@@ -101,6 +102,102 @@ export const POList: React.FC<POListProps> = ({
 }) => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+
+  // Hovered company popup state
+  const [hoveredCustomer, setHoveredCustomer] = useState<{
+    po: PurchaseOrder;
+    vendor: Vendor | null;
+    subUnit: Vendor | null;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Close hover popup on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      setHoveredCustomer(null);
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, []);
+
+  const cleanStr = (s: any): string => {
+    if (!s) return '';
+    return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  };
+
+  const findVendorForPO = (po: PurchaseOrder): Vendor | null => {
+    const targetId = (po.customerId || po.customerVendorId || '').toLowerCase().trim();
+    const targetCode = (po.customerCode || '').toLowerCase().trim();
+    const targetName = (po.customerName || '').toLowerCase().trim();
+    const targetClean = cleanStr(po.customerName);
+
+    return (
+      vendors.find((v) => {
+        const vId = (v.vendorId || v.id || '').toLowerCase().trim();
+        const vCode = (v.vendorCode || '').toLowerCase().trim();
+        const vName = (v.companyName || '').toLowerCase().trim();
+        return (
+          (targetId && (vId === targetId || cleanStr(vId) === cleanStr(targetId))) ||
+          (targetCode && vCode === targetCode) ||
+          (targetName && vName === targetName) ||
+          (targetClean && cleanStr(vName) === targetClean)
+        );
+      }) || null
+    );
+  };
+
+  const findSubUnitForPO = (po: PurchaseOrder): Vendor | null => {
+    const targetId = (po.subcontractorId || po.subcompanyId || '').toLowerCase().trim();
+    const targetCode = (po.subcontractorCode || po.subcompanyCode || '').toLowerCase().trim();
+    const targetName = (po.subcontractorName || po.subcompanyName || '').toLowerCase().trim();
+    if (!targetId && !targetCode && !targetName) return null;
+
+    return (
+      vendors.find((v) => {
+        const vId = (v.vendorId || v.id || '').toLowerCase().trim();
+        const vCode = (v.vendorCode || '').toLowerCase().trim();
+        const vName = (v.companyName || '').toLowerCase().trim();
+        return (
+          (targetId && (vId === targetId || cleanStr(vId) === cleanStr(targetId))) ||
+          (targetCode && vCode === targetCode) ||
+          (targetName && vName === targetName) ||
+          (targetName && cleanStr(vName) === cleanStr(targetName))
+        );
+      }) || null
+    );
+  };
+
+  const handleCustomerMouseEnter = (e: React.MouseEvent, po: PurchaseOrder) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cardWidth = 320;
+    const cardEstimatedHeight = 280;
+
+    let left = rect.left;
+    if (left + cardWidth > window.innerWidth - 16) {
+      left = window.innerWidth - cardWidth - 16;
+    }
+    if (left < 16) {
+      left = 16;
+    }
+
+    let top = rect.bottom + 6;
+    if (top + cardEstimatedHeight > window.innerHeight - 16) {
+      top = Math.max(16, rect.top - cardEstimatedHeight - 6);
+    }
+
+    setHoveredCustomer({
+      po,
+      vendor: findVendorForPO(po),
+      subUnit: findSubUnitForPO(po),
+      x: left,
+      y: top
+    });
+  };
+
+  const handleCustomerMouseLeave = () => {
+    setHoveredCustomer(null);
+  };
 
   // Eligible customer vendors (Main company customers only)
   const eligibleCustomers = vendors.filter(
@@ -217,6 +314,13 @@ export const POList: React.FC<POListProps> = ({
           return (
             (a.customerName || '').localeCompare(b.customerName || '') * mult
           );
+        case 'customerPoNumber':
+          return (
+            (a.customerPoNumber || '').localeCompare(b.customerPoNumber || '', undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            }) * mult
+          );
         case 'processCategory':
           return (
             (a.processCategory || '').localeCompare(b.processCategory || '') * mult
@@ -287,6 +391,8 @@ export const POList: React.FC<POListProps> = ({
         return 'PO Number';
       case 'customerName':
         return 'Customer';
+      case 'customerPoNumber':
+        return 'Cust PO No';
       case 'processCategory':
         return 'Process';
       case 'styleNo':
@@ -547,7 +653,21 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 3. Process - Center */}
+                {/* 3. Cust PO - Left */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'customerPoNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('customerPoNumber')}
+                  title={getSortTooltip('customerPoNumber', 'Customer PO')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>Cust PO</span>
+                    {renderSortIcon('customerPoNumber')}
+                  </div>
+                </th>
+
+                {/* 4. Process - Center */}
                 <th
                   className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
                     sortField === 'processCategory' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
@@ -642,7 +762,7 @@ export const POList: React.FC<POListProps> = ({
             <tbody className="divide-y divide-slate-200">
               {sortedPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400 border-b border-slate-200">
+                  <td colSpan={10} className="py-12 text-center text-slate-400 border-b border-slate-200">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <div className="p-3 rounded-full bg-slate-50 text-slate-400">
                         <Layers className="w-6 h-6" />
@@ -652,7 +772,7 @@ export const POList: React.FC<POListProps> = ({
                       </div>
                       <p className="text-slate-400 max-w-sm text-xs">
                         {hasActiveFilters
-                          ? 'Try clearing active search or filters to see more orders.'
+                           ? 'Try clearing active search or filters to see more orders.'
                           : 'Create your first Purchase Order to begin recording customer processing orders.'}
                       </p>
                       {canManage && (
@@ -705,9 +825,15 @@ export const POList: React.FC<POListProps> = ({
                       </td>
 
                       {/* Customer - Left */}
-                      <td className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left">
-                        <div>
-                          <div className="truncate font-semibold">{po.customerName}</div>
+                      <td
+                        className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left"
+                        onMouseEnter={(e) => handleCustomerMouseEnter(e, po)}
+                        onMouseLeave={handleCustomerMouseLeave}
+                      >
+                        <div className="group/cust">
+                          <div className="truncate font-semibold cursor-help group-hover/cust:underline decoration-dotted transition-colors">
+                            {po.customerName}
+                          </div>
                           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                             {po.customerCode && (
                               <span className="text-[10px] text-slate-400 font-mono">
@@ -721,6 +847,28 @@ export const POList: React.FC<POListProps> = ({
                             )}
                           </div>
                         </div>
+                      </td>
+
+                      {/* Customer PO Number & Date - Left */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap align-middle text-left">
+                        {po.customerPoNumber ? (
+                          <div>
+                            <div className="font-mono font-semibold text-slate-800 text-xs">
+                              {po.customerPoNumber}
+                            </div>
+                            {po.customerPoDate && (
+                              <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                {formatDate(po.customerPoDate)}
+                              </div>
+                            )}
+                          </div>
+                        ) : po.customerPoDate ? (
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            {formatDate(po.customerPoDate)}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">-</span>
+                        )}
                       </td>
 
                       {/* Process Category - Center */}
@@ -1017,6 +1165,142 @@ export const POList: React.FC<POListProps> = ({
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Light & Simple Company Profile Hover Popover */}
+      {hoveredCustomer && (
+        <div
+          className="fixed z-50 w-84 bg-white text-slate-800 border border-slate-200/90 rounded-2xl p-4 shadow-xl pointer-events-none text-left animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            top: hoveredCustomer.y,
+            left: hoveredCustomer.x
+          }}
+        >
+          {/* Top Label & Code */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-[#1F4E79] tracking-wider uppercase">
+              COMPANY PROFILE
+            </span>
+            <span className="font-mono text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md shrink-0">
+              {hoveredCustomer.vendor?.vendorCode || hoveredCustomer.po.customerCode || 'VND-000000'}
+            </span>
+          </div>
+
+          {/* Company Name */}
+          <h4 className="font-bold text-base text-slate-900 tracking-tight leading-tight mt-1">
+            {hoveredCustomer.vendor?.companyName || hoveredCustomer.po.customerName}
+          </h4>
+
+          {/* Subtitle: Type · Category */}
+          <p className="text-xs text-slate-500 mt-0.5">
+            {hoveredCustomer.vendor?.vendorType || 'Customer'} ·{' '}
+            {(hoveredCustomer.vendor?.vendorCategory || hoveredCustomer.po.subcontractorType || 'Main Company')
+              .replace('_', ' ')
+              .split(' ')
+              .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ')}
+          </p>
+
+          {/* Subtle Divider */}
+          <div className="border-b border-slate-100 my-3" />
+
+          {/* 2-Column Info Grid */}
+          <div className="space-y-3">
+            {/* Row 1: GSTIN & PAN */}
+            <div className="grid grid-cols-2 gap-3 text-left">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  GSTIN
+                </span>
+                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
+                  {hoveredCustomer.vendor?.taxDetails?.gstin || 'Unregistered'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  PAN
+                </span>
+                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
+                  {hoveredCustomer.vendor?.taxDetails?.pan || 'N/A'}
+                </span>
+              </div>
+            </div>
+
+            {/* Row 2: FULL ADDRESS */}
+            <div className="text-left">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                ADDRESS
+              </span>
+              <p className="text-xs font-semibold text-slate-800 mt-0.5 leading-relaxed">
+                {[
+                  hoveredCustomer.vendor?.address?.addressLine1,
+                  hoveredCustomer.vendor?.address?.addressLine2,
+                  hoveredCustomer.vendor?.address?.city,
+                  hoveredCustomer.vendor?.address?.state,
+                  hoveredCustomer.vendor?.address?.pinCode ? `PIN: ${hoveredCustomer.vendor.address.pinCode}` : ''
+                ]
+                  .filter(Boolean)
+                  .join(', ') || 'N/A'}
+              </p>
+            </div>
+
+            {/* Row 3: PHONE & EMAIL */}
+            <div className="grid grid-cols-2 gap-3 text-left">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  PHONE
+                </span>
+                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
+                  {hoveredCustomer.vendor?.communication?.officePhone ||
+                    hoveredCustomer.vendor?.communication?.mobileNumber ||
+                    'N/A'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  EMAIL
+                </span>
+                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate" title={hoveredCustomer.vendor?.communication?.officialEmail || ''}>
+                  {hoveredCustomer.vendor?.communication?.officialEmail || 'N/A'}
+                </span>
+              </div>
+            </div>
+
+            {/* Row 4: PAYMENT TERMS */}
+            <div className="flex items-center justify-between text-left pt-1 border-t border-slate-100">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                PAYMENT TERMS
+              </span>
+              <span className="text-xs font-bold text-slate-800">
+                {hoveredCustomer.vendor?.financialDetails?.paymentTerms
+                  ? hoveredCustomer.vendor.financialDetails.paymentTerms.replace('_', ' ')
+                  : '30 Days'}
+              </span>
+            </div>
+          </div>
+
+          {/* Linked Subcontractor / Subcompany (if present on this PO) */}
+          {(hoveredCustomer.po.subcontractorName || hoveredCustomer.po.subcompanyName) && (
+            <div className="border-t border-slate-100 pt-2.5 mt-3 space-y-1">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                Linked {hoveredCustomer.po.subcontractorType === 'subcompany' ? 'Subcompany' : 'Subcontractor'}
+              </span>
+              <div className="font-semibold text-slate-800 text-xs">
+                {hoveredCustomer.po.subcontractorName || hoveredCustomer.po.subcompanyName}
+                {(hoveredCustomer.po.subcontractorCode || hoveredCustomer.po.subcompanyCode) && (
+                  <span className="font-mono text-[10px] ml-1.5 font-normal text-slate-400">
+                    ({hoveredCustomer.po.subcontractorCode || hoveredCustomer.po.subcompanyCode})
+                  </span>
+                )}
+              </div>
+              {hoveredCustomer.subUnit?.taxDetails?.gstin && (
+                <div className="text-[10px] text-slate-500 font-mono">
+                  GSTIN: {hoveredCustomer.subUnit.taxDetails.gstin}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

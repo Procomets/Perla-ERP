@@ -11,7 +11,6 @@ import { SearchableSelect, SelectOption, SelectOptionGroup } from './SearchableS
 import {
   ArrowLeft,
   CheckCircle2,
-  FileClock,
   AlertTriangle,
   Info,
   Building,
@@ -24,7 +23,7 @@ interface InwardFormProps {
   pos: PurchaseOrder[];
   vendors: Vendor[];
   initialInward?: InwardEntry | null;
-  onSaveDraft: (data: any) => Promise<void>;
+  onSaveDraft?: (data: any) => Promise<void>;
   onPostReceipt: (data: any) => Promise<void>;
   onCancel: () => void;
   isSaving: boolean;
@@ -549,15 +548,6 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     await onPostReceipt(payload);
   };
 
-  const handleSaveDraft = async () => {
-    if (!activePo || !selectedCustomerId) {
-      setValidationError('Please select at least a Customer and a Purchase Order to save draft.');
-      return;
-    }
-    const payload = buildPayload();
-    await onSaveDraft(payload);
-  };
-
   return (
     <div className="space-y-6">
       {/* Header bar */}
@@ -570,7 +560,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Inward List
           </button>
           <h2 className="text-xl font-bold text-[#1F4E79]">
-            {initialInward?.status === 'draft' ? 'Edit Inward Draft' : 'New Customer Inward Receipt'}
+            {initialInward ? 'Edit Customer Inward Receipt' : 'New Customer Inward Receipt'}
           </h2>
           <p className="text-xs text-slate-500">
             Perla Textiles Processor — Thirumudivakkam, Tamil Nadu
@@ -580,17 +570,6 @@ export const InwardForm: React.FC<InwardFormProps> = ({
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
-          </Button>
-
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={<FileClock className="w-4 h-4" />}
-            onClick={handleSaveDraft}
-            disabled={isSaving}
-          >
-            Save Draft
           </Button>
 
           <Button
@@ -957,16 +936,6 @@ export const InwardForm: React.FC<InwardFormProps> = ({
       <div className="flex justify-end items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
-        </Button>
-
-        <Button
-          type="button"
-          variant="secondary"
-          icon={<FileClock className="w-4 h-4" />}
-          onClick={handleSaveDraft}
-          disabled={isSaving}
-        >
-          Save Draft
         </Button>
 
         <Button

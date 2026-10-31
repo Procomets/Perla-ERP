@@ -173,6 +173,8 @@ export class InvoiceService {
         companyName: app.companyName,
         poId: app.purchaseOrderId,
         poNumber: app.poNumber,
+        customerPoNumber: po?.customerPoNumber || null,
+        woNumber: po?.customerPoNumber || null,
         styleNo: app.styleNo,
         itemName: app.itemName,
         colour: app.colourName,
@@ -341,6 +343,8 @@ export class InvoiceService {
       poNumber: selectedItems[0].poNumber,
       poNumbers: Array.from(new Set(selectedItems.map((s) => s.poNumber))),
       purchaseOrderIds: Array.from(new Set(selectedItems.map((s) => s.poId))),
+      customerPoNumber: selectedItems.find((s) => s.customerPoNumber)?.customerPoNumber || null,
+      woNumber: selectedItems.find((s) => s.customerPoNumber)?.customerPoNumber || null,
       styleNo: selectedItems[0].styleNo,
       styleNumbers: Array.from(new Set(selectedItems.map((s) => s.styleNo))),
       customerId: companyId,
@@ -737,6 +741,75 @@ export class InvoiceService {
       userName: user.displayName || 'Authorized User',
       timestamp: now,
       summary: `Invoice ${target.invoiceNo} cancelled by ${user.displayName || 'Authorized User'}. Reason: ${reason}`
+    };
+    saveLocalAuditLog(auditLog);
+
+    return updatedInvoice;
+  }
+
+  /**
+   * Updates an existing invoice with new data (Admin only)
+   * Persists to Firestore database and local cache
+   */
+  static async updateInvoice(
+    invoice: Invoice,
+    user: { uid: string; displayName?: string },
+    isDemo: boolean = false
+  ): Promise<Invoice> {
+    const now = new Date().toISOString();
+    const updatedInvoice: Invoice = {
+      ...invoice,
+      updatedAt: now
+    };
+
+    // 1. Persist to Firestore database if not demo mode
+    if (!isDemo) {
+      try {
+        const invDocRef = doc(db, 'invoices', invoice.id);
+        await setDoc(invDocRef, updatedInvoice, { merge: true });
+
+        // Update lines subcollection
+        if (invoice.lines && invoice.lines.length > 0) {
+          for (const line of invoice.lines) {
+            const lineId = line.lineId || `line_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const lineDocRef = doc(db, 'invoices', invoice.id, 'lines', lineId);
+            await setDoc(
+              lineDocRef,
+              {
+                ...line,
+                lineId,
+                invoiceId: invoice.id,
+                updatedAt: now
+              },
+              { merge: true }
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to update invoice in Firestore:', err);
+      }
+    }
+
+    // 2. Update local storage cache
+    const existing = getLocalInvoices();
+    const index = existing.findIndex((inv) => inv.id === invoice.id);
+    if (index >= 0) {
+      existing[index] = updatedInvoice;
+    } else {
+      existing.unshift(updatedInvoice);
+    }
+    saveLocalInvoices(existing);
+
+    // 3. Record audit log
+    const auditLog: InvoiceAuditLog = {
+      auditId: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      invoiceId: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      action: 'updated',
+      userId: user.uid,
+      userName: user.displayName || 'Admin User',
+      timestamp: now,
+      summary: `Invoice ${invoice.invoiceNo} modified and updated permanently by ${user.displayName || 'Admin User'}.`
     };
     saveLocalAuditLog(auditLog);
 

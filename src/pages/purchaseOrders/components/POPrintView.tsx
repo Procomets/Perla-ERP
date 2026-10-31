@@ -61,6 +61,9 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
     doc.text(`PO Number: ${po.poNumber}`, 14, 55);
     doc.text(`Order Date: ${formatDate(po.orderDate)}`, 14, 61);
     doc.text(`Process Category: ${po.processCategory.toUpperCase()}`, 14, 67);
+    if (po.customerPoNumber) {
+      doc.text(`Cust PO: ${po.customerPoNumber}${po.customerPoDate ? ` (${formatDate(po.customerPoDate)})` : ''}`, 14, 73);
+    }
 
     doc.text(`Customer: ${po.customerName}`, 120, 55);
     if (po.customerCode) doc.text(`Customer Code: ${po.customerCode}`, 120, 61);
@@ -197,6 +200,12 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
             <div className="text-xs text-slate-500 mt-1">
               Date: <strong>{formatDate(po.orderDate)}</strong>
             </div>
+            {po.customerPoNumber && (
+              <div className="text-xs text-slate-700 mt-0.5">
+                Cust PO: <strong className="font-mono">{po.customerPoNumber}</strong>
+                {po.customerPoDate && <span className="text-slate-500"> ({formatDate(po.customerPoDate)})</span>}
+              </div>
+            )}
           </div>
         </div>
 
@@ -264,6 +273,26 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
                   {po.deliveryDate ? formatDate(po.deliveryDate) : 'Standard schedule'}
                 </strong>
               </div>
+              {po.customerPoNumber && (
+                <div>
+                  <span className="text-slate-500 block text-[11px]">
+                    Customer PO No:
+                  </span>
+                  <strong className="font-mono text-slate-900">
+                    {po.customerPoNumber}
+                  </strong>
+                </div>
+              )}
+              {po.customerPoDate && (
+                <div>
+                  <span className="text-slate-500 block text-[11px]">
+                    Customer PO Date:
+                  </span>
+                  <strong className="text-slate-900">
+                    {formatDate(po.customerPoDate)}
+                  </strong>
+                </div>
+              )}
             </div>
           </div>
         </div>

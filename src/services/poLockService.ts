@@ -10,16 +10,41 @@ export interface POLockStatus {
 }
 
 export class POLockService {
+  private static cachedMap: Record<string, POLockStatus> | null = null;
+  private static cacheTimestamp: number = 0;
+  private static CACHE_TTL_MS = 20000; // 20 seconds TTL
+
+  static clearCache(): void {
+    this.cachedMap = null;
+    this.cacheTimestamp = 0;
+  }
+
   /**
    * Builds an index of all PO IDs and PO numbers that are locked because their
    * statement has been approved or moved to invoice.
    */
-  static async getLockedPOMap(isDemo: boolean = false): Promise<Record<string, POLockStatus>> {
+  static async getLockedPOMap(isDemo: boolean = false, forceRefresh: boolean = false): Promise<Record<string, POLockStatus>> {
+    const now = Date.now();
+    if (!forceRefresh && this.cachedMap && now - this.cacheTimestamp < this.CACHE_TTL_MS) {
+      return this.cachedMap;
+    }
+
     const lockMap: Record<string, POLockStatus> = {};
 
     try {
+      // Fetch Statement approvals and Invoices in parallel
+      const [approvals, invResult] = await Promise.all([
+        StatementService.getInvoiceApprovals(undefined, isDemo).catch((e) => {
+          console.warn('Failed to load invoice approvals in POLockService:', e);
+          return [];
+        }),
+        InvoiceService.getInvoices({}, { page: 1, pageSize: 1000 }, isDemo).catch((e) => {
+          console.warn('Failed to load invoices in POLockService:', e);
+          return { invoices: [], totalCount: 0 };
+        })
+      ]);
+
       // 1. Approvals from Statement module
-      const approvals = await StatementService.getInvoiceApprovals(undefined, isDemo);
       for (const app of approvals) {
         if (app.status === 'approved' || app.status === 'invoiced') {
           const reason =
@@ -44,13 +69,8 @@ export class POLockService {
           }
         }
       }
-    } catch (e) {
-      console.warn('Failed to load invoice approvals in POLockService:', e);
-    }
 
-    try {
       // 2. Invoices from Invoice module
-      const invResult = await InvoiceService.getInvoices({}, { page: 1, pageSize: 1000 }, isDemo);
       const invoices = invResult.invoices || [];
       for (const inv of invoices) {
         if (inv.status !== 'cancelled' && (inv as any).status !== 'Cancelled') {
@@ -92,9 +112,11 @@ export class POLockService {
         }
       }
     } catch (e) {
-      console.warn('Failed to load invoices in POLockService:', e);
+      console.warn('Failed to load locked PO map in POLockService:', e);
     }
 
+    this.cachedMap = lockMap;
+    this.cacheTimestamp = now;
     return lockMap;
   }
 

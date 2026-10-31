@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Invoice, CompanyInvoiceSettings } from '../../../types/invoice';
 import { formatDate } from '../../../utils/formatters';
 import { InvoiceSettingsService } from '../../../services/invoiceSettingsService';
+import { POService } from '../../../services/poService';
 
 interface OfficialInvoiceDocumentProps {
   invoice: Invoice;
@@ -15,6 +16,9 @@ export const OfficialInvoiceDocument: React.FC<OfficialInvoiceDocumentProps> = (
   settings: propSettings
 }) => {
   const [liveSettings, setLiveSettings] = useState<CompanyInvoiceSettings | null>(propSettings || null);
+  const [resolvedWoNumber, setResolvedWoNumber] = useState<string>(
+    invoice.customerPoNumber || invoice.woNumber || ''
+  );
 
   useEffect(() => {
     if (propSettings) {
@@ -35,6 +39,54 @@ export const OfficialInvoiceDocument: React.FC<OfficialInvoiceDocumentProps> = (
 
     return () => unsubscribe();
   }, [propSettings]);
+
+  useEffect(() => {
+    if (invoice.customerPoNumber || invoice.woNumber) {
+      setResolvedWoNumber(invoice.customerPoNumber || invoice.woNumber || '');
+      return;
+    }
+
+    let isMounted = true;
+    const poNum = invoice.poNumber || (invoice.poNumbers && invoice.poNumbers[0]) || '';
+    const poId = (invoice.purchaseOrderIds && invoice.purchaseOrderIds[0]) || '';
+
+    if (!poNum && !poId) {
+      setResolvedWoNumber('');
+      return;
+    }
+
+    async function loadCustomerPoNumber() {
+      try {
+        let customerPoNum = '';
+        if (poId) {
+          const res = await POService.getPurchaseOrderById(poId);
+          if (res?.po?.customerPoNumber) {
+            customerPoNum = res.po.customerPoNumber;
+          }
+        }
+        if (!customerPoNum && poNum) {
+          const res = await POService.getPurchaseOrders({ searchQuery: poNum }, { page: 1, pageSize: 5 });
+          const matched = res.pos.find((p) => p.poNumber === poNum || p.id === poNum || p.poId === poNum);
+          if (matched?.customerPoNumber) {
+            customerPoNum = matched.customerPoNumber;
+          }
+        }
+        if (isMounted) {
+          setResolvedWoNumber(customerPoNum || '');
+        }
+      } catch (err) {
+        console.warn('Could not load customer PO number for invoice W.O Number:', err);
+        if (isMounted) {
+          setResolvedWoNumber('');
+        }
+      }
+    }
+
+    loadCustomerPoNumber();
+    return () => {
+      isMounted = false;
+    };
+  }, [invoice.id, invoice.poNumber, invoice.purchaseOrderIds, invoice.customerPoNumber, invoice.woNumber]);
 
   const activeSettings = propSettings || liveSettings;
 
@@ -174,7 +226,7 @@ export const OfficialInvoiceDocument: React.FC<OfficialInvoiceDocumentProps> = (
           <div className="p-2 border-r border-black flex flex-col justify-between">
             <span className="text-[10px] text-black">W.O Number</span>
             <span className="font-bold text-[11px] font-mono mt-1 text-black">
-              {invoice.poNumber || 'PP217'}
+              {resolvedWoNumber || ''}
             </span>
           </div>
 

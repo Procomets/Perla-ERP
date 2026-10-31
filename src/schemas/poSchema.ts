@@ -78,6 +78,8 @@ export const purchaseOrderFormSchema = z
     orderDate: z.string().min(1, 'Order date is required'),
     deliveryDate: z.string().nullable().optional(),
     expectedCompletionDate: z.string().nullable().optional(),
+    customerPoNumber: z.string().trim().nullable().optional(),
+    customerPoDate: z.string().nullable().optional(),
     customerReferenceNo: z.string().trim().optional(),
     customerInstructions: z.string().trim().optional(),
     internalRemarks: z.string().trim().optional(),

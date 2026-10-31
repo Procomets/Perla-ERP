@@ -123,12 +123,18 @@ export class StatementService {
       throw new Error('Please select a Customer Company to generate statement.');
     }
 
-    // 1. Resolve Company Details
-    const companyRes = await VendorService.getVendorById(filters.companyId, isDemo);
+    // 1-5. Concurrently load Company Details, POs, Inwards, Outwards, and Approvals
+    const [companyRes, poRes, inwRes, outRes, approvals] = await Promise.all([
+      VendorService.getVendorById(filters.companyId, isDemo),
+      POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo),
+      InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo),
+      OutwardService.getOutwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo),
+      this.getInvoiceApprovals(filters.companyId, isDemo)
+    ]);
+
     const companyName = companyRes?.vendor?.companyName || 'Selected Customer';
 
-    // 2. Load all eligible Purchase Orders for this company & filters
-    const poRes = await POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo);
+    // 2. Filter eligible Purchase Orders for this company & filters in memory
     let matchedPOs = (poRes.pos || []).filter((p) => {
       const matchComp =
         p.customerId === filters.companyId ||
@@ -159,8 +165,7 @@ export class StatementService {
     const poIds = new Set(matchedPOs.map((p) => p.id).concat(matchedPOs.map((p) => p.poId || '')));
     const poNumbers = new Set(matchedPOs.map((p) => p.poNumber?.trim().toLowerCase()).filter(Boolean));
 
-    // 3. Load all posted Inward Entries
-    const inwRes = await InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo);
+    // 3. Filter posted Inward Entries in memory
     const postedInwards = (inwRes.inwards || []).filter((inw) => {
       if (inw.status !== 'posted') return false;
       const inwPoId = inw.poId;
@@ -168,17 +173,13 @@ export class StatementService {
       return (inwPoId && poIds.has(inwPoId)) || (inwPoNum && poNumbers.has(inwPoNum));
     });
 
-    // 4. Load all posted Outward Entries
-    const outRes = await OutwardService.getOutwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo);
+    // 4. Filter posted Outward Entries in memory
     const postedOutwards = (outRes.outwards || []).filter((outw) => {
       if (outw.status !== 'posted') return false;
       const outPoId = outw.poId;
       const outPoNum = (outw.poNumberSnapshot || outw.poNumber || '').trim().toLowerCase();
       return (outPoId && poIds.has(outPoId)) || (outPoNum && poNumbers.has(outPoNum));
     });
-
-    // 5. Load Existing Invoice Approvals
-    const approvals = await this.getInvoiceApprovals(filters.companyId, isDemo);
     const approvalMap = new Map<string, InvoiceApprovalRecord>();
     approvals.forEach((app) => {
       if (app.poColourLineId) {
