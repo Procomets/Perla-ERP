@@ -106,6 +106,11 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
   const { moduleId = 'dashboard' } = useParams();
   const navigate = useNavigate();
   const { user, isAdmin, canView } = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [moduleId]);
 
   // If not logged in and trying to access ERP, redirect to login
   if (!user) {
@@ -154,11 +159,17 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
         activeTab={moduleId}
         onSelectTab={(tabId) => navigate(`/erp/${tabId}`)}
         onGoToLogin={() => navigate('/login')}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
       <div className="flex-1 flex flex-col min-w-0 h-screen">
-        <Header title={activeTitle.title} subtitle={activeTitle.subtitle} />
+        <Header
+          title={activeTitle.title}
+          subtitle={activeTitle.subtitle}
+          onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
+        />
         <main className="flex-1 overflow-y-auto bg-[#F8F9FA]">
-          <div className="max-w-7xl mx-auto p-6 md:p-8">
+          <div className="max-w-7xl mx-auto p-3 sm:p-5 md:p-8">
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
             {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} onUpdatePo={props.onUpdatePo} />}
             {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} onUpdateInward={props.onUpdateInward} />}

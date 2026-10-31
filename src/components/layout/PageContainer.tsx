@@ -12,7 +12,7 @@ export const PageContainer: React.FC<PageContainerProps> = ({ title, subtitle, c
     <div className="flex flex-col h-screen bg-[#F8F9FA] w-full overflow-hidden">
       <Header title={title} subtitle={subtitle} />
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6 md:p-8">
+        <div className="max-w-7xl mx-auto p-3 sm:p-5 md:p-8">
           {children}
         </div>
       </main>
