@@ -22,6 +22,8 @@ export interface StatementInwardRow {
   qtyReceived: number;
   unit: UnitType;
   status: string;
+  styleNo?: string;
+  poNumber?: string;
 }
 
 export interface StatementOutwardRow {
@@ -36,6 +38,8 @@ export interface StatementOutwardRow {
   qtyDispatched: number;
   unit: UnitType;
   status: string;
+  styleNo?: string;
+  poNumber?: string;
 }
 
 export interface StatementColourLineDetail {
@@ -50,6 +54,7 @@ export interface StatementColourLineDetail {
   unit: UnitType;
   orderedQty: number;
   rate: number;
+  hsnNo?: string;
   cumulativeInward: number;
   orderedVsInwardDiff: number;
   cumulativeOutward: number;
@@ -97,6 +102,7 @@ export interface InvoiceApprovalRecord {
   itemName: string;
   poColourLineId: string;
   colourName: string;
+  hsnNo?: string;
   unit: UnitType;
   rate: number;
   approvedQuantity: number;

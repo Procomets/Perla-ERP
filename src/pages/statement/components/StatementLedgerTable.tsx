@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   StatementInwardRow,
   StatementOutwardRow,
   StatementUnitTotal
 } from '../../../types/statement';
 import { formatDate } from '../../../utils/formatters';
+import { StatementPdfService } from '../../../services/statementPdfService';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -14,7 +15,12 @@ import {
   Palette,
   Calendar,
   X,
-  RotateCcw
+  RotateCcw,
+  Download,
+  ChevronDown,
+  Check,
+  Layers,
+  Clock
 } from 'lucide-react';
 
 interface StatementLedgerTableProps {
@@ -22,45 +28,128 @@ interface StatementLedgerTableProps {
   outwards: StatementOutwardRow[];
   unitTotals: StatementUnitTotal[];
   companyName: string;
+  styleNo?: string;
+  poNumber?: string;
+  itemName?: string;
 }
 
 export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
   inwards,
   outwards,
   unitTotals,
-  companyName
+  companyName,
+  styleNo,
+  poNumber,
+  itemName
 }) => {
   // Section-specific filter states
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedColour, setSelectedColour] = useState('all');
+  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [isColourDropdownOpen, setIsColourDropdownOpen] = useState(false);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  // Extract distinct colours present across inward and outward data
+  // View Mode: 'colour-breakdown' (grouped by colour with subtotals matching paper statement) or 'chronological'
+  const [viewMode, setViewMode] = useState<'colour-breakdown' | 'chronological'>('colour-breakdown');
+
+  // Statement Date state (editable by user, used for statement header and PDF export)
+  const [statementDate, setStatementDate] = useState<string>(
+    () => new Date().toISOString().split('T')[0]
+  );
+
+  const colourDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        colourDropdownRef.current &&
+        !colourDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsColourDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Extract distinct colours present across inward and outward data (strictly non-zero)
   const availableColours = useMemo(() => {
     const set = new Set<string>();
     inwards.forEach((row) => {
-      if (row.colour && row.colour.trim() && row.colour.trim() !== 'All Colours') {
+      if ((row.qtyReceived ?? 0) > 0 && row.colour && row.colour.trim() && row.colour.trim() !== 'All Colours') {
         set.add(row.colour.trim());
       }
     });
     outwards.forEach((row) => {
-      if (row.colour && row.colour.trim() && row.colour.trim() !== 'All Colours') {
+      if ((row.qtyDispatched ?? 0) > 0 && row.colour && row.colour.trim() && row.colour.trim() !== 'All Colours') {
         set.add(row.colour.trim());
       }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [inwards, outwards]);
 
+  // Count occurrences per colour for badging in dropdown
+  const colourCounts = useMemo(() => {
+    const counts: Record<string, { inward: number; outward: number }> = {};
+    availableColours.forEach((col) => {
+      counts[col] = { inward: 0, outward: 0 };
+    });
+    inwards.forEach((r) => {
+      if ((r.qtyReceived ?? 0) > 0 && r.colour && counts[r.colour.trim()]) {
+        counts[r.colour.trim()].inward += 1;
+      }
+    });
+    outwards.forEach((r) => {
+      if ((r.qtyDispatched ?? 0) > 0 && r.colour && counts[r.colour.trim()]) {
+        counts[r.colour.trim()].outward += 1;
+      }
+    });
+    return counts;
+  }, [availableColours, inwards, outwards]);
+
   const hasActiveFilters = Boolean(
-    searchQuery.trim() || selectedColour !== 'all' || fromDate || toDate
+    searchQuery.trim() ||
+    (selectedColours.length > 0 && selectedColours.length < availableColours.length) ||
+    fromDate ||
+    toDate
   );
 
   const handleResetFilters = () => {
     setSearchQuery('');
-    setSelectedColour('all');
+    setSelectedColours([]);
     setFromDate('');
     setToDate('');
+  };
+
+  const handleToggleColour = (colour: string) => {
+    setSelectedColours((prev) => {
+      if (prev.length === 0) {
+        // If all colours were active, clicking one selects only that one
+        return [colour];
+      }
+      if (prev.includes(colour)) {
+        const next = prev.filter((c) => c !== colour);
+        return next;
+      } else {
+        const next = [...prev, colour];
+        // If user selected all of them, reset to empty (means all)
+        if (next.length === availableColours.length) {
+          return [];
+        }
+        return next;
+      }
+    });
+  };
+
+  const handleSelectOnlyColour = (colour: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedColours([colour]);
+    setIsColourDropdownOpen(false);
+  };
+
+  const handleSelectAllColours = () => {
+    setSelectedColours([]);
   };
 
   // Helper to extract YYYY-MM-DD from various date formats
@@ -84,28 +173,34 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
     return '';
   };
 
-  // Filter Inward rows
+  // Filter Inward rows (strictly non-zero)
   const filteredInwards = useMemo(() => {
     return inwards.filter((row) => {
-      // Colour filter
-      if (
-        selectedColour !== 'all' &&
-        row.colour?.trim().toLowerCase() !== selectedColour.trim().toLowerCase()
-      ) {
-        return false;
+      // 1. Omit 0 quantity entries
+      if ((row.qtyReceived ?? 0) <= 0) return false;
+
+      // 2. Multi-Colour filter (1 or more colours)
+      if (selectedColours.length > 0 && selectedColours.length < availableColours.length) {
+        const selectedLower = selectedColours.map((c) => c.toLowerCase());
+        if (!selectedLower.includes(row.colour?.trim().toLowerCase())) {
+          return false;
+        }
       }
-      // Date filter
+
+      // 3. Date filter
       if (fromDate || toDate) {
         const rowDate = parseRowDateString(row.date);
         if (fromDate && (!rowDate || rowDate < fromDate)) return false;
         if (toDate && (!rowDate || rowDate > toDate)) return false;
       }
-      // Search query
+
+      // 4. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const dcMatch = row.dcNo?.toLowerCase().includes(q);
         const colourMatch = row.colour?.toLowerCase().includes(q);
         const inwardNoMatch = row.inwardNo?.toLowerCase().includes(q);
+        const styleMatch = row.styleNo?.toLowerCase().includes(q);
         const qtyMatch = row.qtyReceived?.toString().includes(q);
         const unitMatch = row.unit?.toLowerCase().includes(q);
         const formattedDateMatch = formatDate(row.date)?.toLowerCase().includes(q);
@@ -113,6 +208,7 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
           !dcMatch &&
           !colourMatch &&
           !inwardNoMatch &&
+          !styleMatch &&
           !qtyMatch &&
           !unitMatch &&
           !formattedDateMatch
@@ -122,30 +218,36 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
       }
       return true;
     });
-  }, [inwards, selectedColour, fromDate, toDate, searchQuery]);
+  }, [inwards, selectedColours, availableColours.length, fromDate, toDate, searchQuery]);
 
-  // Filter Outward rows
+  // Filter Outward rows (strictly non-zero)
   const filteredOutwards = useMemo(() => {
     return outwards.filter((row) => {
-      // Colour filter
-      if (
-        selectedColour !== 'all' &&
-        row.colour?.trim().toLowerCase() !== selectedColour.trim().toLowerCase()
-      ) {
-        return false;
+      // 1. Omit 0 quantity entries
+      if ((row.qtyDispatched ?? 0) <= 0) return false;
+
+      // 2. Multi-Colour filter (1 or more colours)
+      if (selectedColours.length > 0 && selectedColours.length < availableColours.length) {
+        const selectedLower = selectedColours.map((c) => c.toLowerCase());
+        if (!selectedLower.includes(row.colour?.trim().toLowerCase())) {
+          return false;
+        }
       }
-      // Date filter
+
+      // 3. Date filter
       if (fromDate || toDate) {
         const rowDate = parseRowDateString(row.date);
         if (fromDate && (!rowDate || rowDate < fromDate)) return false;
         if (toDate && (!rowDate || rowDate > toDate)) return false;
       }
-      // Search query
+
+      // 4. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const dcMatch = row.dcNo?.toLowerCase().includes(q);
         const colourMatch = row.colour?.toLowerCase().includes(q);
         const outwardNoMatch = row.outwardNo?.toLowerCase().includes(q);
+        const styleMatch = row.styleNo?.toLowerCase().includes(q);
         const qtyMatch = row.qtyDispatched?.toString().includes(q);
         const unitMatch = row.unit?.toLowerCase().includes(q);
         const formattedDateMatch = formatDate(row.date)?.toLowerCase().includes(q);
@@ -153,6 +255,7 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
           !dcMatch &&
           !colourMatch &&
           !outwardNoMatch &&
+          !styleMatch &&
           !qtyMatch &&
           !unitMatch &&
           !formattedDateMatch
@@ -162,14 +265,109 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
       }
       return true;
     });
-  }, [outwards, selectedColour, fromDate, toDate, searchQuery]);
+  }, [outwards, selectedColours, availableColours.length, fromDate, toDate, searchQuery]);
 
-  const maxRows = Math.max(filteredInwards.length, filteredOutwards.length);
+  // Paired Dual Ledger table row model ensuring exact horizontal alignment between Inward & Outward
+  interface DualLedgerTableRow {
+    isSubtotal: boolean;
+    subtotalColour?: string;
+    inwardRow?: StatementInwardRow;
+    inwardSubtotalQty?: number;
+    inwardUnit?: string;
+    outwardRow?: StatementOutwardRow;
+    outwardSubtotalQty?: number;
+    outwardUnit?: string;
+  }
+
+  const tableRows: DualLedgerTableRow[] = useMemo(() => {
+    if (viewMode === 'chronological') {
+      const maxLen = Math.max(filteredInwards.length, filteredOutwards.length);
+      const list: DualLedgerTableRow[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        list.push({
+          isSubtotal: false,
+          inwardRow: filteredInwards[i],
+          outwardRow: filteredOutwards[i]
+        });
+      }
+      return list;
+    }
+
+    // --- COLOUR BREAKDOWN MODE (Aligned colour-by-colour) ---
+    const orderedColours: string[] = [];
+    const seenColours = new Set<string>();
+
+    filteredInwards.forEach((row) => {
+      const col = (row.colour || 'Standard').toUpperCase();
+      if (!seenColours.has(col)) {
+        seenColours.add(col);
+        orderedColours.push(col);
+      }
+    });
+
+    filteredOutwards.forEach((row) => {
+      const col = (row.colour || 'Standard').toUpperCase();
+      if (!seenColours.has(col)) {
+        seenColours.add(col);
+        orderedColours.push(col);
+      }
+    });
+
+    const inwardsByColour = new Map<string, StatementInwardRow[]>();
+    filteredInwards.forEach((row) => {
+      const col = (row.colour || 'Standard').toUpperCase();
+      if (!inwardsByColour.has(col)) inwardsByColour.set(col, []);
+      inwardsByColour.get(col)!.push(row);
+    });
+
+    const outwardsByColour = new Map<string, StatementOutwardRow[]>();
+    filteredOutwards.forEach((row) => {
+      const col = (row.colour || 'Standard').toUpperCase();
+      if (!outwardsByColour.has(col)) outwardsByColour.set(col, []);
+      outwardsByColour.get(col)!.push(row);
+    });
+
+    const list: DualLedgerTableRow[] = [];
+
+    orderedColours.forEach((colName) => {
+      const inwList = inwardsByColour.get(colName) || [];
+      const outList = outwardsByColour.get(colName) || [];
+      const maxCount = Math.max(inwList.length, outList.length);
+
+      let inwSubtotal = 0;
+      let outSubtotal = 0;
+
+      for (let i = 0; i < maxCount; i++) {
+        const inw = inwList[i];
+        const out = outList[i];
+        if (inw) inwSubtotal += inw.qtyReceived;
+        if (out) outSubtotal += out.qtyDispatched;
+
+        list.push({
+          isSubtotal: false,
+          inwardRow: inw,
+          outwardRow: out
+        });
+      }
+
+      // Aligned Colour Breakdown Row for BOTH Inward & Outward
+      list.push({
+        isSubtotal: true,
+        subtotalColour: colName,
+        inwardSubtotalQty: inwSubtotal,
+        inwardUnit: inwList[0]?.unit || 'piece',
+        outwardSubtotalQty: outSubtotal,
+        outwardUnit: outList[0]?.unit || 'piece'
+      });
+    });
+
+    return list;
+  }, [filteredInwards, filteredOutwards, viewMode]);
+
+  const maxRows = tableRows.length;
 
   // Compute summary totals for filtered rows
   const displayedUnitTotals = useMemo(() => {
-    if (!hasActiveFilters) return unitTotals;
-
     return unitTotals.map((tot) => {
       const filteredInward = filteredInwards
         .filter((r) => r.unit === tot.unit)
@@ -189,37 +387,101 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
         orderVsInwardDiff: tot.totalOrdered - roundedInward
       };
     });
-  }, [unitTotals, hasActiveFilters, filteredInwards, filteredOutwards]);
+  }, [unitTotals, filteredInwards, filteredOutwards]);
+
+  // Grand totals across all filtered rows
+  const grandTotalInward = useMemo(
+    () => filteredInwards.reduce((sum, r) => sum + r.qtyReceived, 0),
+    [filteredInwards]
+  );
+  const grandTotalOutward = useMemo(
+    () => filteredOutwards.reduce((sum, r) => sum + r.qtyDispatched, 0),
+    [filteredOutwards]
+  );
+
+  // Download PDF Handler
+  const handleDownloadPdf = () => {
+    StatementPdfService.downloadStatementPdf({
+      companyName,
+      statementDate: statementDate ? formatDate(statementDate) : undefined,
+      styleNo,
+      poNumber,
+      itemName,
+      inwards: filteredInwards,
+      outwards: filteredOutwards,
+      selectedColours: selectedColours.length > 0 ? selectedColours : undefined
+    });
+  };
+
+  // Colour button label computation
+  const colourButtonLabel = useMemo(() => {
+    if (availableColours.length === 0) return 'No Colours';
+    if (selectedColours.length === 0 || selectedColours.length === availableColours.length) {
+      return `All Colours (${availableColours.length})`;
+    }
+    if (selectedColours.length === 1) {
+      return selectedColours[0];
+    }
+    return `${selectedColours.length} Colours (${selectedColours.slice(0, 2).join(', ')}${
+      selectedColours.length > 2 ? ` +${selectedColours.length - 2}` : ''
+    })`;
+  }, [availableColours.length, selectedColours]);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
       {/* Table Header Banner */}
-      <div className="p-4 bg-slate-50/90 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+      <div className="p-4 bg-slate-50/90 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex items-center gap-2">
           <Scale className="w-4 h-4 text-[#1F4E79]" />
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Side-by-Side Dual Ledger Reconciliation Table
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              Chronological posted transactions ledger for {companyName}. Left: Inward receipts • Right: Outward delivery dispatches.
-            </p>
-          </div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            Side-by-Side Dual Ledger Reconciliation Table
+          </h3>
         </div>
 
-        <div className="text-xs font-semibold text-slate-500 flex items-center gap-4">
-          <span className="flex items-center gap-1 text-emerald-800">
-            <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
-            {hasActiveFilters ? `${filteredInwards.length} of ${inwards.length}` : inwards.length} Inward DC(s)
-          </span>
-          <span className="flex items-center gap-1 text-blue-800">
-            <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" />
-            {hasActiveFilters ? `${filteredOutwards.length} of ${outwards.length}` : outwards.length} Outward DC(s)
-          </span>
+        {/* Action Controls: Counts, Statement Date, PDF Download */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Inward / Outward counts */}
+          <div className="text-xs font-semibold text-slate-500 flex items-center gap-3 mr-1">
+            <span className="flex items-center gap-1 text-emerald-800">
+              <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+              {hasActiveFilters ? `${filteredInwards.length} of ${inwards.length}` : inwards.length} Inward DC(s)
+            </span>
+            <span className="flex items-center gap-1 text-blue-800">
+              <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" />
+              {hasActiveFilters ? `${filteredOutwards.length} of ${outwards.length}` : outwards.length} Outward DC(s)
+            </span>
+          </div>
+
+          {/* Statement Date Picker */}
+          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 h-8 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider whitespace-nowrap">
+              Statement Date:
+            </span>
+            <input
+              type="date"
+              value={statementDate}
+              onChange={(e) => setStatementDate(e.target.value)}
+              className="text-xs font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
+              title="Change statement date for header and PDF download"
+            />
+          </div>
+
+          {/* PDF Download Button */}
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={filteredInwards.length === 0 && filteredOutwards.length === 0}
+            className="flex items-center gap-1.5 px-3.5 h-8 bg-black hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-2xs transition disabled:opacity-50 cursor-pointer whitespace-nowrap"
+            title="Download Reconciliation Statement PDF (exact format with colour breakdown & subtotals)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download PDF</span>
+          </button>
         </div>
       </div>
 
-      {/* Section-Specific Filter Bar: Search, Colour, Date-Wise */}
+      {/* Section-Specific Filter Bar: Search, Multi-Colour Filter, Date-Wise */}
       <div className="p-3 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
           {/* 1. Search Bar */}
@@ -244,24 +506,129 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
             )}
           </div>
 
-          {/* 2. Colour Filter */}
-          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1 shadow-2xs">
-            <Palette className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Colour:</label>
-            <select
-              value={selectedColour}
-              onChange={(e) => setSelectedColour(e.target.value)}
-              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer pr-1"
+          {/* 2. Multi-Colour Filter (Supports 1 or more colours) */}
+          <div className="relative" ref={colourDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsColourDropdownOpen((prev) => !prev)}
+              className={`flex items-center gap-2 bg-white border rounded-lg px-2.5 py-1 text-xs font-semibold shadow-2xs transition cursor-pointer ${
+                selectedColours.length > 0 && selectedColours.length < availableColours.length
+                  ? 'border-[#1F4E79] text-[#1F4E79] bg-blue-50/40 ring-1 ring-[#1F4E79]'
+                  : 'border-slate-300 text-slate-800 hover:border-slate-400'
+              }`}
             >
-              <option value="all">
-                All Colours {availableColours.length > 0 ? `(${availableColours.length})` : ''}
-              </option>
-              {availableColours.map((col) => (
-                <option key={col} value={col}>
-                  {col}
-                </option>
-              ))}
-            </select>
+              <Palette className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Colour:</span>
+              <span className="max-w-[170px] truncate">{colourButtonLabel}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  isColourDropdownOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {/* Floating Multi-Select Dropdown Menu */}
+            {isColourDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs">
+                {/* Header with actions */}
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 px-1">
+                  <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                    Filter by Colour (Multi-select)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllColours}
+                      className="text-[11px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-slate-300">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedColours([])}
+                      className="text-[11px] text-slate-500 hover:text-slate-800 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {/* Colour Checkbox List */}
+                <div className="max-h-56 overflow-y-auto space-y-1 py-1">
+                  {availableColours.length === 0 ? (
+                    <p className="text-slate-400 text-center py-3 text-xs italic">No colours available</p>
+                  ) : (
+                    availableColours.map((col) => {
+                      const isSelected =
+                        selectedColours.length === 0 || selectedColours.includes(col);
+                      const isStrictlyFiltered =
+                        selectedColours.length > 0 && selectedColours.includes(col);
+                      const counts = colourCounts[col];
+
+                      return (
+                        <div
+                          key={col}
+                          onClick={() => handleToggleColour(col)}
+                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition ${
+                            isStrictlyFiltered
+                              ? 'bg-blue-50/80 text-blue-950 font-bold'
+                              : isSelected
+                              ? 'hover:bg-slate-50 text-slate-800'
+                              : 'text-slate-400 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div
+                              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition ${
+                                isSelected
+                                  ? 'bg-[#1F4E79] border-[#1F4E79] text-white'
+                                  : 'border-slate-300 bg-white'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                            <span className="truncate">{col}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {counts && (
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                ↓{counts.inward} ↑{counts.outward}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => handleSelectOnlyColour(col, e)}
+                              className="text-[10px] font-bold text-slate-400 hover:text-[#1F4E79] px-1 py-0.5 rounded hover:bg-slate-200/60 transition cursor-pointer"
+                              title={`Select only ${col}`}
+                            >
+                              only
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Footer status */}
+                <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 px-1">
+                  <span>
+                    {selectedColours.length === 0 || selectedColours.length === availableColours.length
+                      ? `All ${availableColours.length} colours shown`
+                      : `${selectedColours.length} of ${availableColours.length} colours selected`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsColourDropdownOpen(false)}
+                    className="font-bold text-[#1F4E79] hover:underline cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 3. Date-Wise Filter */}
@@ -301,30 +668,49 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
           </div>
         </div>
 
-        {/* Filter Summary & Reset Button */}
+        {/* Right Side: Matched Counts & View Mode Toggle (replaces reset button near filters) */}
         <div className="flex items-center gap-2">
           {hasActiveFilters && (
-            <>
-              <span className="text-[11px] font-bold text-[#1F4E79] bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
-                Matched: {filteredInwards.length} Inward • {filteredOutwards.length} Outward
-              </span>
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer"
-                title="Reset table filters"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
-              </button>
-            </>
+            <span className="text-[11px] font-bold text-[#1F4E79] bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
+              Matched: {filteredInwards.length} Inward • {filteredOutwards.length} Outward
+            </span>
           )}
+
+          {/* View Mode Toggle: Colour Breakdown vs Chronological */}
+          <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-slate-100 text-xs font-semibold h-8 items-center">
+            <button
+              type="button"
+              onClick={() => setViewMode('colour-breakdown')}
+              className={`h-full px-2.5 rounded-md text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'colour-breakdown'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Group both inward and outward dispatches by colour with matching aligned subtotals"
+            >
+              <Layers className="w-3 h-3 text-[#1F4E79]" />
+              Colour Breakdown
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('chronological')}
+              className={`h-full px-2.5 rounded-md text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'chronological'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show transactions in pure chronological order"
+            >
+              <Clock className="w-3 h-3 text-slate-500" />
+              Chronological
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Main Dual-Section Table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-center text-xs border-collapse border border-slate-300 min-w-[900px]">
+        <table className="w-full text-center text-xs border-collapse border border-slate-300 min-w-[950px]">
           <thead>
             {/* Top Super-Header Row */}
             <tr className="border-b border-slate-300 text-xs font-bold uppercase tracking-wider">
@@ -340,6 +726,7 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
                   </span>
                   <span className="text-[11px] text-emerald-700 font-semibold lowercase">
                     {filteredInwards.length} transaction(s){hasActiveFilters && ` (of ${inwards.length})`}
+                    {viewMode === 'colour-breakdown' && ' • Grouped by Colour'}
                   </span>
                 </div>
               </th>
@@ -356,6 +743,7 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
                   </span>
                   <span className="text-[11px] text-blue-700 font-semibold lowercase">
                     {filteredOutwards.length} transaction(s){hasActiveFilters && ` (of ${outwards.length})`}
+                    {viewMode === 'colour-breakdown' && ' • Grouped by Colour'}
                   </span>
                 </div>
               </th>
@@ -403,40 +791,62 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
                       </button>
                     </div>
                   ) : (
-                    'No transactions recorded yet for this scope. Select a Customer and Purchase Order to view live reconciliation ledger.'
+                    'No non-zero transactions recorded yet for this scope. Select a Customer and Purchase Order to view live reconciliation ledger.'
                   )}
                 </td>
               </tr>
             ) : (
-              Array.from({ length: maxRows }).map((_, idx) => {
-                const inRow = filteredInwards[idx];
-                const outRow = filteredOutwards[idx];
+              tableRows.map((rowItem, idx) => {
                 const isEven = idx % 2 === 0;
 
                 return (
                   <tr
                     key={idx}
-                    className={`${isEven ? 'bg-white' : 'bg-slate-50/40'} hover:bg-slate-100/50 transition-colors`}
+                    className={`${
+                      rowItem.isSubtotal
+                        ? 'bg-slate-100/90 font-bold border-y border-slate-300'
+                        : isEven
+                        ? 'bg-white'
+                        : 'bg-slate-50/40'
+                    } hover:bg-slate-100/60 transition-colors`}
                   >
                     {/* --- LEFT SECTION: INWARD --- */}
-                    {inRow ? (
+                    {rowItem.isSubtotal ? (
+                      <>
+                        <td className="py-2 px-3 border border-slate-200 text-center text-slate-400 italic text-[11px] whitespace-nowrap">
+                          —
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center text-slate-400 italic text-[11px] whitespace-nowrap">
+                          —
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center font-black text-emerald-900 whitespace-nowrap uppercase tracking-wider text-[11px]">
+                          {rowItem.subtotalColour} Total
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center font-black text-emerald-800 bg-emerald-100/50 whitespace-nowrap text-xs">
+                          {(rowItem.inwardSubtotalQty || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 border-r-4 border-r-slate-400 text-center text-emerald-800 uppercase font-bold text-[10px] whitespace-nowrap">
+                          {rowItem.inwardUnit}
+                        </td>
+                      </>
+                    ) : rowItem.inwardRow ? (
                       <>
                         <td className="py-2 px-3 border border-slate-200 text-center text-slate-600 whitespace-nowrap">
-                          {formatDate(inRow.date)}
+                          {formatDate(rowItem.inwardRow.date)}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-semibold text-slate-800 whitespace-nowrap">
                           <span className="font-mono text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
-                            {inRow.dcNo}
+                            {rowItem.inwardRow.dcNo}
                           </span>
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-medium text-slate-900 whitespace-nowrap">
-                          {inRow.colour}
+                          {rowItem.inwardRow.colour}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-bold text-emerald-700 whitespace-nowrap">
-                          {inRow.qtyReceived.toLocaleString('en-IN')}
+                          {rowItem.inwardRow.qtyReceived.toLocaleString('en-IN')}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 border-r-4 border-r-slate-400 text-center text-slate-500 uppercase font-semibold text-[10px] whitespace-nowrap">
-                          {inRow.unit}
+                          {rowItem.inwardRow.unit}
                         </td>
                       </>
                     ) : (
@@ -450,24 +860,42 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
                     )}
 
                     {/* --- RIGHT SECTION: OUTWARD --- */}
-                    {outRow ? (
+                    {rowItem.isSubtotal ? (
+                      <>
+                        <td className="py-2 px-3 border border-slate-200 text-center text-slate-400 italic text-[11px] whitespace-nowrap">
+                          —
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center text-slate-400 italic text-[11px] whitespace-nowrap">
+                          —
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center font-black text-[#1F4E79] whitespace-nowrap uppercase tracking-wider text-[11px]">
+                          {rowItem.subtotalColour} Total
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center font-black text-blue-900 bg-blue-100/50 whitespace-nowrap text-xs">
+                          {(rowItem.outwardSubtotalQty || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2 px-3 border border-slate-200 text-center text-blue-800 uppercase font-bold text-[10px] whitespace-nowrap">
+                          {rowItem.outwardUnit}
+                        </td>
+                      </>
+                    ) : rowItem.outwardRow ? (
                       <>
                         <td className="py-2 px-3 border border-slate-200 text-center text-slate-600 whitespace-nowrap">
-                          {formatDate(outRow.date)}
+                          {formatDate(rowItem.outwardRow.date)}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-semibold text-slate-800 whitespace-nowrap">
                           <span className="font-mono text-[#1F4E79] bg-blue-50 px-1.5 py-0.5 rounded text-[11px] font-bold">
-                            {outRow.dcNo}
+                            {rowItem.outwardRow.dcNo}
                           </span>
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-medium text-slate-900 whitespace-nowrap">
-                          {outRow.colour}
+                          {rowItem.outwardRow.colour}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center font-bold text-blue-700 whitespace-nowrap">
-                          {outRow.qtyDispatched.toLocaleString('en-IN')}
+                          {rowItem.outwardRow.qtyDispatched.toLocaleString('en-IN')}
                         </td>
                         <td className="py-2 px-3 border border-slate-200 text-center text-slate-500 uppercase font-semibold text-[10px] whitespace-nowrap">
-                          {outRow.unit}
+                          {rowItem.outwardRow.unit}
                         </td>
                       </>
                     ) : (
@@ -482,6 +910,33 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
                   </tr>
                 );
               })
+            )}
+
+            {/* Bottom Grand Total Row (always visible when rows exist) */}
+            {maxRows > 0 && (
+              <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-400">
+                {/* Inward Total */}
+                <td colSpan={3} className="py-2.5 px-3 border border-slate-300 text-right uppercase tracking-wider text-[11px]">
+                  Total Inward Receipts:
+                </td>
+                <td className="py-2.5 px-3 border border-slate-300 text-center font-black text-emerald-800 text-sm">
+                  {grandTotalInward.toLocaleString('en-IN')}
+                </td>
+                <td className="py-2.5 px-3 border border-slate-300 border-r-4 border-r-slate-400 text-center text-slate-600 uppercase text-[10px]">
+                  piece
+                </td>
+
+                {/* Outward Total */}
+                <td colSpan={3} className="py-2.5 px-3 border border-slate-300 text-right uppercase tracking-wider text-[11px]">
+                  Total Outward Dispatches:
+                </td>
+                <td className="py-2.5 px-3 border border-slate-300 text-center font-black text-blue-800 text-sm">
+                  {grandTotalOutward.toLocaleString('en-IN')}
+                </td>
+                <td className="py-2.5 px-3 border border-slate-300 text-center text-slate-600 uppercase text-[10px]">
+                  piece
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

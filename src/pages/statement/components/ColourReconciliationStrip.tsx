@@ -109,14 +109,9 @@ export const ColourReconciliationStrip: React.FC<ColourReconciliationStripProps>
       <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-[#1F4E79]" />
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Colour-Wise Reconciliation & Invoice Readiness Ledger
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              Each colour is reconciled independently using its stable PO colour-line ID.
-            </p>
-          </div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            Colour-Wise Reconciliation & Invoice Readiness Ledger
+          </h3>
         </div>
 
         <div className="flex items-center gap-2 text-xs">

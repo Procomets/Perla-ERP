@@ -858,6 +858,65 @@ export class OutwardService {
   }
 
   /**
+   * Updates dispatch metadata (e.g. timeOut, dispatchDate, vehicle, driver) for an outward entry
+   */
+  static async updateOutwardDispatchDetails(
+    outwardId: string,
+    details: {
+      timeOut?: string;
+      dispatchDate?: string;
+      vehicleNumber?: string;
+      driverName?: string;
+      remarks?: string;
+    },
+    user: { uid: string; name?: string },
+    isDemo: boolean = false
+  ): Promise<OutwardEntry> {
+    const existing = await this.getOutwardEntryById(outwardId, isDemo);
+    if (!existing.outward) {
+      throw new Error(`Outward Entry ${outwardId} not found.`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const updated: OutwardEntry = {
+      ...existing.outward,
+      ...(details.timeOut !== undefined && { timeOut: details.timeOut, outwardTime: details.timeOut }),
+      ...(details.dispatchDate !== undefined && { outwardDate: details.dispatchDate, dispatchDate: details.dispatchDate }),
+      ...(details.vehicleNumber !== undefined && { vehicleNumber: details.vehicleNumber }),
+      ...(details.driverName !== undefined && { driverName: details.driverName }),
+      ...(details.remarks !== undefined && { remarks: details.remarks }),
+      updatedBy: user.uid,
+      updatedByName: user.name || 'System User',
+      updatedAt: nowIso
+    };
+
+    if (!isDemo) {
+      try {
+        const outRef = doc(db, 'outward_entries', outwardId);
+        await setDoc(
+          outRef,
+          {
+            ...details,
+            ...(details.timeOut !== undefined && { outwardTime: details.timeOut }),
+            ...(details.dispatchDate !== undefined && { outwardDate: details.dispatchDate, dispatchDate: details.dispatchDate }),
+            updatedBy: user.uid,
+            updatedByName: user.name || 'System User',
+            updatedAt: Timestamp.now()
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('Failed to update outward dispatch details in Firestore, fallback to local storage:', e);
+      }
+    }
+
+    const all = getLocalOutwards().map((o) => (o.id === outwardId || o.outwardId === outwardId ? updated : o));
+    saveLocalOutwards(all);
+
+    return updated;
+  }
+
+  /**
    * Posts an existing draft outward entry
    */
   static async postExistingDraft(

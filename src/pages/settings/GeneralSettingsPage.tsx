@@ -14,7 +14,8 @@ import {
   Sparkles,
   Layers,
   Receipt,
-  FolderTree
+  FolderTree,
+  Hash
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
@@ -32,6 +33,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
 import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
 import { ItemCategorySettings } from './components/ItemCategorySettings';
+import { HsnMasterSettings } from './components/HsnMasterSettings';
 
 export const GeneralSettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -39,13 +41,13 @@ export const GeneralSettingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Navigation tab from query param or default to 'colours'
-  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'tax' | 'attendance' | null;
-  const validTabs: Array<'colours' | 'processes' | 'categories' | 'tax' | 'attendance'> = ['colours', 'processes', 'categories', 'tax', 'attendance'];
-  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'tax' | 'attendance'>(
+  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | null;
+  const validTabs: Array<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance'> = ['colours', 'processes', 'categories', 'hsn', 'tax', 'attendance'];
+  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance'>(
     paramTab && validTabs.includes(paramTab) ? paramTab : 'colours'
   );
 
-  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'tax' | 'attendance') => {
+  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance') => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
@@ -574,7 +576,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('colours')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'colours'
-                  ? 'bg-[#252525] text-white shadow-xs'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -585,7 +587,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('processes')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'processes'
-                  ? 'bg-[#252525] text-white shadow-xs'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -596,7 +598,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('categories')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'categories'
-                  ? 'bg-[#252525] text-white shadow-xs'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -604,10 +606,21 @@ export const GeneralSettingsPage: React.FC = () => {
               <span>Item Category Master</span>
             </button>
             <button
+              onClick={() => handleSelectTab('hsn')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
+                activeTab === 'hsn'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Hash className="w-4 h-4 shrink-0" />
+              <span>HSN / SAC Master</span>
+            </button>
+            <button
               onClick={() => handleSelectTab('tax')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'tax'
-                  ? 'bg-[#252525] text-white shadow-xs'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -618,7 +631,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('attendance')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'attendance'
-                  ? 'bg-[#252525] text-white shadow-xs'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -1146,7 +1159,18 @@ export const GeneralSettingsPage: React.FC = () => {
       )}
 
       {/* ========================================================== */}
-      {/* TAB 4: TAX & ISSUE SETTINGS */}
+      {/* TAB 4: HSN / SAC MASTER */}
+      {/* ========================================================== */}
+      {activeTab === 'hsn' && (
+        <HsnMasterSettings
+          currentUserId={currentUserId}
+          usersMap={usersMap}
+          onNotify={showNotification}
+        />
+      )}
+
+      {/* ========================================================== */}
+      {/* TAB 5: TAX & ISSUE SETTINGS */}
       {/* ========================================================== */}
       {activeTab === 'tax' && (
         <TaxAndIssuerSettings onNotify={showNotification} />

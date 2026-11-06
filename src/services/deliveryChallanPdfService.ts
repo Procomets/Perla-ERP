@@ -8,6 +8,15 @@ import { Vendor, VendorAddress } from '../types/vendor';
 import { formatDate } from '../utils/formatters';
 import { InvoiceSettingsService, DEFAULT_INVOICE_SETTINGS } from './invoiceSettingsService';
 
+export interface DeliveryChallanItem {
+  sNo: number;
+  itemName?: string;
+  colour?: string;
+  process?: string;
+  description: string;
+  quantity: string;
+}
+
 export interface DeliveryChallanData {
   dcNumber: string;
   dcDate: string;
@@ -23,13 +32,12 @@ export interface DeliveryChallanData {
   styleNo?: string;
   companyGstin?: string;
   companyPhone?: string;
-  items: Array<{
-    sNo: number;
-    description: string;
-    quantity: string;
-  }>;
+  notes?: string;
+  items: DeliveryChallanItem[];
   totalQuantityStr: string;
 }
+
+export type ChallanSlipLayout = 'three' | 'two' | 'one';
 
 export class DeliveryChallanPdfService {
   /**
@@ -76,6 +84,50 @@ export class DeliveryChallanPdfService {
     }
 
     return parts.join(' / ');
+  }
+
+  /**
+   * Helper to parse category fields from a composite description or explicit properties
+   */
+  static parseItemDescription(item: {
+    description?: string;
+    itemName?: string;
+    colour?: string;
+    process?: string;
+  }): { itemName: string; colour: string; process: string } {
+    let itemName = (item.itemName || '').trim();
+    let colour = (item.colour || '').trim();
+    let process = (item.process || '').trim();
+
+    if ((!itemName || (!colour && !process)) && item.description) {
+      const desc = item.description.trim();
+      const colourMatch = desc.match(/-\s*Colour:\s*([^-]+)/i);
+      const processMatch = desc.match(/-\s*Process:\s*(.+)$/i);
+
+      if (colourMatch || processMatch) {
+        if (!colour && colourMatch) colour = colourMatch[1].trim();
+        if (!process && processMatch) process = processMatch[1].trim();
+
+        if (!itemName) {
+          const idxColour = desc.search(/-\s*Colour:/i);
+          const idxProcess = desc.search(/-\s*Process:/i);
+          const cutIdx = idxColour > -1 ? idxColour : idxProcess;
+          if (cutIdx > -1) {
+            itemName = desc.substring(0, cutIdx).trim();
+          } else {
+            itemName = desc;
+          }
+        }
+      } else if (!itemName) {
+        itemName = desc;
+      }
+    }
+
+    return {
+      itemName: itemName || 'Garments',
+      colour: colour || '-',
+      process: process || '-'
+    };
   }
 
   /**
@@ -425,17 +477,17 @@ export class DeliveryChallanPdfService {
         totalPieces += qtyNum;
       }
 
-      const parts: string[] = [];
-      const itemDesc = l.itemNameSnapshot || outward.itemNameSnapshot || 'Garments';
-      parts.push(itemDesc);
+      const itemDesc = (l.itemNameSnapshot || outward.itemNameSnapshot || 'Garments').trim();
+      const rawColour = (l.colourNameSnapshot || l.colour || '').trim();
+      const colourCode = l.colourCodeSnapshot ? ` (${l.colourCodeSnapshot})` : '';
+      const colour = rawColour && rawColour !== 'Standard' ? `${rawColour}${colourCode}` : (rawColour || '-');
+      const wash = (l.washTypeSnapshot || l.processType || '-').trim();
 
-      const colour = l.colourNameSnapshot || l.colour;
-      const wash = l.washTypeSnapshot || l.processType;
-
-      if (colour && colour !== 'Standard') {
-        parts.push(`Colour: ${colour}${l.colourCodeSnapshot ? ` (${l.colourCodeSnapshot})` : ''}`);
+      const parts: string[] = [itemDesc];
+      if (colour && colour !== '-') {
+        parts.push(`Colour: ${colour}`);
       }
-      if (wash) {
+      if (wash && wash !== '-') {
         parts.push(`Process: ${wash}`);
       }
 
@@ -443,6 +495,9 @@ export class DeliveryChallanPdfService {
 
       return {
         sNo: idx + 1,
+        itemName: itemDesc,
+        colour: colour,
+        process: wash,
         description: parts.join(' - '),
         quantity: qtyDisplay
       };
@@ -450,6 +505,7 @@ export class DeliveryChallanPdfService {
 
     const calculatedTotal = this.calculateTotalQuantity(items);
     const totalQuantityStr = calculatedTotal || (outward.totalQuantity ? `${outward.totalQuantity.toLocaleString()} ps` : '');
+    const notes = (outward.remarks || (outward as any).notes || (outward as any).note || '').trim();
 
     let companyGstin = DEFAULT_INVOICE_SETTINGS.gstin;
     let companyPhone = DEFAULT_INVOICE_SETTINGS.dcPhone || DEFAULT_INVOICE_SETTINGS.phone;
@@ -481,6 +537,7 @@ export class DeliveryChallanPdfService {
       styleNo: outward.styleNoSnapshot || outward.styleNo,
       companyGstin,
       companyPhone,
+      notes,
       items,
       totalQuantityStr
     };
@@ -506,12 +563,19 @@ export class DeliveryChallanPdfService {
       if (l.unit === 'kg') totalKg += qtyNum;
       else totalPieces += qtyNum;
 
-      const parts: string[] = [l.itemNameSnapshot || inward.itemNameSnapshot || 'Fabric / Garments'];
-      if (l.colourNameSnapshot) parts.push(`Colour: ${l.colourNameSnapshot}`);
-      if (l.processType) parts.push(`Process: ${l.processType}`);
+      const itemDesc = (l.itemNameSnapshot || inward.itemNameSnapshot || 'Fabric / Garments').trim();
+      const colour = (l.colourNameSnapshot || '-').trim();
+      const wash = (l.processType || '-').trim();
+
+      const parts: string[] = [itemDesc];
+      if (colour && colour !== '-') parts.push(`Colour: ${colour}`);
+      if (wash && wash !== '-') parts.push(`Process: ${wash}`);
 
       return {
         sNo: idx + 1,
+        itemName: itemDesc,
+        colour,
+        process: wash,
         description: parts.join(' - '),
         quantity: `${qtyNum.toLocaleString().padStart(2, '0')} ${unitStr}`
       };
@@ -519,6 +583,7 @@ export class DeliveryChallanPdfService {
 
     const calculatedTotal = this.calculateTotalQuantity(items);
     const totalQuantityStr = calculatedTotal || (inward.totalQuantity ? `${inward.totalQuantity.toLocaleString()} ps` : '');
+    const notes = (inward.remarks || (inward as any).notes || (inward as any).note || '').trim();
 
     return {
       dcNumber,
@@ -533,6 +598,7 @@ export class DeliveryChallanPdfService {
       timeOut: (inward as any).inwardTime || '',
       poNumber: inward.poNumberSnapshot || inward.poNumber,
       styleNo: inward.styleNoSnapshot || inward.styleNo,
+      notes,
       items,
       totalQuantityStr
     };
@@ -550,51 +616,106 @@ export class DeliveryChallanPdfService {
   }
 
   /**
-   * Renders a single compact Delivery Challan slip inside a vertical slot on the A4 sheet
+   * Automatically determines whether to render:
+   * - 'three' (3 challans on A4, if content fits in 3 slips of <= 83mm)
+   * - 'two' (2 challans on A4, if content fits in 2 slips of <= 135mm)
+   * - 'one' (1 challan alone on A4, if content requires full page clearance)
+   */
+  static determineChallanSlipLayout(data: DeliveryChallanData): ChallanSlipLayout {
+    const itemCount = data.items.length;
+    const noteText = (data.notes || '').trim();
+
+    // 1. Check if 3 slips can fit on A4 (Max safe slip height <= 83mm)
+    // Base fixed overhead in 3-slip mode:
+    // Header (~11.5) + Metadata (~12) + Table Header & Total row (~9) + Vehicle Box & Signatures (~13) + spacing (~4) = 49.5mm
+    const baseHeight3 = 49.5;
+    const noteHeight3 = noteText ? 5.0 : 2.5;
+
+    const itemRowsHeight3 = data.items.reduce((sum, item) => {
+      const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+      const isWrapped = parsed.itemName.length > 34 || parsed.colour.length > 20 || parsed.process.length > 20;
+      return sum + (isWrapped ? 6.5 : 4.0);
+    }, 0);
+
+    const estimatedHeight3 = baseHeight3 + itemRowsHeight3 + noteHeight3;
+
+    // Up to 4 compact items easily fit within 83mm for 3 slips on A4
+    if (itemCount <= 4 && estimatedHeight3 <= 83) {
+      return 'three';
+    }
+
+    // 2. Check if 2 slips can fit on A4 (Max safe slip height <= 135mm)
+    // Base fixed overhead in 2-slip mode: ~54mm
+    const baseHeight2 = 54;
+    const noteLines2 = noteText ? Math.min(2, Math.ceil(noteText.length / 65)) : 1;
+    const noteHeight2 = 2.5 + (noteLines2 * 3.4);
+
+    const itemRowsHeight2 = data.items.reduce((sum, item) => {
+      const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+      const isWrapped = parsed.itemName.length > 34 || parsed.colour.length > 20 || parsed.process.length > 20;
+      return sum + (isWrapped ? 7.2 : 5.0);
+    }, 0);
+
+    const estimatedHeight2 = baseHeight2 + itemRowsHeight2 + noteHeight2;
+
+    // Up to 9-10 items fit comfortably within 135mm for 2 slips on A4
+    if (itemCount <= 9 && estimatedHeight2 <= 135) {
+      return 'two';
+    }
+
+    // 3. Otherwise, render 1 challan alone on the A4 page
+    return 'one';
+  }
+
+  static canFitTwoSlipsOnA4(data: DeliveryChallanData): boolean {
+    return this.determineChallanSlipLayout(data) !== 'one';
+  }
+
+  /**
+   * Renders a single compact Delivery Challan slip inside a vertical slot on the A4 sheet.
+   * Dynamically positions all elements and calculates outer border height to avoid any clipping.
    */
   static renderSingleSlipOnA4(
     doc: any,
     runAutoTable: any,
     data: DeliveryChallanData,
-    startY: number
-  ): void {
+    startY: number,
+    layoutMode: ChallanSlipLayout = 'two'
+  ): number {
+    const isThree = layoutMode === 'three';
+    const isTwo = layoutMode === 'two';
+    const isOne = layoutMode === 'one';
+
     const margin = 7;
     const contentWidth = 196;
-    const slipHeight = 88;
 
-    // Outer border
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.35);
-    doc.rect(margin, startY, contentWidth, slipHeight);
-
-    let curY = startY + 3.8;
+    let curY = startY + (isThree ? 3.2 : isTwo ? 3.8 : 4.5);
 
     // --- 1. Top Header Row ---
-    // GSTIN (Left)
     const gstin = data.companyGstin || DEFAULT_INVOICE_SETTINGS.gstin;
     const contactNo = data.companyPhone || DEFAULT_INVOICE_SETTINGS.dcPhone || DEFAULT_INVOICE_SETTINGS.phone;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
     doc.setTextColor(0, 0, 0);
     doc.text(`GSTIN / UIN : ${gstin}`, margin + 2.5, curY);
 
     // DELIVERY CHALLAN placed in the right top corner
-    doc.setFontSize(8.5);
+    doc.setFontSize(isThree ? 9.5 : isTwo ? 10 : 11);
     doc.text('DELIVERY CHALLAN', margin + contentWidth - 2.5, curY, { align: 'right' });
 
     // Cell / Phone (Left below GSTIN)
-    curY += 3.5;
-    doc.setFontSize(6.5);
+    curY += (isThree ? 3.3 : isTwo ? 3.8 : 4.5);
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
     doc.text(`Cell : ${contactNo}`, margin + 2.5, curY);
 
     // Company Name (Center)
-    doc.setFontSize(11);
+    doc.setFontSize(isThree ? 11.5 : isTwo ? 12.5 : 14);
     doc.text('PERLA TEXTILES PROCESSOR', margin + contentWidth / 2, curY, { align: 'center' });
 
     // Company Address (Center)
-    curY += 3.5;
-    doc.setFontSize(6);
+    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
+    doc.setFontSize(isThree ? 7 : isTwo ? 7.5 : 8);
     doc.text(
       'NO. 107, Industrial Estate, Thirumudivakkam, SIDCO, Chennai - 600 044.',
       margin + contentWidth / 2,
@@ -608,145 +729,196 @@ export class DeliveryChallanPdfService {
     doc.line(margin, curY, margin + contentWidth, curY);
 
     // --- 2. Metadata Section ---
-    curY += 3.5;
+    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
     // Row 1: DC No (Left) & Party DC No (Right)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
     doc.text('No. :', margin + 2.5, curY);
-    doc.setFontSize(8.5);
-    doc.text(data.dcNumber, margin + 11, curY);
+    doc.setFontSize(isThree ? 9 : isTwo ? 9.5 : 10.5);
+    doc.text(data.dcNumber, margin + 12, curY);
 
-    doc.setFontSize(7);
-    doc.text('Party D.C. No. :', margin + 128, curY);
-    doc.setFontSize(8.5);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
+    doc.text('Party D.C. No. :', margin + 124, curY);
+    doc.setFontSize(isThree ? 9 : isTwo ? 9.5 : 10.5);
     doc.text(data.partyDcNumber, margin + 152, curY);
 
     // Row 2: Date (Left) & Party Date (Right)
-    curY += 3.5;
-    doc.setFontSize(7);
+    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
     doc.text('Date :', margin + 2.5, curY);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.dcDate, margin + 13, curY);
+    doc.text(data.dcDate, margin + 14, curY);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Date :', margin + 128, curY);
+    doc.text('Date :', margin + 124, curY);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.partyDcDate, margin + 140, curY);
+    doc.text(data.partyDcDate, margin + 138, curY);
 
     // Row 3: To (Customer Company Name & Full Address, no PO No)
-    curY += 3.5;
+    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
     doc.text('To :', margin + 2.5, curY);
-    doc.setFontSize(7.5);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
     const fullAddress = data.customerAddress || data.destination || '';
     const toText = [
       data.customerName,
       fullAddress ? `, ${fullAddress}` : ''
     ].filter(Boolean).join('');
     const cleanTo = doc.splitTextToSize(toText, contentWidth - 14)[0] || toText;
-    doc.text(cleanTo, margin + 9, curY);
+    doc.text(cleanTo, margin + 10, curY);
 
     // Table divider line
     curY += 1.8;
     doc.line(margin, curY, margin + contentWidth, curY);
 
-    // --- 3. Particulars Table ---
-    const tableBody = data.items.slice(0, 3).map((item) => [
-      String(item.sNo).padStart(2, '0'),
-      item.description,
-      item.quantity
-    ]);
+    // --- 3. Particulars Table (Separate Columns for Category: Particulars, Colour, Process, Qty) ---
+    // Render all line items without truncation
+    const tableBody = data.items.map((item, idx) => {
+      const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+      return [
+        String(item.sNo || idx + 1).padStart(2, '0'),
+        parsed.itemName,
+        parsed.colour,
+        parsed.process,
+        item.quantity
+      ];
+    });
 
-    while (tableBody.length < 2) {
-      tableBody.push(['', '', '']);
+    if ((isTwo || isThree) && tableBody.length === 1) {
+      tableBody.push(['', '', '', '', '']);
     }
 
     const displayTotal = data.totalQuantityStr || this.calculateTotalQuantity(data.items);
-    tableBody.push(['', 'TOTAL QUANTITY:', displayTotal]);
+    tableBody.push([
+      { content: 'TOTAL QUANTITY:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+      { content: displayTotal, styles: { halign: 'right', fontStyle: 'bold' } }
+    ] as any);
+
+    const tableFontSize = isThree ? 7.5 : (isTwo ? (data.items.length > 4 ? 7.5 : 8) : 8.5);
+    const tablePadding = isThree ? 0.75 : (isTwo ? (data.items.length > 4 ? 0.8 : 1.0) : 1.25);
 
     runAutoTable(doc, {
       startY: curY,
       margin: { left: margin, right: margin },
       tableWidth: contentWidth,
-      head: [['S.No.', 'Particulars', 'Qty.']],
+      head: [['S.No.', 'Particulars', 'Colour', 'Process', 'Qty.']],
       body: tableBody,
       theme: 'plain',
       styles: {
         font: 'helvetica',
-        fontSize: 6.5,
+        fontSize: tableFontSize,
         textColor: [0, 0, 0],
         lineColor: [0, 0, 0],
         lineWidth: 0.2,
-        cellPadding: 0.8,
+        cellPadding: tablePadding,
         valign: 'middle'
       },
       headStyles: {
         fontStyle: 'bold',
-        fontSize: 6.5,
-        halign: 'center',
+        fontSize: isThree ? 8 : (isTwo ? 8.5 : 9),
+        halign: 'left',
         lineColor: [0, 0, 0],
         lineWidth: 0.25,
         fillColor: [240, 240, 240]
       },
       columnStyles: {
         0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 149, halign: 'left' },
-        2: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
+        1: { cellWidth: 74, halign: 'left', fontStyle: 'bold' },
+        2: { cellWidth: 43, halign: 'left' },
+        3: { cellWidth: 43, halign: 'left' },
+        4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: (hookData: any) => {
+        if (hookData.section === 'head' && hookData.column.index === 0) {
+          hookData.cell.styles.halign = 'center';
+        }
+        if (hookData.section === 'head' && hookData.column.index === 4) {
+          hookData.cell.styles.halign = 'right';
+        }
         if (hookData.section === 'body' && hookData.row.index === tableBody.length - 1) {
           hookData.cell.styles.fontStyle = 'bold';
-          if (hookData.column.index === 1) {
-            hookData.cell.styles.halign = 'right';
-          }
+          hookData.cell.styles.fontSize = isThree ? 8 : (isTwo ? 8.5 : 9);
         }
       }
     });
 
-    // --- 4. Bottom Vehicle Box & Signatures ---
-    const botY = startY + slipHeight - 16;
-    const vehicleBoxWidth = 62;
-    const rowH = 4.3;
+    const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : curY + 22;
+
+    // --- 3.5. Note Section (Fetched from Database Remarks / Notes) ---
+    const noteY = finalY + (isThree ? 2.0 : isTwo ? 2.5 : 3.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
+    doc.text('Note :', margin + 2.5, noteY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
+    const noteText = data.notes && data.notes.trim() ? data.notes.trim() : '—';
+    const maxNoteLines = isThree ? 1 : (isTwo ? 2 : 4);
+    const splitNote = doc.splitTextToSize(noteText, contentWidth - 22);
+    const renderedNote = splitNote.slice(0, maxNoteLines);
+    doc.text(renderedNote, margin + 14, noteY);
+    const noteLineHeight = isThree ? 3.0 : isTwo ? 3.4 : 4.0;
+    const noteHeight = Math.max(1, renderedNote.length) * noteLineHeight;
+    const noteEndY = noteY + noteHeight;
+
+    // --- 4. Bottom Vehicle Box & Signatures (Dynamically positioned below Note) ---
+    const botY = noteEndY + (isThree ? 2.0 : isTwo ? 2.5 : 4.0);
+    const vehicleBoxWidth = 64;
+    const rowH = isThree ? 3.6 : (isTwo ? 4.0 : 4.8);
 
     doc.setLineWidth(0.25);
     // Vehicle box (3 rows)
     doc.rect(margin + 2, botY, vehicleBoxWidth, rowH);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
-    doc.text('Vehicle No. :', margin + 3.5, botY + 3.1);
+    doc.setFontSize(isThree ? 7 : isTwo ? 7.5 : 8);
+    doc.text('Vehicle No. :', margin + 3.5, botY + (rowH * 0.72));
     doc.setFont('helvetica', 'normal');
-    doc.text(data.vehicleNumber || '—', margin + 22, botY + 3.1);
+    doc.text(data.vehicleNumber || '—', margin + 24, botY + (rowH * 0.72));
 
     doc.rect(margin + 2, botY + rowH, vehicleBoxWidth, rowH);
     doc.setFont('helvetica', 'bold');
-    doc.text('Driver Name :', margin + 3.5, botY + rowH + 3.1);
+    doc.text('Driver Name :', margin + 3.5, botY + rowH + (rowH * 0.72));
     doc.setFont('helvetica', 'normal');
-    doc.text(data.driverName || '—', margin + 22, botY + rowH + 3.1);
+    doc.text(data.driverName || '—', margin + 24, botY + rowH + (rowH * 0.72));
 
     doc.rect(margin + 2, botY + rowH * 2, vehicleBoxWidth, rowH);
     doc.setFont('helvetica', 'bold');
-    doc.text('Time Out :', margin + 3.5, botY + rowH * 2 + 3.1);
+    doc.text('Time Out :', margin + 3.5, botY + rowH * 2 + (rowH * 0.72));
     doc.setFont('helvetica', 'normal');
-    doc.text(data.timeOut || '—', margin + 22, botY + rowH * 2 + 3.1);
+    doc.text(data.timeOut || '—', margin + 24, botY + rowH * 2 + (rowH * 0.72));
+
+    // Signatures vertical baseline alignment
+    const sigLineY = botY + rowH * 2;
+    const sigTextY = sigLineY + (isThree ? 3.2 : isTwo ? 3.8 : 4.2);
 
     // Receiver's Signature (Middle)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
-    doc.line(margin + 85, botY + 8.5, margin + 125, botY + 8.5);
-    doc.text("Receiver's Signature", margin + 105, botY + 12, { align: 'center' });
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
+    doc.line(margin + 80, sigLineY, margin + 128, sigLineY);
+    doc.text("Receiver's Signature", margin + 104, sigTextY, { align: 'center' });
 
     // For PERLA TEXTILES PROCESSOR (Right)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
-    doc.text('For PERLA TEXTILES PROCESSOR', margin + contentWidth - 4, botY + 2.5, { align: 'right' });
-    doc.line(margin + contentWidth - 48, botY + 8.5, margin + contentWidth - 4, botY + 8.5);
-    doc.text('Authorized Signature', margin + contentWidth - 26, botY + 12, { align: 'center' });
+    doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
+    doc.text('For PERLA TEXTILES PROCESSOR', margin + contentWidth - 4, botY + 2.0, { align: 'right' });
+    doc.line(margin + contentWidth - 52, sigLineY, margin + contentWidth - 4, sigLineY);
+    doc.text('Authorized Signature', margin + contentWidth - 28, sigTextY, { align: 'center' });
+
+    // Outer border rectangle encompassing the entire challan with exact height
+    const slipActualHeight = (botY + rowH * 3 + (isThree ? 1.6 : isTwo ? 2.0 : 3.0)) - startY;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.35);
+    doc.rect(margin, startY, contentWidth, slipActualHeight);
+
+    return slipActualHeight;
   }
 
   /**
-   * Renders 3 identical Delivery Challan copies on a single A4 portrait sheet
-   * Formats: 1. ORIGINAL (CONSIGNEE), 2. DUPLICATE (TRANSPORTER), 3. TRIPLICATE (OFFICE COPY)
+   * Renders Delivery Challan PDF on A4 portrait sheet:
+   * - If content fits in 3 slips (<= 83mm per slip, <= 4 items), renders THREE slips on 1 A4 sheet with 2 cut lines.
+   * - If content fits in 2 slips (<= 135mm per slip, <= 9 items), renders TWO slips on 1 A4 sheet with 1 center cut line.
+   * - Otherwise, renders ONE slip alone on the A4 sheet with full clearance.
    */
   static renderPdfFromChallanData(data: DeliveryChallanData): jsPDF {
     const jsPdfConstructor: any = (jsPDF as any).default || jsPDF;
@@ -757,23 +929,38 @@ export class DeliveryChallanPdfService {
     });
 
     const runAutoTable = (autoTable as any).default || autoTable;
+    const layout = this.determineChallanSlipLayout(data);
 
-    const slips = [
-      { startY: 5 },
-      { startY: 100 },
-      { startY: 195 }
-    ];
+    if (layout === 'three') {
+      // 3 Challans on 1 A4 portrait sheet
+      // Slip 1 (Top)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 4, 'three');
 
-    slips.forEach((slip, idx) => {
-      this.renderSingleSlipOnA4(doc, runAutoTable, data, slip.startY);
+      // Cut line 1
+      this.drawCutLine(doc, 96.5, 210, 7);
 
-      // Draw cut line between slips
-      if (idx === 0) {
-        this.drawCutLine(doc, 96.5, 210, 7);
-      } else if (idx === 1) {
-        this.drawCutLine(doc, 191.5, 210, 7);
-      }
-    });
+      // Slip 2 (Middle)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 99.5, 'three');
+
+      // Cut line 2
+      this.drawCutLine(doc, 192, 210, 7);
+
+      // Slip 3 (Bottom)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 195, 'three');
+    } else if (layout === 'two') {
+      // 2 Challans on 1 A4 portrait sheet
+      // Slip 1 (Top half)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 6, 'two');
+
+      // Center cut line at exact middle (148.5 mm)
+      this.drawCutLine(doc, 148.5, 210, 7);
+
+      // Slip 2 (Bottom half)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 153, 'two');
+    } else {
+      // 1 Challan alone on A4 portrait sheet (spacious clearance for many line items)
+      this.renderSingleSlipOnA4(doc, runAutoTable, data, 12, 'one');
+    }
 
     return doc;
   }
@@ -797,13 +984,32 @@ export class DeliveryChallanPdfService {
       InvoiceSettingsService.getSettings().catch(() => DEFAULT_INVOICE_SETTINGS)
     ]);
 
+    let resolvedNotes = baseData.notes;
+    if (!resolvedNotes && db) {
+      try {
+        const docId = outward.id || outward.outwardId || (outward as any).entryId;
+        if (docId) {
+          const docSnap = await getDoc(doc(db, 'outward_entries', docId));
+          if (docSnap.exists()) {
+            const d = docSnap.data();
+            if (d?.remarks || d?.notes) {
+              resolvedNotes = (d.remarks || d.notes).trim();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('DeliveryChallanPdfService: Failed to fetch outward notes from Firestore:', err);
+      }
+    }
+
     return {
       ...baseData,
       partyDcNumber: resolvedParty.partyDcNumber,
       partyDcDate: resolvedParty.partyDcDate,
       customerAddress: resolvedAddress || baseData.customerAddress,
       companyGstin: settings.gstin || baseData.companyGstin,
-      companyPhone: settings.dcPhone || settings.phone || baseData.companyPhone
+      companyPhone: settings.dcPhone || settings.phone || baseData.companyPhone,
+      notes: resolvedNotes
     };
   }
 

@@ -21,6 +21,7 @@ export interface OutwardLine {
   itemNameSnapshot: string;
   washTypeSnapshot: string;
   processType?: string; // alias
+  process?: string; // alias
 
   orderedQtySnapshot: number;
   unit: QuantityUnit;
@@ -73,6 +74,8 @@ export interface OutwardEntry {
   transporterNameSnapshot?: string | null;
   destination?: string;
   remarks?: string;
+  timeOut?: string;
+  outwardTime?: string;
 
   status: OutwardStatus;
 

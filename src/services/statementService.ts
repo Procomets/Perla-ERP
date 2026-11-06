@@ -193,85 +193,117 @@ export class StatementService {
       }
     });
 
-    // 6. Build Left Side (INWARD Rows)
+    // 6. Build Left Side (INWARD Rows) - strictly non-zero quantities only
     const inwardRows: StatementInwardRow[] = [];
     postedInwards.forEach((inEntry) => {
       const inwDate = inEntry.customerDate || inEntry.inwardDate || '';
       const dcNo = inEntry.customerDcNo || inEntry.inwardNo;
+      const matchedPo = matchedPOs.find(
+        (p) => p.id === inEntry.poId || p.poId === inEntry.poId || p.poNumber === inEntry.poNumberSnapshot || p.poNumber === inEntry.poNumber
+      );
+      const styleNo = inEntry.styleNoSnapshot || inEntry.styleNo || matchedPo?.styleNo || matchedPo?.styleNumber || '';
+      const poNumber = inEntry.poNumberSnapshot || inEntry.poNumber || matchedPo?.poNumber || '';
 
       if (inEntry.lines && inEntry.lines.length > 0) {
         inEntry.lines.forEach((l) => {
+          const qty = Number(l.receivedQty) || 0;
+          // Filter out any 0 quantity entries from inward statement
+          if (qty > 0) {
+            inwardRows.push({
+              id: `${inEntry.id}_${l.inwardLineId || l.poLineId}`,
+              inwardId: inEntry.inwardId || inEntry.id,
+              inwardNo: inEntry.inwardNo,
+              date: inwDate,
+              dcNo,
+              poId: inEntry.poId,
+              poLineId: l.poLineId,
+              colour: l.colourNameSnapshot || l.colour || 'Standard',
+              qtyReceived: qty,
+              unit: l.unit || 'piece',
+              status: inEntry.status,
+              styleNo,
+              poNumber
+            });
+          }
+        });
+      } else {
+        // Fallback for single document entry
+        const qty = Number(inEntry.totalQuantity) || inEntry.totalQtyByUnit?.piece || 0;
+        if (qty > 0) {
           inwardRows.push({
-            id: `${inEntry.id}_${l.inwardLineId || l.poLineId}`,
+            id: inEntry.id,
             inwardId: inEntry.inwardId || inEntry.id,
             inwardNo: inEntry.inwardNo,
             date: inwDate,
             dcNo,
             poId: inEntry.poId,
-            poLineId: l.poLineId,
-            colour: l.colourNameSnapshot || l.colour || 'Standard',
-            qtyReceived: Number(l.receivedQty) || 0,
-            unit: l.unit || 'piece',
-            status: inEntry.status
+            poLineId: 'default',
+            colour: 'All Colours',
+            qtyReceived: qty,
+            unit: inEntry.totalQtyByUnit?.kg ? 'kg' : 'piece',
+            status: inEntry.status,
+            styleNo,
+            poNumber
           });
-        });
-      } else {
-        // Fallback for single document entry
-        inwardRows.push({
-          id: inEntry.id,
-          inwardId: inEntry.inwardId || inEntry.id,
-          inwardNo: inEntry.inwardNo,
-          date: inwDate,
-          dcNo,
-          poId: inEntry.poId,
-          poLineId: 'default',
-          colour: 'All Colours',
-          qtyReceived: Number(inEntry.totalQuantity) || inEntry.totalQtyByUnit?.piece || 0,
-          unit: inEntry.totalQtyByUnit?.kg ? 'kg' : 'piece',
-          status: inEntry.status
-        });
+        }
       }
     });
 
     // Sort Inward chronologically (oldest first)
     inwardRows.sort((a, b) => a.date.localeCompare(b.date));
 
-    // 7. Build Right Side (OUTWARD Rows)
+    // 7. Build Right Side (OUTWARD Rows) - strictly non-zero quantities only
     const outwardRows: StatementOutwardRow[] = [];
     postedOutwards.forEach((outEntry) => {
       const outDate = outEntry.outwardDate || (outEntry as any).ourDate || outEntry.createdAt || '';
       const dcNo = outEntry.ourDcNo || outEntry.outwardNo;
+      const matchedPo = matchedPOs.find(
+        (p) => p.id === outEntry.poId || p.poId === outEntry.poId || p.poNumber === outEntry.poNumberSnapshot || p.poNumber === outEntry.poNumber
+      );
+      const styleNo = outEntry.styleNoSnapshot || outEntry.styleNo || matchedPo?.styleNo || matchedPo?.styleNumber || '';
+      const poNumber = outEntry.poNumberSnapshot || outEntry.poNumber || matchedPo?.poNumber || '';
 
       if (outEntry.lines && outEntry.lines.length > 0) {
         outEntry.lines.forEach((l) => {
+          const qty = Number(l.dispatchQty) || 0;
+          // Filter out any 0 quantity entries from outward statement
+          if (qty > 0) {
+            outwardRows.push({
+              id: `${outEntry.id}_${l.outwardLineId || l.poLineId}`,
+              outwardId: outEntry.outwardId || outEntry.id,
+              outwardNo: outEntry.outwardNo,
+              date: outDate,
+              dcNo,
+              poId: outEntry.poId,
+              poLineId: l.poLineId,
+              colour: l.colourNameSnapshot || l.colour || 'Standard',
+              qtyDispatched: qty,
+              unit: l.unit || 'piece',
+              status: outEntry.status,
+              styleNo,
+              poNumber
+            });
+          }
+        });
+      } else {
+        const qty = Number(outEntry.totalQuantity) || outEntry.totalQtyByUnit?.piece || 0;
+        if (qty > 0) {
           outwardRows.push({
-            id: `${outEntry.id}_${l.outwardLineId || l.poLineId}`,
+            id: outEntry.id,
             outwardId: outEntry.outwardId || outEntry.id,
             outwardNo: outEntry.outwardNo,
             date: outDate,
             dcNo,
             poId: outEntry.poId,
-            poLineId: l.poLineId,
-            colour: l.colourNameSnapshot || l.colour || 'Standard',
-            qtyDispatched: Number(l.dispatchQty) || 0,
-            unit: l.unit || 'piece',
-            status: outEntry.status
+            poLineId: 'default',
+            colour: 'All Colours',
+            qtyDispatched: qty,
+            unit: outEntry.totalQtyByUnit?.kg ? 'kg' : 'piece',
+            status: outEntry.status,
+            styleNo,
+            poNumber
           });
-        });
-      } else {
-        outwardRows.push({
-          id: outEntry.id,
-          outwardId: outEntry.outwardId || outEntry.id,
-          outwardNo: outEntry.outwardNo,
-          date: outDate,
-          dcNo,
-          poId: outEntry.poId,
-          poLineId: 'default',
-          colour: 'All Colours',
-          qtyDispatched: Number(outEntry.totalQuantity) || outEntry.totalQtyByUnit?.piece || 0,
-          unit: outEntry.totalQtyByUnit?.kg ? 'kg' : 'piece',
-          status: outEntry.status
-        });
+        }
       }
     });
 
@@ -337,6 +369,7 @@ export class StatementService {
           unit: line.unit || 'piece',
           orderedQty: Number(line.quantity) || 0,
           rate: Number(line.rate) || 0,
+          hsnNo: (line as any).hsnNo || undefined,
           cumulativeInward,
           orderedVsInwardDiff: (Number(line.quantity) || 0) - cumulativeInward,
           cumulativeOutward,
@@ -497,6 +530,7 @@ export class StatementService {
       itemName: line.itemName,
       poColourLineId: line.poLineId,
       colourName: line.colour,
+      hsnNo: (line as any).hsnNo || undefined,
       unit: line.unit,
       rate: line.rate,
       approvedQuantity: line.cumulativeOutward,
@@ -812,29 +846,108 @@ export class StatementService {
     });
     lines.push('');
 
-    // Detailed Side-by-Side Transactions Table
-    lines.push('--- TRANSACTION DETAILS (INWARD vs OUTWARD) ---');
-    lines.push('INWARD Date,INWARD DC No,INWARD Colour,INWARD Qty,INWARD Unit, ,OUTWARD Date,OUTWARD DC No,OUTWARD Colour,OUTWARD Qty,OUTWARD Unit');
+    // Detailed Side-by-Side Transactions Table with Colour Breakdown and Subtotals
+    lines.push('--- RECONCILIATION STATEMENT (INWARD vs OUTWARD WITH COLOUR BREAKDOWN) ---');
+    lines.push('S.No,INWARD Date,INWARD DC No,Style No,INWARD Colour,INWARD Qty,INWARD Unit, ,OUTWARD Date,OUTWARD Colour,OUTWARD DC No,OUTWARD Qty,OUTWARD Unit');
 
-    const maxRows = Math.max(data.inwards.length, data.outwards.length);
-    for (let i = 0; i < maxRows; i++) {
-      const inRow = data.inwards[i];
-      const outRow = data.outwards[i];
+    const validInwards = data.inwards.filter((r) => r.qtyReceived > 0);
+    const validOutwards = data.outwards.filter((r) => r.qtyDispatched > 0);
 
-      const inDate = inRow ? inRow.date : '';
-      const inDc = inRow ? inRow.dcNo : '';
-      const inCol = inRow ? inRow.colour : '';
-      const inQty = inRow ? inRow.qtyReceived : '';
-      const inUnit = inRow ? inRow.unit : '';
+    // Group outward by colour
+    const colourGroups = new Map<string, StatementOutwardRow[]>();
+    validOutwards.forEach((out) => {
+      const col = (out.colour || 'Standard').toUpperCase();
+      if (!colourGroups.has(col)) {
+        colourGroups.set(col, []);
+      }
+      colourGroups.get(col)!.push(out);
+    });
 
-      const outDate = outRow ? outRow.date : '';
-      const outDc = outRow ? outRow.dcNo : '';
-      const outCol = outRow ? outRow.colour : '';
-      const outQty = outRow ? outRow.qtyDispatched : '';
-      const outUnit = outRow ? outRow.unit : '';
-
-      lines.push(`"${inDate}","${inDc}","${inCol}",${inQty},"${inUnit}",|,"${outDate}","${outDc}","${outCol}",${outQty},"${outUnit}"`);
+    interface OutwardCsvItem {
+      isSubtotal?: boolean;
+      date: string;
+      colour: string;
+      dcNo: string;
+      qty: number;
+      unit: string;
     }
+
+    const outwardDisplayItems: OutwardCsvItem[] = [];
+    let grandOutwardQty = 0;
+
+    colourGroups.forEach((entries, colourName) => {
+      let groupSubtotal = 0;
+      entries.forEach((e) => {
+        groupSubtotal += e.qtyDispatched;
+        outwardDisplayItems.push({
+          date: e.date,
+          colour: e.colour,
+          dcNo: e.dcNo,
+          qty: e.qtyDispatched,
+          unit: e.unit
+        });
+      });
+      grandOutwardQty += groupSubtotal;
+      // Add colour subtotal row
+      outwardDisplayItems.push({
+        isSubtotal: true,
+        date: '',
+        colour: `${colourName} TOTAL`,
+        dcNo: '',
+        qty: groupSubtotal,
+        unit: entries[0]?.unit || 'piece'
+      });
+    });
+
+    let grandInwardQty = 0;
+    const maxRows = Math.max(validInwards.length, outwardDisplayItems.length);
+
+    for (let i = 0; i < maxRows; i++) {
+      const inRow = validInwards[i];
+      const outRow = outwardDisplayItems[i];
+
+      let inSno = '';
+      let inDate = '';
+      let inDc = '';
+      let inStyle = '';
+      let inCol = '';
+      let inQty = '';
+      let inUnit = '';
+
+      if (inRow) {
+        grandInwardQty += inRow.qtyReceived;
+        inSno = String(i + 1);
+        inDate = inRow.date;
+        inDc = inRow.dcNo;
+        inStyle = inRow.styleNo || data.styleNo || '';
+        inCol = inRow.colour;
+        inQty = String(inRow.qtyReceived);
+        inUnit = inRow.unit;
+      }
+
+      let outDate = '';
+      let outCol = '';
+      let outDc = '';
+      let outQty = '';
+      let outUnit = '';
+
+      if (outRow) {
+        outDate = outRow.date;
+        outCol = outRow.colour;
+        outDc = outRow.dcNo;
+        outQty = String(outRow.qty);
+        outUnit = outRow.unit;
+      }
+
+      lines.push(
+        `"${inSno}","${inDate}","${inDc}","${inStyle}","${inCol}",${inQty},"${inUnit}",|,"${outDate}","${outCol}","${outDc}",${outQty},"${outUnit}"`
+      );
+    }
+
+    // Grand Total summary line
+    lines.push(
+      `"","","Total","","Total Inward",${grandInwardQty},"piece",|,"","","Total Outward",${grandOutwardQty},"piece"`
+    );
 
     return lines.join('\n');
   }

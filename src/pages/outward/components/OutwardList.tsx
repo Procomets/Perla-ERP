@@ -7,10 +7,11 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Download, FileText } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Download, FileText, Layers, Check, ChevronRight, Package } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
 import { InwardEntry } from '../../../types/inward';
 import { DeliveryChallanPdfService } from '../../../services/deliveryChallanPdfService';
+import { JoinedDcModal } from './JoinedDcModal';
 
 export type OutwardSortField =
   | 'outwardNo'
@@ -37,6 +38,7 @@ interface OutwardListProps {
   onFilterChange: (filters: OutwardFilterOptions) => void;
   onPageChange: (page: number) => void;
   onNewOutward: () => void;
+  onSelectPoForOutward?: (po: PurchaseOrder) => void;
   onViewDetails: (outwardId: string) => void;
   onPrint: (outwardId: string) => void;
   onEdit: (outwardId: string) => void;
@@ -58,6 +60,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   onFilterChange,
   onPageChange,
   onNewOutward,
+  onSelectPoForOutward,
   onViewDetails,
   onPrint,
   onEdit,
@@ -69,6 +72,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   lockedPOMap = {}
 }) => {
   const [showFilters, setShowFilters] = useState(false);
+  const [showQuickOutwardCards, setShowQuickOutwardCards] = useState(false);
   const [deleteTargetOutward, setDeleteTargetOutward] = useState<OutwardEntry | null>(null);
 
   // Floating hover popover state for Company and PO Number
@@ -83,6 +87,47 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   // 3-State Column Sorting (asc -> desc -> unsort/desort)
   const [sortField, setSortField] = useState<OutwardSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  // Joined DC Selection States
+  const [isJoiningMode, setIsJoiningMode] = useState(false);
+  const [selectedOutwardIds, setSelectedOutwardIds] = useState<string[]>([]);
+  const [isJoinedDcModalOpen, setIsJoinedDcModalOpen] = useState(false);
+
+  // Selected Outward records
+  const selectedOutwards = useMemo(() => {
+    return outwards.filter((o) => {
+      const id = o.outwardId || o.id;
+      return selectedOutwardIds.includes(id);
+    });
+  }, [outwards, selectedOutwardIds]);
+
+  // Target PO & Style constraint: All joined dispatches must share the same PO and Style
+  const targetPoAndStyle = useMemo(() => {
+    if (selectedOutwards.length === 0) return null;
+    const first = selectedOutwards[0];
+    const po = (first.poId || first.poNumberSnapshot || first.poNumber || '').trim().toLowerCase();
+    const style = (first.styleNoSnapshot || first.styleNo || '').trim().toLowerCase();
+    const displayPo = first.poNumberSnapshot || first.poNumber || first.poId || 'PO';
+    const displayStyle = first.styleNoSnapshot || first.styleNo || 'Style';
+    return { po, style, displayPo, displayStyle };
+  }, [selectedOutwards]);
+
+  const isRowSelectable = (row: OutwardEntry) => {
+    if (!targetPoAndStyle) return true;
+    const rowPo = (row.poId || row.poNumberSnapshot || row.poNumber || '').trim().toLowerCase();
+    const rowStyle = (row.styleNoSnapshot || row.styleNo || '').trim().toLowerCase();
+    return rowPo === targetPoAndStyle.po && rowStyle === targetPoAndStyle.style;
+  };
+
+  const handleToggleSelectRow = (rowId: string) => {
+    setSelectedOutwardIds((prev) => {
+      if (prev.includes(rowId)) {
+        return prev.filter((id) => id !== rowId);
+      } else {
+        return [...prev, rowId];
+      }
+    });
+  };
 
   const handleSort = (field: OutwardSortField) => {
     if (sortField !== field) {
@@ -368,6 +413,193 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     }
   };
 
+  // Map vendor ID/Code to Vendor for display in cards
+  const vendorMap = useMemo(() => {
+    const map = new Map<string, Vendor>();
+    vendors.forEach((v) => {
+      if (v.id) map.set(v.id, v);
+      if (v.vendorId) map.set(v.vendorId, v);
+    });
+    return map;
+  }, [vendors]);
+
+  // Combined list of POs: includes all POs from props plus any POs referenced in posted inward receipts
+  const allPosWithInwardSources = useMemo(() => {
+    const list = [...pos];
+    const seenIds = new Set(list.map((p) => p.id).concat(list.map((p) => p.poId || '')));
+    const seenNums = new Set(list.map((p) => p.poNumber?.trim().toLowerCase()).filter(Boolean));
+
+    for (const inw of inwards || []) {
+      if (inw.status !== 'posted') continue;
+      const poNumKey = (inw.poNumber || inw.poNumberSnapshot || '').trim().toLowerCase();
+      const poIdKey = inw.poId;
+      if (poIdKey && !seenIds.has(poIdKey) && (!poNumKey || !seenNums.has(poNumKey))) {
+        list.push({
+          id: inw.poId,
+          poId: inw.poId,
+          poNumber: inw.poNumber || inw.poNumberSnapshot || 'PO-RECORD',
+          customerId: inw.customerId || inw.customerVendorId || 'cust-default',
+          customerVendorId: inw.customerVendorId || inw.customerId || 'cust-default',
+          customerName: inw.customerName || inw.customerCompanyNameSnapshot || 'Customer Company',
+          customerCompanyNameSnapshot: inw.customerCompanyNameSnapshot || inw.customerName || 'Customer Company',
+          styleNo: inw.styleNo || inw.styleNoSnapshot || 'N/A',
+          itemName: inw.itemName || inw.itemNameSnapshot || 'Garments',
+          processCategory: inw.processCategory || inw.processCategorySnapshot || 'washing',
+          status: 'partially_received',
+          orderDate: inw.customerDate || inw.inwardDate,
+          totalQuantity: inw.totalQuantity || 0,
+          totalQtyByUnit: inw.totalQtyByUnit || { piece: inw.totalQuantity || 0, kg: 0 },
+          lines: [],
+          colourLines: [],
+          schemaVersion: 1
+        } as unknown as PurchaseOrder);
+        seenIds.add(poIdKey);
+        if (poNumKey) seenNums.add(poNumKey);
+      }
+    }
+    return list;
+  }, [pos, inwards]);
+
+  // Compute PO stats for eligible Outward cards
+  const eligiblePoCards = useMemo(() => {
+    const postedInwards = (inwards || []).filter((inw) => (inw.status || '').toLowerCase() === 'posted');
+    const postedOutwards = (outwards || []).filter((outw) => (outw.status || '').toLowerCase() === 'posted');
+
+    return allPosWithInwardSources
+      .filter((p) => {
+        const s = (p.status || '').toLowerCase();
+        return s !== 'cancelled' && s !== 'rejected';
+      })
+      .map((po) => {
+        const poId = po.id || po.poId;
+        const poNumber = (po.poNumber || '').trim().toLowerCase();
+
+        const matchingInwards = postedInwards.filter(
+          (inw) =>
+            (poId && (inw.poId === poId || inw.id === poId)) ||
+            (poNumber && (inw.poNumber || inw.poNumberSnapshot || '').trim().toLowerCase() === poNumber)
+        );
+
+        const matchingOutwards = postedOutwards.filter(
+          (outw) =>
+            (poId && (outw.poId === poId || outw.id === poId)) ||
+            (poNumber && (outw.poNumber || outw.poNumberSnapshot || '').trim().toLowerCase() === poNumber)
+        );
+
+        const poLines = po.colourLines || po.lines || [];
+        let orderedPieces = 0;
+        let orderedKg = 0;
+
+        if (po.totalQtyByUnit) {
+          orderedPieces = Number(po.totalQtyByUnit.piece || 0);
+          orderedKg = Number(po.totalQtyByUnit.kg || 0);
+        } else if (poLines.length > 0) {
+          poLines.forEach((l) => {
+            const u = (l.unit || '').toLowerCase();
+            const q = Number(l.quantity || 0);
+            if (u === 'kg') orderedKg += q;
+            else orderedPieces += q;
+          });
+        } else {
+          orderedPieces = Number(po.totalQuantity || 0);
+        }
+
+        let receivedPieces = 0;
+        let receivedKg = 0;
+
+        matchingInwards.forEach((inw) => {
+          if (inw.lines && inw.lines.length > 0) {
+            inw.lines.forEach((l) => {
+              const u = (l.unit || '').toLowerCase();
+              const q = Number(l.receivedQty || 0);
+              if (u === 'kg') receivedKg += q;
+              else receivedPieces += q;
+            });
+          } else if (inw.totalQtyByUnit) {
+            receivedPieces += Number(inw.totalQtyByUnit.piece || 0);
+            receivedKg += Number(inw.totalQtyByUnit.kg || 0);
+          } else {
+            receivedPieces += Number(inw.totalQuantity || 0);
+          }
+        });
+
+        let dispatchedPieces = 0;
+        let dispatchedKg = 0;
+
+        matchingOutwards.forEach((outw) => {
+          if (outw.lines && outw.lines.length > 0) {
+            outw.lines.forEach((l) => {
+              const u = (l.unit || '').toLowerCase();
+              const q = Number(l.dispatchQty || 0);
+              if (u === 'kg') dispatchedKg += q;
+              else dispatchedPieces += q;
+            });
+          } else if (outw.totalQtyByUnit) {
+            dispatchedPieces += Number(outw.totalQtyByUnit.piece || 0);
+            dispatchedKg += Number(outw.totalQtyByUnit.kg || 0);
+          } else {
+            dispatchedPieces += Number(outw.totalQuantity || 0);
+          }
+        });
+
+        const availablePieces = Math.max(0, receivedPieces - dispatchedPieces);
+        const availableKg = Math.max(0, receivedKg - dispatchedKg);
+        const totalAvailable = availablePieces + availableKg;
+
+        const vendor =
+          vendorMap.get(po.customerId || '') ||
+          vendorMap.get(po.customerVendorId || '');
+        const customerName =
+          vendor?.companyName ||
+          po.customerName ||
+          po.customerCompanyNameSnapshot ||
+          'Customer';
+        const vendorCode = vendor?.vendorId || po.customerCode || '';
+
+        const processType = (po.processCategory || 'WASHING').toUpperCase();
+
+        return {
+          po,
+          customerName,
+          vendorCode,
+          processType,
+          orderedPieces,
+          orderedKg,
+          receivedPieces,
+          receivedKg,
+          dispatchedPieces,
+          dispatchedKg,
+          availablePieces,
+          availableKg,
+          totalAvailable,
+          hasPostedInward: matchingInwards.length > 0
+        };
+      })
+      .filter((stat) => stat.hasPostedInward && stat.totalAvailable > 0);
+  }, [allPosWithInwardSources, inwards, outwards, vendorMap]);
+
+  // Filter Quick Outward cards by the search input
+  const filteredPoCards = useMemo(() => {
+    if (!filters.searchQuery?.trim()) return eligiblePoCards;
+    const q = filters.searchQuery.toLowerCase();
+    return eligiblePoCards.filter((stat) => {
+      const p = stat.po;
+      return (
+        (p.poNumber || '').toLowerCase().includes(q) ||
+        (p.styleNo || p.styleNumber || '').toLowerCase().includes(q) ||
+        (p.itemName || '').toLowerCase().includes(q) ||
+        stat.customerName.toLowerCase().includes(q) ||
+        stat.vendorCode.toLowerCase().includes(q)
+      );
+    });
+  }, [eligiblePoCards, filters.searchQuery]);
+
+  const formatCardQtyStr = (pcs: number, kg: number) => {
+    if (pcs > 0 && kg > 0) return `${pcs} pcs + ${kg} kg`;
+    if (kg > 0) return `${kg} kg`;
+    return `${pcs} pcs`;
+  };
+
   return (
     <div className="space-y-4">
       {/* Search & Actions Bar */}
@@ -394,17 +626,98 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           </Button>
         </div>
 
-        {canManage && (
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Quick Outward Button */}
+          {canManage && (
+            <Button
+              variant={showQuickOutwardCards ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setShowQuickOutwardCards(!showQuickOutwardCards)}
+              className={showQuickOutwardCards ? 'bg-black text-white hover:bg-slate-900 border-black' : 'border-slate-300 hover:border-slate-400 font-medium text-slate-700'}
+            >
+              {showQuickOutwardCards ? 'Show Table View' : 'Quick Outward'}
+            </Button>
+          )}
+
+          {/* Download Joined DC Button */}
           <Button
-            onClick={onNewOutward}
+            variant={isJoiningMode ? 'primary' : 'outline'}
             size="sm"
-            className="bg-black hover:bg-neutral-800 text-white border-black flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto shadow-2xs font-semibold"
+            onClick={() => {
+              if (isJoiningMode) {
+                setIsJoiningMode(false);
+                setSelectedOutwardIds([]);
+              } else {
+                setIsJoiningMode(true);
+              }
+            }}
+            className={`flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto font-semibold cursor-pointer ${
+              isJoiningMode
+                ? 'bg-black text-white hover:bg-slate-900 border-black'
+                : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50'
+            }`}
+            title="Select multiple outward dispatches to combine into a single Delivery Challan"
           >
-            <Plus className="w-4 h-4" />
-            New Outward Entry
+            <Layers className="w-3.5 h-3.5" />
+            {isJoiningMode ? 'Exit Joined DC' : 'Download Joined DC'}
           </Button>
-        )}
+
+          {canManage && (
+            <Button
+              onClick={onNewOutward}
+              size="sm"
+              className="bg-black hover:bg-slate-900 text-white border-black flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto shadow-2xs font-semibold cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              New Outward Entry
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Active Joined DC Selection Banner */}
+      {isJoiningMode && (
+        <div className="p-3.5 bg-white text-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-xs border border-blue-200 bg-linear-to-r from-blue-50/60 via-indigo-50/30 to-white animate-in fade-in">
+          <div className="flex items-center gap-2.5 text-xs flex-wrap">
+            <span className="text-slate-700 font-medium">
+              Select dispatches with the <strong className="text-slate-900 font-bold">same PO &amp; Style</strong> to combine into one DC.
+            </span>
+            {targetPoAndStyle && (
+              <span className="px-2.5 py-0.5 bg-blue-50 text-[#1F4E79] border border-blue-200 rounded text-[11px] font-bold">
+                Target: {targetPoAndStyle.displayPo} • {targetPoAndStyle.displayStyle}
+              </span>
+            )}
+            {selectedOutwardIds.length > 0 && (
+              <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold rounded-full text-xs">
+                {selectedOutwardIds.length} Selected
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsJoiningMode(false);
+                setSelectedOutwardIds([]);
+              }}
+              className="bg-white text-slate-700 border-slate-300 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={selectedOutwardIds.length === 0}
+              onClick={() => setIsJoinedDcModalOpen(true)}
+              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-bold text-xs shadow-xs cursor-pointer border-[#1F4E79] disabled:opacity-50"
+            >
+              Configure &amp; Download Joined DC ({selectedOutwardIds.length})
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Expanded Filters Drawer */}
       {showFilters && (
@@ -486,8 +799,137 @@ export const OutwardList: React.FC<OutwardListProps> = ({
         </Card>
       )}
 
-      {/* Main Table Card */}
-      <Card className="border border-slate-200 shadow-2xs overflow-hidden">
+      {/* Quick Outward Cards View (Shown instead of table when Quick Outward is toggled) */}
+      {showQuickOutwardCards ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Ready for Outward Dispatch — Purchase Orders</h3>
+              <p className="text-xs text-slate-500">
+                {filteredPoCards.length} purchase orders with received inward stock ready to dispatch
+              </p>
+            </div>
+            <button
+              onClick={() => setShowQuickOutwardCards(false)}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+            >
+              Switch back to table view
+            </button>
+          </div>
+
+          {filteredPoCards.length === 0 ? (
+            <Card className="p-12 text-center border-dashed border-slate-200">
+              <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-700">No Eligible Purchase Orders Found</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                {filters.searchQuery
+                  ? 'No purchase orders match your current search.'
+                  : 'There are currently no purchase orders with available received inward stock pending dispatch.'}
+              </p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredPoCards.map((stat) => {
+                const {
+                  po,
+                  customerName,
+                  vendorCode,
+                  processType,
+                  receivedPieces,
+                  receivedKg,
+                  dispatchedPieces,
+                  dispatchedKg,
+                  availablePieces,
+                  availableKg
+                } = stat;
+
+                return (
+                  <div
+                    key={po.id || po.poId}
+                    className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all flex flex-col justify-between text-xs"
+                  >
+                    <div>
+                      {/* Top Header: PO No & Customer on Left, Ready Badge on Right */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-sm tracking-tight truncate">
+                            {po.poNumber}
+                          </div>
+                          <div className="text-slate-600 font-medium text-[11px] uppercase tracking-wide truncate">
+                            {customerName} {vendorCode ? `(${vendorCode})` : ''}
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                          Ready For Outward
+                        </span>
+                      </div>
+
+                      {/* Item / Style / Process */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="text-slate-700 truncate">
+                          <span className="font-bold text-slate-800">Item: {po.itemName || '—'}</span>
+                          <span className="mx-1.5 text-slate-300">•</span>
+                          <span className="font-medium text-slate-600">Style: {po.styleNo || po.styleNumber || '—'}</span>
+                        </div>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-slate-100 text-slate-700 uppercase shrink-0">
+                          {processType}
+                        </span>
+                      </div>
+
+                      {/* Metrics Box (Received, Dispatched, Available) */}
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 grid grid-cols-3 text-center mb-3">
+                        <div className="border-r border-slate-200/80 pr-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Received
+                          </div>
+                          <div className="font-bold text-blue-600 text-xs">
+                            {formatCardQtyStr(receivedPieces, receivedKg)}
+                          </div>
+                        </div>
+
+                        <div className="border-r border-slate-200/80 px-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Dispatched
+                          </div>
+                          <div className="font-bold text-slate-700 text-xs">
+                            {formatCardQtyStr(dispatchedPieces, dispatchedKg)}
+                          </div>
+                        </div>
+
+                        <div className="pl-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Available
+                          </div>
+                          <div className="font-bold text-emerald-600 text-xs">
+                            {formatCardQtyStr(availablePieces, availableKg)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer: Order Date & Dispatch Goods Action */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+                      <div className="text-[11px] text-slate-500">
+                        Order Date: <span className="font-medium text-slate-700">{formatDate(po.orderDate)}</span>
+                      </div>
+
+                      <button
+                        onClick={() => (onSelectPoForOutward ? onSelectPoForOutward(po) : onNewOutward())}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1F4E79] hover:text-blue-800 transition-colors group cursor-pointer"
+                      >
+                        <span>Dispatch Goods</span>
+                        <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Main Table Card */
+        <Card className="border border-slate-200 shadow-2xs overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">Loading Outward dispatches...</div>
         ) : outwards.length === 0 ? (
@@ -500,7 +942,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
               <Button
                 onClick={onNewOutward}
                 size="sm"
-                className="bg-black hover:bg-neutral-800 text-white border-black text-xs mt-2"
+                className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs mt-2 shadow-xs cursor-pointer"
               >
                 Create First Outward Entry
               </Button>
@@ -534,6 +976,13 @@ export const OutwardList: React.FC<OutwardListProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
+                    {/* Checkbox Column for Joined DC */}
+                    {isJoiningMode && (
+                      <th className="p-2.5 border border-slate-200 text-center w-12 bg-[#DCEBF8] whitespace-nowrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#163858]">Join</span>
+                      </th>
+                    )}
+
                     {/* 1. Outward No */}
                     <th
                       className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
@@ -694,10 +1143,44 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {sortedOutwards.map((row) => {
+                    const rowId = row.outwardId || row.id;
                     const q = getQuantitySummaries(row);
+                    const isSelected = selectedOutwardIds.includes(rowId);
+                    const isSelectable = isRowSelectable(row);
 
                     return (
-                      <tr key={row.outwardId || row.id} className="hover:bg-slate-50/60 transition-colors">
+                      <tr
+                        key={rowId}
+                        className={`${
+                          isJoiningMode && !isSelectable
+                            ? 'opacity-40 bg-slate-50/50'
+                            : isSelected
+                            ? 'bg-blue-50/60 font-semibold'
+                            : 'hover:bg-slate-50/60'
+                        } transition-colors`}
+                      >
+                        {/* Checkbox for Joined DC */}
+                        {isJoiningMode && (
+                          <td className="p-2.5 border border-slate-200 text-center w-12">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={!isSelectable}
+                              onChange={() => handleToggleSelectRow(rowId)}
+                              title={
+                                !isSelectable
+                                  ? `Disabled: Must match PO (${targetPoAndStyle?.displayPo}) and Style (${targetPoAndStyle?.displayStyle})`
+                                  : isSelected
+                                  ? 'Deselect this dispatch'
+                                  : 'Select this dispatch to combine'
+                              }
+                              className={`w-4 h-4 rounded text-black focus:ring-black cursor-pointer ${
+                                !isSelectable ? 'opacity-30 cursor-not-allowed' : ''
+                              }`}
+                            />
+                          </td>
+                        )}
+
                         {/* 1. Outward No */}
                         <td className="p-2.5 border border-slate-200 whitespace-nowrap">
                           <button
@@ -898,6 +1381,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           </div>
         )}
       </Card>
+      )}
 
       {/* Hover Floating Details Card */}
       {hoverCard && (
@@ -911,42 +1395,107 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           }}
           className="w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 text-xs space-y-3 pointer-events-none animate-in fade-in zoom-in-95 duration-150"
         >
-          {hoverCard.type === 'company' ? (
-            <>
-              <div className="border-b border-slate-100 pb-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Customer / Company Overview
-                </p>
-                <p className="text-sm font-bold text-slate-900 mt-0.5">
-                  {hoverCard.row.customerCompanyNameSnapshot || hoverCard.row.customerName}
-                </p>
-              </div>
-              <div className="space-y-1.5 text-slate-600">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Customer ID:</span>
-                  <span className="font-semibold text-slate-800">
-                    {hoverCard.row.customerVendorId || hoverCard.row.customerId}
-                  </span>
+          {hoverCard.type === 'company' ? (() => {
+            const row = hoverCard.row;
+            const vendor = vendors.find(
+              (v) =>
+                v.vendorId === row.customerVendorId ||
+                v.id === row.customerVendorId ||
+                v.companyName === row.customerCompanyNameSnapshot ||
+                v.companyName === row.customerName
+            );
+
+            const companyName =
+              vendor?.companyName ||
+              row.customerCompanyNameSnapshot ||
+              row.customerName ||
+              'Customer Company';
+
+            // Address
+            const addressParts = [
+              vendor?.address?.addressLine1,
+              vendor?.address?.addressLine2,
+              vendor?.address?.city || vendor?.city,
+              vendor?.address?.district,
+              vendor?.address?.state || vendor?.state,
+              vendor?.address?.pinCode || vendor?.pinCode
+            ].filter(Boolean);
+            const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : (vendor?.city ? `${vendor.city}, ${vendor.state || 'Tamil Nadu'}` : 'N/A');
+
+            // Primary Contact Person & Contact No
+            const primaryContact = vendor?.contacts?.find((c) => c.isPrimary && c.status !== 'inactive') || vendor?.contacts?.[0];
+            const personName = vendor?.primaryContactName || primaryContact?.personName || 'N/A';
+            const primaryContactNo = vendor?.primaryContactPhone || primaryContact?.contactNumber || vendor?.communication?.mobileNumber || vendor?.communication?.officePhone || vendor?.phone || 'N/A';
+
+            // GST No
+            const gstNo = vendor?.taxDetails?.gstin || vendor?.gstin || 'Unregistered / N/A';
+
+            return (
+              <div className="space-y-2.5">
+                <div className="border-b border-slate-100 pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Customer / Company Overview
+                    </p>
+                    {vendor?.vendorCode && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-700">
+                        {vendor.vendorCode}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5 leading-snug">
+                    {companyName}
+                  </p>
                 </div>
-                {hoverCard.row.subcontractorNameSnapshot && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Subcontractor:</span>
-                    <span className="font-semibold text-slate-800">
-                      {hoverCard.row.subcontractorNameSnapshot}
-                    </span>
+
+                <div className="space-y-1.5 text-[11px] text-slate-600">
+                  {/* Address */}
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Address</span>
+                    <span className="font-medium text-slate-800 leading-relaxed block">{fullAddress}</span>
                   </div>
-                )}
-                {hoverCard.row.destination && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Destination:</span>
-                    <span className="font-medium text-slate-800 text-right">
-                      {hoverCard.row.destination}
-                    </span>
+
+                  {/* Person Name & Primary Contact No */}
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-50">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Contact Person</span>
+                      <span className="font-semibold text-slate-800">{personName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Primary Contact No.</span>
+                      <span className="font-semibold text-slate-800">{primaryContactNo}</span>
+                    </div>
                   </div>
-                )}
+
+                  {/* GST NO */}
+                  <div className="pt-1 border-t border-slate-50">
+                    <span className="text-slate-400 block text-[10px] uppercase font-medium">GST No.</span>
+                    <span className="font-mono font-bold text-slate-800">{gstNo}</span>
+                  </div>
+
+                  {/* Subcontractor (if present on this dispatch) */}
+                  {row.subcontractorNameSnapshot && (
+                    <div className="pt-1.5 border-t border-slate-100 flex justify-between">
+                      <span className="text-slate-400">Subcontractor:</span>
+                      <span className="font-semibold text-slate-800">
+                        {row.subcontractorNameSnapshot}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Destination (if present on this dispatch) */}
+                  {row.destination && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Destination:</span>
+                      <span className="font-medium text-slate-800 text-right">
+                        {row.destination}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </>
-          ) : (
+            );
+          })() : (
             <>
               <div className="border-b border-slate-100 pb-2">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -1024,6 +1573,19 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           </div>
         </div>
       </Modal>
+
+      {/* Joined Delivery Challan (Combined DC) Modal */}
+      <JoinedDcModal
+        isOpen={isJoinedDcModalOpen}
+        onClose={() => {
+          setIsJoinedDcModalOpen(false);
+          setIsJoiningMode(false);
+          setSelectedOutwardIds([]);
+        }}
+        selectedOutwards={selectedOutwards}
+        inwards={inwards}
+        vendors={vendors}
+      />
     </div>
   );
 };

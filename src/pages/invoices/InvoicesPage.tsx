@@ -248,8 +248,9 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   };
 
   // 2. Finalize Invoice confirmation
-  const handleConfirmFinalize = async () => {
-    if (!draftInvoice) return;
+  const handleConfirmFinalize = async (customDraft?: Invoice) => {
+    const targetDraft = customDraft || draftInvoice;
+    if (!targetDraft) return;
 
     try {
       setIsFinalizing(true);
@@ -258,7 +259,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         displayName: user?.displayName || 'Authorized User'
       };
 
-      const finalized = await InvoiceService.finalizeInvoice(draftInvoice, authUser, false);
+      const finalized = await InvoiceService.finalizeInvoice(targetDraft, authUser, false);
 
       // Notify parent handler so state is synced application-wide
       onAddInvoice(finalized);
@@ -461,17 +462,17 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('eligible')}
-          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'eligible'
-              ? 'border-black text-black'
-              : 'border-transparent text-slate-500 hover:text-black'
+              ? 'border-[#1F4E79] text-[#1F4E79]'
+              : 'border-transparent text-slate-500 hover:text-[#1F4E79]'
           }`}
         >
           <FileCheck2 className="w-4 h-4" />
           Invoice-Eligible Items
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'eligible' ? 'bg-black text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'eligible' ? 'bg-[#1F4E79] text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
             }`}
           >
             {eligibleItems.length}
@@ -481,17 +482,17 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('history')}
-          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'history'
-              ? 'border-black text-black'
-              : 'border-transparent text-slate-500 hover:text-black'
+              ? 'border-[#1F4E79] text-[#1F4E79]'
+              : 'border-transparent text-slate-500 hover:text-[#1F4E79]'
           }`}
         >
           <FileText className="w-4 h-4" />
           Generated Invoices History
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'history' ? 'bg-black text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'history' ? 'bg-[#1F4E79] text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
             }`}
           >
             {filteredInvoices.length}

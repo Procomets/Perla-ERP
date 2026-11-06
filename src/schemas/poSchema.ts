@@ -32,6 +32,8 @@ export const poColourLineSchema = z
     unit: quantityUnitSchema,
     rateBasis: rateBasisSchema,
     rate: z.number().min(0, 'Rate must be a non-negative number'),
+    hsnNo: z.string().trim().optional(),
+    hsnDescription: z.string().trim().optional(),
     billableWeightKg: z.number().optional().nullable(),
     billablePieceQty: z.number().optional().nullable(),
     lineAmount: z.number().optional(),

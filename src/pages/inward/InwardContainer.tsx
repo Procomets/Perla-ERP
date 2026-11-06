@@ -17,6 +17,7 @@ import { InwardList } from './components/InwardList';
 import { InwardForm } from './components/InwardForm';
 import { InwardDetails } from './components/InwardDetails';
 import { InwardPrintView } from './components/InwardPrintView';
+import { QuickInwardView } from './components/QuickInwardView';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
@@ -47,8 +48,9 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
     canDelete('inward');
 
   // Navigation Views
-  const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details' | 'print'>('list');
+  const [currentView, setCurrentView] = useState<'list' | 'quick-inward' | 'add' | 'edit' | 'details' | 'print'>('list');
   const [selectedInwardId, setSelectedInwardId] = useState<string | null>(null);
+  const [preselectedPoId, setPreselectedPoId] = useState<string | null>(null);
 
   // Data States
   const [inwards, setInwards] = useState<InwardEntry[]>(initialInwards || []);
@@ -245,6 +247,14 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   const handleNewInward = () => {
     setSelectedInwardId(null);
     setSelectedInwardDetails({ inward: null, logs: [] });
+    setPreselectedPoId(null);
+    setCurrentView('add');
+  };
+
+  const handleSelectQuickInwardPo = (po: PurchaseOrder) => {
+    setSelectedInwardId(null);
+    setSelectedInwardDetails({ inward: null, logs: [] });
+    setPreselectedPoId(po.id || po.poId);
     setCurrentView('add');
   };
 
@@ -440,6 +450,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
           onFilterChange={(newFilters) => setFilters(newFilters)}
           onPageChange={(page) => setPagination((prev) => ({ ...prev, page }))}
           onNewInward={handleNewInward}
+          onSelectPoForInward={handleSelectQuickInwardPo}
           onViewDetails={handleViewDetails}
           onPrint={handlePrint}
           onEdit={handleEditDraft}
@@ -452,15 +463,30 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
         />
       )}
 
+      {/* 2.5 Quick Inward Card View (Replaces the table with cards directly on page) */}
+      {currentView === 'quick-inward' && (
+        <QuickInwardView
+          pos={pos}
+          inwards={inwards}
+          vendors={vendors}
+          onSelectPo={handleSelectQuickInwardPo}
+          onBackToTable={() => setCurrentView('list')}
+        />
+      )}
+
       {/* 3. New Inward / Edit Draft Form */}
       {(currentView === 'add' || currentView === 'edit') && (
         <InwardForm
           pos={pos}
           vendors={vendors}
           initialInward={currentView === 'edit' ? selectedInwardDetails.inward : null}
+          initialPoId={currentView === 'add' ? preselectedPoId : null}
           onSaveDraft={handleSaveDraft}
           onPostReceipt={handlePostReceipt}
-          onCancel={() => setCurrentView('list')}
+          onCancel={() => {
+            setPreselectedPoId(null);
+            setCurrentView('list');
+          }}
           isSaving={isSaving}
           isDemoMode={isDemoMode}
         />

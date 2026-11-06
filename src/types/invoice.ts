@@ -113,6 +113,10 @@ export interface Invoice {
   bankDetailsSnapshot?: BankDetailsSnapshot;
   declarationSnapshot?: string;
   termsAndConditions?: string[];
+  modeOfPayment?: string;
+  paymentTerms?: string;
+  isWithoutGst?: boolean;
+  gstType?: 'with_gst' | 'without_gst';
   status: InvoiceStatus;
   pdfPath?: string;
   pdfStoragePath?: string;
@@ -149,6 +153,8 @@ export interface InvoiceEligibleItem {
   unit: string;
   rate: number;
   rateBasis: RateBasis;
+  hsnSac?: string;
+  hsnNo?: string;
   billableWeightKg?: number;
   estimatedTaxableAmount: number;
   approvedAt: string;

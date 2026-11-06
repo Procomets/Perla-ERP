@@ -15,6 +15,7 @@ export const Input: React.FC<InputProps> = ({
   className = '',
   id,
   type,
+  value,
   onKeyDown,
   ...props
 }) => {
@@ -26,6 +27,9 @@ export const Input: React.FC<InputProps> = ({
     }
     onKeyDown?.(e);
   };
+
+  // Keep number fields empty instead of showing a default 0
+  const normalizedValue = type === 'number' && (value === 0 || value === '0') ? '' : value;
 
   return (
     <div className="w-full space-y-1">
@@ -43,6 +47,7 @@ export const Input: React.FC<InputProps> = ({
         <input
           id={inputId}
           type={type}
+          value={normalizedValue}
           onKeyDown={handleKeyDown}
           className={`w-full bg-white border ${
             error ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-300 focus:ring-[#1F4E79] focus:border-[#1F4E79]'

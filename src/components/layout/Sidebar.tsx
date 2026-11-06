@@ -133,13 +133,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onSelectTab(item.id);
                         onCloseMobile?.();
                       }}
-                      className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+                      className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 cursor-pointer ${
                         isActive
-                          ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
-                          : 'text-slate-500 hover:bg-slate-200/50 hover:text-slate-900'
+                          ? 'bg-black text-white shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'
                       }`}
                     >
-                      <span className={`${isActive ? 'text-slate-900' : 'text-slate-400'}`}>{item.icon}</span>
+                      <span className={`${isActive ? 'text-white' : 'text-slate-400'}`}>{item.icon}</span>
                       <span className="truncate">{item.label}</span>
                     </button>
                   );

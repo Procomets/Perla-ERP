@@ -40,6 +40,8 @@ export interface POColourLine {
   unit: QuantityUnit;
   rateBasis: RateBasis;
   rate: number;
+  hsnNo?: string;
+  hsnDescription?: string;
   billableWeightKg?: number;
   billablePieceQty?: number;
   lineAmount?: number;

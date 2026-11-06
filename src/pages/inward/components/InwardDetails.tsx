@@ -303,7 +303,7 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
             </div>
             {inward.remarks && (
               <div>
-                <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Remarks</span>
+                <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Inspection and Dispatch Notes</span>
                 <span className="text-slate-600 italic">{inward.remarks}</span>
               </div>
             )}

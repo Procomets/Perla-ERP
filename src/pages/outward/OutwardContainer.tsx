@@ -52,6 +52,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   // Navigation Views: 'list' | 'add' | 'edit' | 'details' | 'print'
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details' | 'print'>('list');
   const [selectedOutwardId, setSelectedOutwardId] = useState<string | null>(null);
+  const [preselectedPoId, setPreselectedPoId] = useState<string | null>(null);
 
   // Data States
   const [outwards, setOutwards] = useState<OutwardEntry[]>(initialOutwards || []);
@@ -230,6 +231,15 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   const handleNewOutward = () => {
     setSelectedOutwardDetails({ outward: null, logs: [] });
     setSelectedOutwardId(null);
+    setPreselectedPoId(null);
+    loadData();
+    setCurrentView('add');
+  };
+
+  const handleSelectQuickOutwardPo = (po: PurchaseOrder) => {
+    setSelectedOutwardDetails({ outward: null, logs: [] });
+    setSelectedOutwardId(null);
+    setPreselectedPoId(po.id || po.poId);
     loadData();
     setCurrentView('add');
   };
@@ -422,6 +432,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           onFilterChange={setFilters}
           onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
           onNewOutward={handleNewOutward}
+          onSelectPoForOutward={handleSelectQuickOutwardPo}
           onViewDetails={handleViewDetails}
           onPrint={handlePrint}
           onEdit={handleEdit}
@@ -446,9 +457,13 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           inwards={inwards}
           outwards={allPostedOutwards}
           initialOutward={currentView === 'edit' ? selectedOutwardDetails.outward : null}
+          initialPoId={currentView === 'add' ? preselectedPoId : null}
           onSaveDraft={handleSaveDraft}
           onPostOutward={handlePostOutward}
-          onCancel={() => setCurrentView('list')}
+          onCancel={() => {
+            setPreselectedPoId(null);
+            setCurrentView('list');
+          }}
           isSaving={isSaving}
         />
       )}

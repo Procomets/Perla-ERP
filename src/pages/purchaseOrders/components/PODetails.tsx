@@ -565,14 +565,16 @@ export const PODetails: React.FC<PODetailsProps> = ({
                     {po.customerPoDate ? formatDate(po.customerPoDate) : '-'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[11px]">
-                    Customer Ref No
-                  </span>
-                  <span className="font-semibold text-slate-800">
-                    {po.customerReferenceNo || '-'}
-                  </span>
-                </div>
+                {po.customerReferenceNo && (
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">
+                      Customer Ref No
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {po.customerReferenceNo}
+                    </span>
+                  </div>
+                )}
                 <div>
                   <span className="text-slate-400 block text-[11px]">
                     Order Date
@@ -581,14 +583,16 @@ export const PODetails: React.FC<PODetailsProps> = ({
                     {formatDate(po.orderDate)}
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[11px]">
-                    Expected Delivery
-                  </span>
-                  <span className="font-semibold text-slate-800">
-                    {po.deliveryDate ? formatDate(po.deliveryDate) : 'Not specified'}
-                  </span>
-                </div>
+                {po.deliveryDate && (
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">
+                      Expected Delivery
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {formatDate(po.deliveryDate)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -614,6 +618,7 @@ export const PODetails: React.FC<PODetailsProps> = ({
                     <th className="py-2.5 px-4">#</th>
                     <th className="py-2.5 px-4">Colour & Code</th>
                     <th className="py-2.5 px-4">Processing / Wash</th>
+                    <th className="py-2.5 px-4">HSN / SAC</th>
                     <th className="py-2.5 px-4 text-right">Quantity</th>
                     <th className="py-2.5 px-4">Unit</th>
                     <th className="py-2.5 px-4">Rate Basis</th>
@@ -644,6 +649,15 @@ export const PODetails: React.FC<PODetailsProps> = ({
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium">
                           {line.processType}
                         </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-700 text-xs">
+                        {line.hsnNo ? (
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200">
+                            {line.hsnNo}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right font-bold text-slate-900">
                         {line.quantity.toLocaleString('en-IN')}

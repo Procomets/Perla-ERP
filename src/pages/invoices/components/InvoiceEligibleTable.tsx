@@ -167,7 +167,7 @@ export const InvoiceEligibleTable: React.FC<InvoiceEligibleTableProps> = ({
               size="sm"
               disabled={!isSingleCompanySelection}
               onClick={() => onDownloadInvoice(selectedItems)}
-              className="bg-black hover:bg-neutral-800 text-white font-semibold text-xs py-1 h-auto"
+              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-semibold text-xs py-1 h-auto shadow-xs cursor-pointer"
             >
               Download Combined Invoice ({selectedApprovalIds.length} Colours)
             </Button>
@@ -352,9 +352,14 @@ export const InvoiceEligibleTable: React.FC<InvoiceEligibleTableProps> = ({
                             <div className="font-bold text-slate-900 text-xs uppercase tracking-wide">
                               {item.colour}
                             </div>
-                            <div className="text-[11px] text-slate-600 mt-0.5">
+                            <div className="text-[11px] text-slate-600 mt-0.5 flex items-center flex-wrap gap-1">
                               <span>{item.washType}</span>
-                              <span className="text-slate-400 ml-1">({item.processCategory})</span>
+                              <span className="text-slate-400">({item.processCategory})</span>
+                              {item.hsnSac && (
+                                <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-mono font-bold">
+                                  HSN: {item.hsnSac}
+                                </span>
+                              )}
                             </div>
                             {item.billableWeightKg ? (
                               <div className="text-[10px] text-slate-500 font-medium mt-0.5">

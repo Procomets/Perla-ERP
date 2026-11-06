@@ -23,6 +23,7 @@ interface InwardFormProps {
   pos: PurchaseOrder[];
   vendors: Vendor[];
   initialInward?: InwardEntry | null;
+  initialPoId?: string | null;
   onSaveDraft?: (data: any) => Promise<void>;
   onPostReceipt: (data: any) => Promise<void>;
   onCancel: () => void;
@@ -34,6 +35,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   pos,
   vendors,
   initialInward,
+  initialPoId,
   onSaveDraft,
   onPostReceipt,
   onCancel,
@@ -48,19 +50,30 @@ export const InwardForm: React.FC<InwardFormProps> = ({
         s === 'approved' ||
         s === 'in_progress' ||
         s === 'partially_received' ||
-        (initialInward && (p.id === initialInward.poId || p.poId === initialInward.poId))
+        (initialInward && (p.id === initialInward.poId || p.poId === initialInward.poId)) ||
+        (initialPoId && (p.id === initialPoId || p.poId === initialPoId))
       );
     });
-  }, [pos, initialInward]);
+  }, [pos, initialInward, initialPoId]);
+
+  // Find target preselected PO if provided
+  const targetInitialPo = useMemo(() => {
+    if (!initialPoId) return null;
+    return pos.find((p) => p.id === initialPoId || p.poId === initialPoId);
+  }, [pos, initialPoId]);
 
   // Active customer selection
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
-    initialInward?.customerVendorId || initialInward?.customerId || ''
+    initialInward?.customerVendorId ||
+    initialInward?.customerId ||
+    targetInitialPo?.customerId ||
+    targetInitialPo?.customerVendorId ||
+    ''
   );
 
   // Active PO selection
   const [selectedPoId, setSelectedPoId] = useState<string>(
-    initialInward?.poId || ''
+    initialInward?.poId || initialPoId || ''
   );
 
   // Active Subcontractor selection
@@ -80,13 +93,14 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   );
   const [remarks, setRemarks] = useState<string>(initialInward?.remarks || '');
 
-  // Line quantities entered by user: { [poLineId]: number }
-  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>(() => {
+  // Line quantities entered by user: { [poLineId]: number | string }
+  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number | string>>(() => {
     if (initialInward?.lines && initialInward.lines.length > 0) {
-      const map: Record<string, number> = {};
+      const map: Record<string, number | string> = {};
       initialInward.lines.forEach((l) => {
         const lid = l.poLineId || l.lineId;
-        if (lid) map[lid] = Number(l.receivedQty) || 0;
+        const qty = Number(l.receivedQty);
+        if (lid) map[lid] = qty > 0 ? qty : '';
       });
       return map;
     }
@@ -164,13 +178,10 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     };
   }, [activePo?.id, activePo?.poId, activePo?.poNumber, initialInward?.inwardId, isDemoMode]);
 
-  // Find eligible subcontractors for the selected customer: strictly parent's subcompany
+  // Find eligible subcontractors / subcompanies: all companies available for selection
   const eligibleSubcontractors = useMemo(() => {
-    if (!selectedCustomerId) return [];
-    return vendors.filter(
-      (v) => v.parentVendorId === selectedCustomerId
-    );
-  }, [vendors, selectedCustomerId]);
+    return [...vendors].sort((a, b) => (a.companyName || '').localeCompare(b.companyName || ''));
+  }, [vendors]);
 
   // If customer is selected, filter POs belonging to that customer
   const customerPOs = useMemo(() => {
@@ -186,6 +197,13 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   const hasInitializedRef = useRef(false);
   useEffect(() => {
     if (hasInitializedRef.current) return;
+    if (initialPoId && targetInitialPo) {
+      setSelectedPoId(targetInitialPo.id || targetInitialPo.poId);
+      const cId = targetInitialPo.customerId || targetInitialPo.customerVendorId || '';
+      if (cId) setSelectedCustomerId(cId);
+      hasInitializedRef.current = true;
+      return;
+    }
     if (!selectedPoId && customerPOs.length > 0) {
       const firstPo = customerPOs[0];
       setSelectedPoId(firstPo.id || firstPo.poId);
@@ -193,7 +211,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
       setSelectedCustomerId(cId);
       hasInitializedRef.current = true;
     }
-  }, [customerPOs, selectedPoId]);
+  }, [customerPOs, selectedPoId, initialPoId, targetInitialPo]);
 
   // Customer selection groups for SearchableSelect
   const customerSelectGroups: SelectOptionGroup[] = useMemo(() => {
@@ -212,30 +230,72 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     ];
   }, [eligibleCustomers]);
 
-  // Subcontractor selection groups for SearchableSelect
+  // Subcontractor / Subcompany selection groups for SearchableSelect (all companies visible and selectable)
   const subcontractorSelectGroups: SelectOptionGroup[] = useMemo(() => {
-    const list: SelectOption[] = [
-      {
-        id: '',
-        primaryText: '— Direct Delivery / None —',
-        secondaryText: 'Deliver directly from customer'
-      },
-      ...eligibleSubcontractors.map((s) => ({
-        id: s.vendorId || s.id || '',
-        primaryText: s.companyName,
-        badge: s.vendorCode || 'SUB',
-        badgeVariant: 'slate' as const,
-        meta: s
-      }))
-    ];
+    const defaultOption: SelectOption = {
+      id: '',
+      primaryText: '— Direct Delivery / None —',
+      secondaryText: 'Deliver directly from customer'
+    };
 
-    return [
-      {
-        title: eligibleSubcontractors.length > 0 ? 'Assigned Subcontractors / Units' : undefined,
-        options: list
-      }
-    ];
-  }, [eligibleSubcontractors]);
+    // If selected customer has subcompanies registered under them, prioritize them at the top
+    const directSubcompanies = selectedCustomerId
+      ? vendors.filter((v) => v.parentVendorId === selectedCustomerId)
+      : [];
+
+    const otherCompanies = vendors.filter(
+      (v) => !selectedCustomerId || v.parentVendorId !== selectedCustomerId
+    );
+
+    const groups: SelectOptionGroup[] = [];
+
+    if (directSubcompanies.length > 0) {
+      groups.push({
+        title: 'Linked Subcompanies of Selected Customer',
+        isHighlighted: true,
+        options: [
+          defaultOption,
+          ...directSubcompanies.map((s) => ({
+            id: s.vendorId || s.id || '',
+            primaryText: s.companyName,
+            secondaryText: s.address?.city ? `${s.address.city} • Code: ${s.vendorCode || '—'}` : `Code: ${s.vendorCode || '—'}`,
+            badge: s.vendorCategory === 'subcompany' ? 'Subcompany' : s.vendorCode || 'SUB',
+            badgeVariant: 'emerald' as const,
+            meta: s
+          }))
+        ]
+      });
+
+      groups.push({
+        title: `All Other Companies / Subcontractors (${otherCompanies.length})`,
+        options: otherCompanies.map((s) => ({
+          id: s.vendorId || s.id || '',
+          primaryText: s.companyName,
+          secondaryText: s.address?.city ? `${s.address.city} • Code: ${s.vendorCode || '—'}` : `Code: ${s.vendorCode || '—'}`,
+          badge: s.vendorCategory === 'subcompany' ? 'Subcompany' : s.vendorCode || 'VND',
+          badgeVariant: 'slate' as const,
+          meta: s
+        }))
+      });
+    } else {
+      groups.push({
+        title: `All Companies / Subcontractors (${vendors.length})`,
+        options: [
+          defaultOption,
+          ...eligibleSubcontractors.map((s) => ({
+            id: s.vendorId || s.id || '',
+            primaryText: s.companyName,
+            secondaryText: s.address?.city ? `${s.address.city} • Code: ${s.vendorCode || '—'}` : `Code: ${s.vendorCode || '—'}`,
+            badge: s.vendorCategory === 'subcompany' ? 'Subcompany' : s.vendorCode || 'VND',
+            badgeVariant: 'slate' as const,
+            meta: s
+          }))
+        ]
+      });
+    }
+
+    return groups;
+  }, [vendors, selectedCustomerId, eligibleSubcontractors]);
 
   // Purchase Order selection groups (supports search by PO # and Style #, with cross-company discovery)
   const poSelectGroups: SelectOptionGroup[] = useMemo(() => {
@@ -261,6 +321,15 @@ export const InwardForm: React.FC<InwardFormProps> = ({
           return {
             id: pId,
             primaryText: `${p.poNumber} — Style: ${sNo}`,
+            primaryNode: (
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                <span className="text-slate-300 font-light">—</span>
+                <span className="text-xs text-slate-900 truncate">
+                  Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
+                </span>
+              </span>
+            ),
             secondaryText: `${p.itemName} • ${String(p.processCategory || '').toUpperCase()} • Ordered: ${formatDate(p.orderDate)}`,
             badge: `${p.totalQuantity?.toLocaleString() || ''} ${p.lines?.[0]?.unit || 'pcs'}`,
             badgeVariant: 'slate' as const,
@@ -280,6 +349,15 @@ export const InwardForm: React.FC<InwardFormProps> = ({
             return {
               id: pId,
               primaryText: `${p.poNumber} — Style: ${sNo}`,
+              primaryNode: (
+                <span className="flex items-center gap-1.5 truncate">
+                  <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                  <span className="text-slate-300 font-light">—</span>
+                  <span className="text-xs text-slate-900 truncate">
+                    Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
+                  </span>
+                </span>
+              ),
               secondaryText: `${p.itemName} • Company: ${cName}`,
               badge: cName,
               badgeVariant: 'amber' as const,
@@ -303,6 +381,15 @@ export const InwardForm: React.FC<InwardFormProps> = ({
           return {
             id: pId,
             primaryText: `${p.poNumber} — Style: ${sNo}`,
+            primaryNode: (
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                <span className="text-slate-300 font-light">—</span>
+                <span className="text-xs text-slate-900 truncate">
+                  Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
+                </span>
+              </span>
+            ),
             secondaryText: `${p.itemName} • Company: ${cName}`,
             badge: cName,
             badgeVariant: 'blue' as const,
@@ -373,9 +460,10 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     setSelectedSubcontractorId(opt.id);
   };
 
-  const handleQtyChange = (lineId: string, val: number, maxAvailable: number, minAllowed: number = 0) => {
-    const cleanVal = Math.max(0, isNaN(val) ? 0 : val);
-    setReceivedQtyMap((prev) => ({ ...prev, [lineId]: cleanVal }));
+  const handleQtyChange = (lineId: string, val: string, maxAvailable: number, minAllowed: number = 0) => {
+    setReceivedQtyMap((prev) => ({ ...prev, [lineId]: val }));
+    const numVal = parseFloat(val);
+    const cleanVal = Math.max(0, isNaN(numVal) ? 0 : numVal);
     if (minAllowed > 0 && cleanVal < minAllowed) {
       setValidationError(
         `Received quantity cannot be less than present outward entry (${minAllowed}).`
@@ -622,10 +710,10 @@ export const InwardForm: React.FC<InwardFormProps> = ({
 
           {/* Subcontractor Searchable Dropdown */}
           <SearchableSelect
-            label="Subcontractor (Optional)"
+            label="Subcontractor / Subcompany (Optional)"
             value={selectedSubcontractorId}
             placeholder="-- Direct Delivery / None --"
-            searchPlaceholder="Search subcontractor unit..."
+            searchPlaceholder="Search any company or subcontractor..."
             groups={subcontractorSelectGroups}
             onSelect={handleSelectSubcontractor}
             onClear={() => setSelectedSubcontractorId('')}
@@ -651,8 +739,15 @@ export const InwardForm: React.FC<InwardFormProps> = ({
               if (p) {
                 const sNo = p.styleNo || p.styleNumber || '—';
                 return (
-                  <span className="truncate font-semibold text-slate-800">
-                    {p.poNumber} — {sNo} ({p.itemName})
+                  <span className="truncate flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                    <span className="text-slate-300 font-light">—</span>
+                    <span className="text-xs text-slate-900 truncate">
+                      Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
+                    </span>
+                    {p.itemName && (
+                      <span className="text-slate-500 font-normal text-xs truncate">({p.itemName})</span>
+                    )}
                   </span>
                 );
               }
@@ -738,8 +833,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
 
         <div className="pt-2">
           <Input
-            label="Receipt Remarks / Inspection Notes"
-            placeholder="e.g. First delivery batch received via tempo. Fabric quality and shade verified."
+            label="Inspection and Dispatch Notes"
+            placeholder="e.g. Fabric quality verified, shade verified, and dispatch remarks."
             className="h-10"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
@@ -835,17 +930,26 @@ export const InwardForm: React.FC<InwardFormProps> = ({
                           min={line.minAllowedQty}
                           max={line.remainingOrderQty}
                           step={line.unit === 'kg' ? '0.01' : '1'}
-                          value={receivedQtyMap[line.lineId] ?? 0}
+                          placeholder=""
+                          value={
+                            receivedQtyMap[line.lineId] === undefined ||
+                            receivedQtyMap[line.lineId] === 0 ||
+                            receivedQtyMap[line.lineId] === '0' ||
+                            receivedQtyMap[line.lineId] === ''
+                              ? ''
+                              : receivedQtyMap[line.lineId]
+                          }
                           onChange={(e) =>
                             handleQtyChange(
                               line.lineId,
-                              parseFloat(e.target.value),
+                              e.target.value,
                               line.remainingOrderQty,
                               line.minAllowedQty
                             )
                           }
                           onBlur={() => {
-                            if (line.minAllowedQty > 0 && (receivedQtyMap[line.lineId] ?? 0) < line.minAllowedQty) {
+                            const curVal = Number(receivedQtyMap[line.lineId] || 0);
+                            if (line.minAllowedQty > 0 && curVal < line.minAllowedQty) {
                               setReceivedQtyMap((prev) => ({ ...prev, [line.lineId]: line.minAllowedQty }));
                               setValidationError(null);
                             }

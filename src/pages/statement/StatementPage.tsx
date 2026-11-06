@@ -7,6 +7,7 @@ import {
   InvoiceHistoryItem
 } from '../../types/statement';
 import { StatementService } from '../../services/statementService';
+import { StatementPdfService } from '../../services/statementPdfService';
 import { useNavigate } from 'react-router-dom';
 import { StatementFilters } from './components/StatementFilters';
 import { StatementLedgerTable } from './components/StatementLedgerTable';
@@ -259,6 +260,25 @@ export const StatementPage: React.FC<StatementPageProps> = ({
     }
   };
 
+  // Download PDF Handler (matching delivery statement format from photo)
+  const handleDownloadPdf = () => {
+    if (!statementData) return;
+    try {
+      const selectedPO = purchaseOrders.find((p) => p.id === selectedPoId);
+      StatementPdfService.downloadStatementPdf({
+        companyName: statementData.companyName,
+        styleNo: selectedStyleNo !== 'all' ? selectedStyleNo : statementData.styleNo,
+        poNumber: selectedPoId !== 'all' ? (selectedPO?.poNumber || statementData.poNumber) : statementData.poNumber,
+        itemName: selectedItemName !== 'all' ? selectedItemName : statementData.itemName,
+        inwards: statementData.inwards,
+        outwards: statementData.outwards
+      });
+    } catch (err) {
+      console.error('Failed to download statement PDF:', err);
+      alert('Failed to generate statement PDF.');
+    }
+  };
+
   // Export CSV Handler
   const handleExportCsv = () => {
     if (!statementData) return;
@@ -372,6 +392,7 @@ export const StatementPage: React.FC<StatementPageProps> = ({
           }
         }}
         onExportCsv={handleExportCsv}
+        onDownloadPdf={handleDownloadPdf}
         isLoading={isLoading}
         hasData={Boolean(statementData && statementData.hasTransactions)}
       />
@@ -427,6 +448,9 @@ export const StatementPage: React.FC<StatementPageProps> = ({
                 outwards={statementData.outwards}
                 unitTotals={statementData.unitTotals}
                 companyName={statementData.companyName}
+                styleNo={selectedStyleNo !== 'all' ? selectedStyleNo : statementData.styleNo}
+                poNumber={selectedPoId !== 'all' ? (purchaseOrders.find((p) => p.id === selectedPoId)?.poNumber || statementData.poNumber) : statementData.poNumber}
+                itemName={selectedItemName !== 'all' ? selectedItemName : statementData.itemName}
               />
             </div>
           ) : null}

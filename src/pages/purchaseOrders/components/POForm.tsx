@@ -8,21 +8,22 @@ import {
   CheckCircle2,
   Building,
   Layers,
-  Calendar,
   AlertCircle,
   FileCheck2,
   Info,
   Palette,
-  Network,
   X,
   Sparkles,
-  Lock
+  Lock,
+  Hash
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { ColourItem } from '../../../types/colourMaster';
 import { ColourMasterService } from '../../../services/colourMasterService';
 import { ProcessItem } from '../../../types/processMaster';
 import { ProcessMasterService } from '../../../services/processMasterService';
+import { HsnItem } from '../../../types/hsnMaster';
+import { HsnMasterService } from '../../../services/hsnMasterService';
 import { VendorService } from '../../../services/vendorService';
 import {
   PurchaseOrder,
@@ -43,6 +44,7 @@ import {
 import { formatCurrency, formatQuantity } from '../../../utils/formatters';
 import { hasInwardForPO } from '../../../utils/calculations';
 import { InwardService } from '../../../services/inwardService';
+import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/components/SearchableSelect';
 
 interface POFormProps {
   initialPO?: PurchaseOrder | null;
@@ -119,6 +121,27 @@ export const POForm: React.FC<POFormProps> = ({
       return isMainCompany && isCustomer;
     });
   }, [allVendors]);
+
+  // Option groups for searchable customer dropdown
+  const customerOptionGroups: SelectOptionGroup[] = useMemo(() => {
+    if (eligibleCustomers.length === 0) return [];
+    return [
+      {
+        title: 'Main Company Customers',
+        options: eligibleCustomers.map((c) => {
+          const idVal = c.vendorId || c.id || c.vendorCode || c.companyName;
+          return {
+            id: idVal,
+            primaryText: c.companyName,
+            secondaryText: c.address?.city ? `${c.address.city} • Code: ${c.vendorCode || '—'}` : `Code: ${c.vendorCode || '—'}`,
+            badge: c.vendorCode || 'Client',
+            badgeVariant: 'blue' as const,
+            meta: c
+          };
+        })
+      }
+    ];
+  }, [eligibleCustomers]);
 
   // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(() => {
@@ -407,6 +430,7 @@ export const POForm: React.FC<POFormProps> = ({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [masterColours, setMasterColours] = useState<ColourItem[]>([]);
   const [masterProcesses, setMasterProcesses] = useState<ProcessItem[]>([]);
+  const [masterHsns, setMasterHsns] = useState<HsnItem[]>([]);
 
   // Live inward quantities received per colour line
   const [liveInwardMap, setLiveInwardMap] = useState<Record<string, number>>({});
@@ -524,6 +548,59 @@ export const POForm: React.FC<POFormProps> = ({
     return () => unsubscribe();
   }, []);
 
+  // Other HSN Modal State
+  const [isOtherHsnModalOpen, setIsOtherHsnModalOpen] = useState(false);
+  const [newHsnNo, setNewHsnNo] = useState('');
+  const [newHsnDescription, setNewHsnDescription] = useState('');
+  const [targetHsnLineIndex, setTargetHsnLineIndex] = useState<number | null>(null);
+  const [isAddingHsn, setIsAddingHsn] = useState(false);
+
+  // Subscribe to HSN Master from generalSettings
+  useEffect(() => {
+    const unsubscribe = HsnMasterService.subscribeHsnItems((items) => {
+      setMasterHsns(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleOpenAddOtherHsn = (lineIndex: number) => {
+    setTargetHsnLineIndex(lineIndex);
+    setNewHsnNo('');
+    setNewHsnDescription('');
+    setIsOtherHsnModalOpen(true);
+  };
+
+  const handleSaveNewHsn = async () => {
+    const trimmedHsn = newHsnNo.trim();
+    const trimmedDesc = newHsnDescription.trim();
+    if (!trimmedHsn || !trimmedDesc) return;
+    if (targetHsnLineIndex === null || !lines[targetHsnLineIndex]) return;
+
+    try {
+      setIsAddingHsn(true);
+      const newHsn = await HsnMasterService.addHsnItem(
+        trimmedHsn,
+        trimmedDesc,
+        user?.uid || 'user'
+      );
+
+      const updated = [...lines];
+      updated[targetHsnLineIndex] = {
+        ...updated[targetHsnLineIndex],
+        hsnNo: newHsn.hsnNo,
+        hsnDescription: newHsn.description
+      };
+      setLines(updated);
+      setIsOtherHsnModalOpen(false);
+      setNewHsnNo('');
+      setNewHsnDescription('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save HSN entry');
+    } finally {
+      setIsAddingHsn(false);
+    }
+  };
+
   const handleOpenAddOtherProcess = (lineIndex: number) => {
     setTargetProcessLineIndex(lineIndex);
     setNewProcessModalName('');
@@ -633,6 +710,7 @@ export const POForm: React.FC<POFormProps> = ({
       processCategory.toLowerCase() === 'dyeing'
         ? 'Reactive Dyeing'
         : 'Softener Wash';
+    const defaultHsn = masterHsns.find((h) => h.isActive)?.hsnNo || '998821';
 
     const newLine: POColourLine = {
       id: newLineId,
@@ -641,6 +719,7 @@ export const POForm: React.FC<POFormProps> = ({
       colourCode: null,
       colourId: null,
       processType: defaultWash,
+      hsnNo: defaultHsn,
       quantity: 500,
       unit: 'piece',
       rateBasis: 'per_piece',
@@ -751,6 +830,19 @@ export const POForm: React.FC<POFormProps> = ({
       notes: internalRemarks.trim() || undefined,
       colourLines: lines.map((l) => ({
         ...l,
+        quantity: Number(l.quantity) || 0,
+        rate: Number(l.rate) || 0,
+        lineAmount: calculateLineAmount({
+          ...l,
+          quantity: Number(l.quantity) || 0,
+          rate: Number(l.rate) || 0
+        }),
+        amount: calculateLineAmount({
+          ...l,
+          quantity: Number(l.quantity) || 0,
+          rate: Number(l.rate) || 0
+        }),
+        hsnNo: (l.hsnNo || '').trim(),
         colourCode: null,
         colourId: l.colourId || null,
         notes: l.notes || null,
@@ -887,32 +979,25 @@ export const POForm: React.FC<POFormProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Customer Selection: Strictly Main Company Customers */}
-          <div className="md:col-span-1 space-y-1.5">
+          <div className="md:col-span-1 space-y-1.5 relative z-20">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
                 Customer Company <span className="text-rose-500">*</span>
               </label>
               <span className="text-[10px] text-slate-400 font-medium">Main Companies Only</span>
             </div>
-            <select
-              value={selectedCustomer ? (selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode) : selectedCustomerId}
-              onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
-              required
-            >
-              {eligibleCustomers.length === 0 ? (
-                <option value="">No Main Company Customers Found</option>
-              ) : (
-                eligibleCustomers.map((c) => {
-                  const val = c.vendorId || c.id || c.vendorCode || c.companyName;
-                  return (
-                    <option key={val} value={val}>
-                      {c.companyName} ({c.vendorCode || 'Client'})
-                    </option>
-                  );
-                })
+            <SearchableSelect
+              value={selectedCustomer ? (selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode || selectedCustomer.companyName) : selectedCustomerId}
+              placeholder="-- Select Customer Company --"
+              searchPlaceholder="Search customer company name or code..."
+              groups={customerOptionGroups}
+              onSelect={(opt) => setSelectedCustomerId(opt.id)}
+              formatTriggerLabel={(opt) => (
+                <span className="truncate font-semibold text-slate-900 text-xs">
+                  {opt.primaryText} {opt.badge && `(${opt.badge})`}
+                </span>
               )}
-            </select>
+            />
 
             {selectedCustomer && (
               <div className="mt-2 p-2.5 rounded-lg bg-[#EEF5FB] border border-[#BDD7EE] text-[11px] text-slate-700 space-y-1">
@@ -1030,202 +1115,6 @@ export const POForm: React.FC<POFormProps> = ({
             </p>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-          {/* Order Date */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Order Date <span className="text-rose-500">*</span>
-            </label>
-            <Input
-              type="date"
-              value={orderDate}
-              onChange={(e) => setOrderDate(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Expected Delivery Date */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Expected Delivery Date
-            </label>
-            <Input
-              type="date"
-              value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-            />
-          </div>
-
-          {/* Customer Reference No */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Customer Ref / Notes
-            </label>
-            <Input
-              placeholder="Optional reference / remarks"
-              value={customerReferenceNo}
-              onChange={(e) => setCustomerReferenceNo(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Subcontractor or Subcompany Toggle Section */}
-        <div className="pt-4 border-t border-slate-100 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-blue-100 text-blue-800 rounded-lg">
-                <Network className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Order Processing Unit
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Select whether this order is fulfilled direct, or assigned to a linked Subcontractor or Subcompany
-                </span>
-              </div>
-            </div>
-
-            {/* 3-way Toggle: Direct (Main Company) | Subcontractor | Subcompany */}
-            <div className="inline-flex p-1 bg-white rounded-xl border border-slate-200 shadow-2xs shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setUnitType('none');
-                  setSelectedSubUnitId('');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  unitType === 'none'
-                    ? 'bg-black text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                Direct (Main Company)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUnitType('subcontractor');
-                  if (respectiveSubcontractors.length > 0) {
-                    setSelectedSubUnitId(respectiveSubcontractors[0].vendorId || respectiveSubcontractors[0].id || '');
-                  } else {
-                    setSelectedSubUnitId('');
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  unitType === 'subcontractor'
-                    ? 'bg-black text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                Subcontractor
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUnitType('subcompany');
-                  if (respectiveSubcompanies.length > 0) {
-                    setSelectedSubUnitId(respectiveSubcompanies[0].vendorId || respectiveSubcompanies[0].id || '');
-                  } else {
-                    setSelectedSubUnitId('');
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  unitType === 'subcompany'
-                    ? 'bg-black text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                Subcompany
-              </button>
-            </div>
-          </div>
-
-          {/* Subcontractor / Subcompany Selection Dropdown & Card */}
-          {unitType !== 'none' && (
-            <div className="p-4 bg-white rounded-xl border border-blue-200 bg-blue-50/20 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Select {unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'}
-                </label>
-                <span className="text-[11px] text-slate-500">
-                  Respective units of: <strong className="text-[#1F4E79]">{selectedCustomer?.companyName || 'Main Company'}</strong>
-                </span>
-              </div>
-
-              <select
-                value={selectedSubUnitId}
-                onChange={(e) => setSelectedSubUnitId(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
-              >
-                <option value="">
-                  -- Select {unitType === 'subcontractor' ? 'Subcontractor' : 'Subcompany'} --
-                </option>
-
-                {/* 1. First: That company's linked subcompany/subcontractor */}
-                {linkedUnits.length > 0 && (
-                  <optgroup label={`${selectedCustomer?.companyName || 'Company'}'s Linked ${unitType === 'subcontractor' ? 'Subcontractors' : 'Subcompanies'}`}>
-                    {linkedUnits.map((u) => (
-                      <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
-                        ★ {u.companyName} ({u.vendorCode || 'Unit'}) [Linked]
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-
-                {/* 2. Next: All other companies except the current company */}
-                {otherCompanies.length > 0 && (
-                  <optgroup label={`All Other Companies & Units (${otherCompanies.length})`}>
-                    {otherCompanies.map((u) => (
-                      <option key={u.vendorId || u.id} value={u.vendorId || u.id}>
-                        {u.companyName} ({u.vendorCode || 'Unit'}){u.vendorCategory ? ` · ${u.vendorCategory.replace('_', ' ')}` : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-
-              {/* Unit snapshot */}
-              {selectedSubUnit ? (
-                <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs text-slate-700 space-y-1 shadow-2xs">
-                  <div className="font-bold text-[#1F4E79] flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{selectedSubUnit.companyName}</span>
-                      {linkedUnits.some((l) => (l.vendorId || l.id) === (selectedSubUnit.vendorId || selectedSubUnit.id)) ? (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.2 rounded">
-                          Linked to {selectedCustomer?.companyName}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] bg-slate-100 text-slate-600 font-medium px-1.5 py-0.2 rounded">
-                          Other Company
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                      {selectedSubUnit.vendorCode}
-                    </span>
-                  </div>
-                  <div className="text-slate-500 text-[11px]">
-                    Category: <span className="capitalize font-semibold text-slate-700">{selectedSubUnit.vendorCategory?.replace('_', ' ') || unitType}</span> •{' '}
-                    City: {selectedSubUnit.address?.city || 'Tamil Nadu'}
-                  </div>
-                  {selectedSubUnit.taxDetails?.gstin && (
-                    <div className="text-slate-500 font-mono text-[11px]">
-                      GSTIN: {selectedSubUnit.taxDetails.gstin}
-                    </div>
-                  )}
-                </div>
-              ) : linkedUnits.length === 0 ? (
-                <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200 text-blue-900 text-xs leading-relaxed">
-                  Notice: No {unitType === 'subcontractor' ? 'subcontractors' : 'subcompanies'} are directly linked to{' '}
-                  <strong>{selectedCustomer?.companyName}</strong> in Vendor Master yet.
-                  You can select any other company from the list above.
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Section 2: Colour-Wise Order Lines */}
@@ -1312,7 +1201,7 @@ export const POForm: React.FC<POFormProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-start">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 items-start">
                   {/* Colour Name */}
                   <div className="md:col-span-1 space-y-1">
                     <div className="flex items-center justify-between h-5">
@@ -1426,6 +1315,60 @@ export const POForm: React.FC<POFormProps> = ({
                     </select>
                   </div>
 
+                  {/* HSN No. */}
+                  <div className="md:col-span-1 space-y-1">
+                    <div className="flex items-center justify-between h-5">
+                      <label className="text-[11px] font-semibold text-slate-600">
+                        HSN No. *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddOtherHsn(idx)}
+                        className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
+                        title="Add a new HSN to General Settings > HSN Master"
+                      >
+                        + Other
+                      </button>
+                    </div>
+                    <select
+                      value={line.hsnNo || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__other_hsn__') {
+                          handleOpenAddOtherHsn(idx);
+                        } else {
+                          const matchedHsn = masterHsns.find((h) => h.hsnNo === val);
+                          const updated = [...lines];
+                          updated[idx] = {
+                            ...updated[idx],
+                            hsnNo: val,
+                            hsnDescription: matchedHsn?.description || ''
+                          };
+                          setLines(updated);
+                        }
+                      }}
+                      className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                      required
+                    >
+                      <option value="">Select HSN...</option>
+                      {line.hsnNo && !masterHsns.some((h) => h.hsnNo === line.hsnNo) && (
+                        <option value={line.hsnNo}>
+                          {line.hsnNo} (Custom)
+                        </option>
+                      )}
+                      {masterHsns
+                        .filter((h) => h.isActive)
+                        .map((h) => (
+                          <option key={h.id} value={h.hsnNo} title={`${h.hsnNo} - ${h.description}`}>
+                            {h.hsnNo} {h.description ? `(${h.description.slice(0, 16)}...)` : ''}
+                          </option>
+                        ))}
+                      <option value="__other_hsn__" className="text-[#1F4E79] font-bold">
+                        + Other (Enter New HSN)...
+                      </option>
+                    </select>
+                  </div>
+
                   {/* Quantity & Unit */}
                   <div className="md:col-span-1 space-y-1">
                     <div className="flex items-center justify-between h-5">
@@ -1446,14 +1389,19 @@ export const POForm: React.FC<POFormProps> = ({
                         type="number"
                         min={hasInwardForThisRow ? minQty : 1}
                         placeholder="Qty"
-                        value={line.quantity}
+                        value={line.quantity === 0 || (line.quantity as any) === '' ? '' : line.quantity}
                         onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          handleLineChange(
-                            idx,
-                            'quantity',
-                            isNaN(val) ? 0 : val
-                          );
+                          const raw = e.target.value;
+                          if (raw === '') {
+                            handleLineChange(idx, 'quantity', '' as any);
+                          } else {
+                            const val = parseFloat(raw);
+                            handleLineChange(
+                              idx,
+                              'quantity',
+                              isNaN(val) ? ('' as any) : val
+                            );
+                          }
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.keyCode === 38 || e.keyCode === 40) {
@@ -1524,14 +1472,19 @@ export const POForm: React.FC<POFormProps> = ({
                         min="0"
                         step="0.1"
                         placeholder="Rate ₹"
-                        value={line.rate}
-                        onChange={(e) =>
-                          handleLineChange(
-                            idx,
-                            'rate',
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
+                        value={line.rate === 0 || (line.rate as any) === '' ? '' : line.rate}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === '') {
+                            handleLineChange(idx, 'rate', '' as any);
+                          } else {
+                            handleLineChange(
+                              idx,
+                              'rate',
+                              parseFloat(raw) || 0
+                            );
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.keyCode === 38 || e.keyCode === 40) {
                             e.preventDefault();
@@ -1825,6 +1778,94 @@ export const POForm: React.FC<POFormProps> = ({
                 disabled={isAddingProcess || !newProcessModalName.trim()}
               >
                 {isAddingProcess ? 'Saving to Master...' : 'Save & Select Process'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New HSN Code to General Settings > HSN Master Modal */}
+      {isOtherHsnModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 text-[#1F4E79] rounded-lg">
+                  <Hash className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Add New HSN Code
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Save into General Settings &gt; HSN Master
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOtherHsnModalOpen(false);
+                  setNewHsnNo('');
+                  setNewHsnDescription('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  HSN No. <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  placeholder="e.g. 998821 or 6203"
+                  value={newHsnNo}
+                  onChange={(e) => setNewHsnNo(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Description <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Textiles, apparel dyeing and finishing services"
+                  value={newHsnDescription}
+                  onChange={(e) => setNewHsnDescription(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#1F4E79] transition-colors"
+                />
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                This HSN code will be saved to HSN Master and automatically selected for Row #{targetHsnLineIndex !== null ? targetHsnLineIndex + 1 : 1}.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsOtherHsnModalOpen(false);
+                  setNewHsnNo('');
+                  setNewHsnDescription('');
+                }}
+                disabled={isAddingHsn}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveNewHsn}
+                disabled={isAddingHsn || !newHsnNo.trim() || !newHsnDescription.trim()}
+              >
+                {isAddingHsn ? 'Saving to Master...' : 'Save & Select HSN'}
               </Button>
             </div>
           </div>

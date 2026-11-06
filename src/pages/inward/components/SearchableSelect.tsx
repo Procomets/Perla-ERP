@@ -10,6 +10,7 @@ export interface SelectOptionGroup {
 export interface SelectOption {
   id: string;
   primaryText: string;
+  primaryNode?: React.ReactNode;
   secondaryText?: string;
   badge?: string;
   badgeVariant?: 'slate' | 'blue' | 'amber' | 'emerald';
@@ -231,7 +232,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold truncate text-slate-900">{opt.primaryText}</span>
+                              {opt.primaryNode ? (
+                                <div className="truncate flex-1">{opt.primaryNode}</div>
+                              ) : (
+                                <span className="font-semibold truncate text-slate-900">{opt.primaryText}</span>
+                              )}
                               {opt.badge && (
                                 <span
                                   className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${

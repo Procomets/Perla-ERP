@@ -427,6 +427,7 @@ export function normalizePODocument(docId: string, data: any): PurchaseOrder {
       unit: line.unit || 'piece',
       rateBasis: line.rateBasis || 'per_piece',
       rate: Number(line.rate) || 0,
+      hsnNo: line.hsnNo || '',
       billableWeightKg: line.billableWeightKg ? Number(line.billableWeightKg) : null,
       billablePieceQty: line.billablePieceQty ? Number(line.billablePieceQty) : null,
       lineAmount: amount,
@@ -819,6 +820,7 @@ export class POService {
         unit: line.unit || 'piece',
         rateBasis: line.rateBasis || 'per_piece',
         rate: Number(line.rate) || 0,
+        hsnNo: line.hsnNo || '',
         lineAmount: amount,
         amount
       } as POColourLine;

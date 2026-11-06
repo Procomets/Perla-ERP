@@ -26,6 +26,7 @@ interface OutwardFormProps {
   inwards?: InwardEntry[];
   outwards?: OutwardEntry[];
   initialOutward?: OutwardEntry | null;
+  initialPoId?: string | null;
   onSaveDraft?: (data: any) => Promise<void>;
   onPostOutward: (data: any) => Promise<void>;
   onCancel: () => void;
@@ -38,6 +39,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   inwards = [],
   outwards = [],
   initialOutward,
+  initialPoId,
   onSaveDraft,
   onPostOutward,
   onCancel,
@@ -320,14 +322,28 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     return Array.from(customerMap.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
   }, [vendors, eligiblePos, initialOutward]);
 
+  // Target preselected PO if provided from Quick Outward
+  const targetInitialPo = useMemo(() => {
+    if (!initialPoId) return null;
+    return (
+      eligiblePos.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
+      allPosWithInwardSources.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
+      pos.find((p) => p.id === initialPoId || p.poId === initialPoId)
+    );
+  }, [initialPoId, eligiblePos, allPosWithInwardSources, pos]);
+
   // Active Customer selection
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
-    initialOutward?.customerVendorId || initialOutward?.customerId || ''
+    initialOutward?.customerVendorId ||
+    initialOutward?.customerId ||
+    targetInitialPo?.customerId ||
+    targetInitialPo?.customerVendorId ||
+    ''
   );
 
   // Active PO selection
   const [selectedPoId, setSelectedPoId] = useState<string>(
-    initialOutward?.poId || ''
+    initialOutward?.poId || initialPoId || ''
   );
 
   // Active Subcontractor selection
@@ -495,8 +511,17 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
       const option: SelectOption = {
         id: p.id,
-        primaryText: p.poNumber,
-        secondaryText: `Style: ${p.styleNo || 'N/A'} • ${availText} • ${p.customerName || 'Customer'}`,
+        primaryText: `${p.poNumber} — Style: ${p.styleNo || 'N/A'}`,
+        primaryNode: (
+          <span className="flex items-center gap-1.5 truncate">
+            <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+            <span className="text-slate-300 font-light">—</span>
+            <span className="text-xs text-slate-900 truncate">
+              Style: <strong className="font-extrabold text-slate-950">{p.styleNo || 'N/A'}</strong>
+            </span>
+          </span>
+        ),
+        secondaryText: `${availText} • ${p.customerName || 'Customer'}`,
         badge: isCurrentCustomer ? (selectedCustomer?.companyName || 'Selected Company') : (p.customerName || 'Other Company'),
         badgeVariant: isCurrentCustomer ? 'emerald' : 'slate',
         meta: p
@@ -740,7 +765,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             size="sm"
             onClick={handlePostClick}
             disabled={isSaving}
-            className="bg-black hover:bg-neutral-800 text-white border-black text-xs flex items-center gap-1.5 font-semibold"
+            className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs flex items-center gap-1.5 font-semibold shadow-xs cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
             {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
@@ -814,6 +839,22 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             searchPlaceholder="Search by PO Number or Style No..."
             groups={poOptionGroups}
             onSelect={handleSelectPO}
+            formatTriggerLabel={(opt) => {
+              const p = opt.meta as any;
+              if (p) {
+                const sNo = p.styleNo || p.styleNumber || '—';
+                return (
+                  <span className="truncate flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                    <span className="text-slate-300 font-light">—</span>
+                    <span className="text-xs text-slate-900 truncate">
+                      Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
+                    </span>
+                  </span>
+                );
+              }
+              return <span className="truncate">{opt.primaryText}</span>;
+            }}
             helperText={
               selectedCustomerId
                 ? "Shows PO numbers with available inward stock for the selected company"
@@ -1093,8 +1134,12 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
                           min="0"
                           max={available}
                           step={poLine.unit === 'kg' ? '0.01' : '1'}
-                          placeholder="0"
-                          value={dispatchQtyMap[poLine.lineId] ?? ''}
+                          placeholder=""
+                          value={
+                            dispatchQtyMap[poLine.lineId] === 0
+                              ? ''
+                              : (dispatchQtyMap[poLine.lineId] ?? '')
+                          }
                           onChange={(e) => handleDispatchQtyChange(poLine.lineId, e.target.value)}
                           disabled={available <= 0}
                           className={`w-full text-right p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-1 ${
@@ -1140,7 +1185,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           size="sm"
           onClick={handlePostClick}
           disabled={isSaving}
-          className="bg-black hover:bg-neutral-800 text-white border-black text-xs flex items-center gap-1.5 font-semibold shadow-2xs"
+          className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs flex items-center gap-1.5 font-semibold shadow-xs cursor-pointer"
         >
           <CheckCircle2 className="w-4 h-4" />
           {isSaving ? 'Posting...' : 'Post Outward Dispatch'}

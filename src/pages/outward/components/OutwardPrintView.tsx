@@ -12,11 +12,15 @@ import {
   Clock,
   Plus,
   Trash2,
-  Check
+  Check,
+  Save,
+  AlertCircle
 } from 'lucide-react';
 import { formatDate } from '../../../utils/formatters';
 import { DeliveryChallanPdfService, DeliveryChallanData } from '../../../services/deliveryChallanPdfService';
 import { InvoiceSettingsService } from '../../../services/invoiceSettingsService';
+import { OutwardService } from '../../../services/outwardService';
+import { useAuth } from '../../../context/AuthContext';
 
 function toDateInputValue(dateStr?: string): string {
   if (!dateStr || dateStr === '-') return '';
@@ -108,13 +112,13 @@ interface ChallanSlipProps {
 
 const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) => {
   return (
-    <div className="print-slip bg-white p-2.5 sm:p-3 border-2 border-black rounded text-black font-sans box-border flex flex-col justify-between">
+    <div className="print-slip bg-white p-3 sm:p-4 border-2 border-black rounded text-black font-sans box-border flex flex-col justify-between">
       {/* 1. Header Section */}
       <div>
         {/* Top Header Row: GSTIN (Left) & DELIVERY CHALLAN in right top corner */}
-        <div className="flex justify-between items-center text-[10px] font-bold text-black border-b border-black pb-0.5 mb-1">
+        <div className="flex justify-between items-center text-xs font-bold text-black border-b border-black pb-0.5 mb-1">
           <span>GSTIN / UIN : {challanData.companyGstin || '33AMMPK2032Q1ZU'}</span>
-          <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
+          <span className="font-extrabold text-sm sm:text-base tracking-wider uppercase">
             DELIVERY CHALLAN
           </span>
         </div>
@@ -122,31 +126,31 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
         {/* Company Header Row */}
         <div className="text-center pb-1 border-b border-black">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-bold text-black">
+            <span className="text-xs font-bold text-black">
               Cell : {challanData.companyPhone || '87545 96316'}
             </span>
-            <h1 className="text-base sm:text-lg font-black tracking-wide text-black uppercase -ml-16">
+            <h1 className="text-lg sm:text-xl font-black tracking-wide text-black uppercase -ml-16">
               PERLA TEXTILES PROCESSOR
             </h1>
             <span className="w-16"></span>
           </div>
-          <p className="text-[9.5px] font-bold text-black mt-0.5">
+          <p className="text-[11px] font-bold text-black mt-0.5">
             NO. 107, Industrial Estate, Thirumudivakkam, SIDCO, Chennai - 600 044.
           </p>
         </div>
 
         {/* 2. Metadata Section */}
-        <div className="py-1 border-b border-black text-[11px] font-semibold space-y-0.5">
+        <div className="py-1.5 border-b border-black text-xs sm:text-[13px] font-semibold space-y-1">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-black">No.</span>
-              <span className="font-black text-xs text-black px-1 border-b border-dotted border-black">
+              <span className="font-black text-sm text-black px-1.5 border-b border-dotted border-black">
                 {challanData.dcNumber}
               </span>
             </div>
             <div className="flex items-center gap-1.5 justify-end">
               <span className="font-bold text-black">Party D.C. No. :</span>
-              <span className="font-black text-black border-b border-dotted border-black px-1.5 min-w-[60px] text-center">
+              <span className="font-black text-black border-b border-dotted border-black px-1.5 min-w-[70px] text-center">
                 {challanData.partyDcNumber !== '-' ? challanData.partyDcNumber : isResolving ? '...' : '-'}
               </span>
             </div>
@@ -155,13 +159,13 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-black">Date :</span>
-              <span className="border-b border-dotted border-black px-1 text-black">
+              <span className="border-b border-dotted border-black px-1 text-black font-semibold">
                 {challanData.dcDate}
               </span>
             </div>
             <div className="flex items-center gap-1.5 justify-end">
               <span className="font-bold text-black">Date :</span>
-              <span className="border-b border-dotted border-black px-1 text-black min-w-[60px] text-center">
+              <span className="border-b border-dotted border-black px-1 text-black min-w-[70px] text-center font-semibold">
                 {challanData.partyDcDate !== '-' ? challanData.partyDcDate : isResolving ? '...' : '-'}
               </span>
             </div>
@@ -170,10 +174,10 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           {/* Customer Company Name and Full Address */}
           <div className="flex items-start gap-1 pt-0.5">
             <span className="font-bold text-black shrink-0">To :</span>
-            <div className="border-b border-dotted border-black flex-1 font-bold text-black pb-0.5 leading-tight">
+            <div className="border-b border-dotted border-black flex-1 font-bold text-black pb-0.5 leading-tight text-xs sm:text-[13px]">
               <span>{challanData.customerName}</span>
               {(challanData.customerAddress || challanData.destination) && (
-                <span className="font-normal text-slate-800 ml-1.5 text-[10px]">
+                <span className="font-normal text-slate-800 ml-1.5 text-[11px]">
                   , {challanData.customerAddress || challanData.destination}
                 </span>
               )}
@@ -181,32 +185,45 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           </div>
         </div>
 
-        {/* 3. Dispatched Lines Table */}
-        <div className="my-1">
-          <table className="w-full text-left text-[10.5px] border border-black border-collapse">
+        {/* 3. Dispatched Lines Table (Separate Columns for Particulars, Colour, Process, Qty) */}
+        <div className="my-1.5">
+          <table className="w-full text-left text-xs border border-black border-collapse">
             <thead>
-              <tr className="bg-slate-100 border-b border-black text-black font-black uppercase text-[10px]">
+              <tr className="bg-slate-100 border-b border-black text-black font-black uppercase text-[11px]">
                 <th className="py-1 px-1.5 border-r border-black text-center w-10">S.No.</th>
                 <th className="py-1 px-2 border-r border-black">Particulars</th>
+                <th className="py-1 px-2 border-r border-black w-32">Colour</th>
+                <th className="py-1 px-2 border-r border-black w-32">Process</th>
                 <th className="py-1 px-2 text-right w-24">Qty.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black">
-              {challanData.items.slice(0, 3).map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50">
-                  <td className="py-1 px-1.5 border-r border-black text-center font-bold text-black align-top">
-                    {String(item.sNo).padStart(2, '0')}
-                  </td>
-                  <td className="py-1 px-2 border-r border-black font-semibold text-black truncate max-w-[280px]">
-                    {item.description}
-                  </td>
-                  <td className="py-1 px-2 text-right font-black text-black whitespace-nowrap align-top">
-                    {item.quantity}
-                  </td>
-                </tr>
-              ))}
+              {challanData.items.map((item, idx) => {
+                const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+                return (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="py-1 px-1.5 border-r border-black text-center font-bold text-black align-top">
+                      {String(item.sNo || idx + 1).padStart(2, '0')}
+                    </td>
+                    <td className="py-1 px-2 border-r border-black font-bold text-black">
+                      {parsed.itemName}
+                    </td>
+                    <td className="py-1 px-2 border-r border-black font-semibold text-black">
+                      {parsed.colour}
+                    </td>
+                    <td className="py-1 px-2 border-r border-black font-semibold text-black">
+                      {parsed.process}
+                    </td>
+                    <td className="py-1 px-2 text-right font-black text-black whitespace-nowrap align-top">
+                      {item.quantity}
+                    </td>
+                  </tr>
+                );
+              })}
               {Array.from({ length: Math.max(0, 2 - challanData.items.length) }).map((_, idx) => (
                 <tr key={`empty-${idx}`}>
+                  <td className="py-1 border-r border-black">&nbsp;</td>
+                  <td className="py-1 border-r border-black">&nbsp;</td>
                   <td className="py-1 border-r border-black">&nbsp;</td>
                   <td className="py-1 border-r border-black">&nbsp;</td>
                   <td className="py-1">&nbsp;</td>
@@ -215,32 +232,39 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
             </tbody>
             <tfoot>
               <tr className="border-t border-black bg-slate-100 font-black">
-                <td className="py-0.5 px-1.5 border-r border-black"></td>
-                <td className="py-0.5 px-2 border-r border-black text-right uppercase text-[9.5px] tracking-wider text-black">
+                <td colSpan={4} className="py-1 px-2 border-r border-black text-right uppercase text-[11px] tracking-wider text-black">
                   TOTAL QUANTITY:
                 </td>
-                <td className="py-0.5 px-2 text-right text-black font-black text-xs">
+                <td className="py-1 px-2 text-right text-black font-black text-xs sm:text-sm">
                   {challanData.totalQuantityStr || DeliveryChallanPdfService.calculateTotalQuantity(challanData.items)}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
+
+        {/* 3.5. Note Section (Fetched from database remarks/notes) */}
+        <div className="my-1.5 px-2.5 py-1 bg-slate-50 border border-slate-300 rounded text-xs text-black flex items-start gap-2">
+          <span className="font-extrabold text-black uppercase tracking-wider shrink-0 text-[11px]">Note :</span>
+          <span className="font-semibold text-black leading-tight break-words">
+            {challanData.notes && challanData.notes.trim() ? challanData.notes.trim() : '—'}
+          </span>
+        </div>
       </div>
 
       {/* 4. Bottom Section: Vehicle Box & Signatures */}
-      <div className="pt-1 grid grid-cols-12 gap-2 items-end">
+      <div className="pt-1.5 grid grid-cols-12 gap-2 items-end">
         {/* Left: Vehicle Box */}
-        <div className="col-span-5 border border-black rounded divide-y divide-black text-[9.5px] font-semibold bg-white">
-          <div className="px-1.5 py-0.5 flex justify-between">
+        <div className="col-span-5 border border-black rounded divide-y divide-black text-[11px] font-semibold bg-white">
+          <div className="px-2 py-0.5 flex justify-between">
             <span className="font-bold text-black">Vehicle No. :</span>
             <span className="font-mono text-black font-bold">{challanData.vehicleNumber || '—'}</span>
           </div>
-          <div className="px-1.5 py-0.5 flex justify-between">
+          <div className="px-2 py-0.5 flex justify-between">
             <span className="font-bold text-black">Driver Name :</span>
-            <span className="text-black font-bold truncate max-w-[100px]">{challanData.driverName || '—'}</span>
+            <span className="text-black font-bold truncate max-w-[120px]">{challanData.driverName || '—'}</span>
           </div>
-          <div className="px-1.5 py-0.5 flex justify-between">
+          <div className="px-2 py-0.5 flex justify-between">
             <span className="font-bold text-black">Time Out :</span>
             <span className="font-mono text-black font-bold">{challanData.timeOut || '—'}</span>
           </div>
@@ -248,17 +272,17 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
 
         {/* Center: Receiver Signature */}
         <div className="col-span-3 text-center pb-0.5">
-          <div className="border-t border-black mx-auto w-24 pt-0.5 text-[9px] font-bold text-black">
+          <div className="border-t border-black mx-auto w-28 pt-0.5 text-[11px] font-bold text-black">
             Receiver's Signature
           </div>
         </div>
 
         {/* Right: Perla Signature */}
         <div className="col-span-4 text-right pb-0.5">
-          <div className="text-[9.5px] font-bold text-black mb-4">
+          <div className="text-xs font-bold text-black mb-4">
             For PERLA TEXTILES PROCESSOR
           </div>
-          <div className="border-t border-black inline-block pt-0.5 text-[9px] font-semibold text-black px-2">
+          <div className="border-t border-black inline-block pt-0.5 text-[11px] font-semibold text-black px-2">
             Authorized Signature
           </div>
         </div>
@@ -268,12 +292,16 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
 };
 
 export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inwards, vendors, onBack }) => {
+  const { user, isDemoMode } = useAuth();
   const [challanData, setChallanData] = useState<DeliveryChallanData>(() =>
     DeliveryChallanPdfService.extractChallanData(outward, inwards, vendors)
   );
   const [isResolving, setIsResolving] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [formState, setFormState] = useState<DeliveryChallanData>(challanData);
+  const [timeOutError, setTimeOutError] = useState<string | null>(null);
+  const [isSavingTimeOut, setIsSavingTimeOut] = useState(false);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -315,17 +343,79 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
   };
 
   // Save changes from Edit Modal
-  const handleSaveEditModal = () => {
+  const handleSaveEditModal = async () => {
+    if (!formState.timeOut || formState.timeOut.trim() === '' || formState.timeOut === '—') {
+      alert('Checkout time (Time Out) is mandatory.');
+      return;
+    }
     const computed = DeliveryChallanPdfService.calculateTotalQuantity(formState.items);
-    setChallanData({
+    const updated = {
       ...formState,
       totalQuantityStr: formState.totalQuantityStr?.trim() || computed
-    });
+    };
+    setChallanData(updated);
     setIsEditModalOpen(false);
+
+    try {
+      const docId = outward.id || (outward as any).outwardId;
+      await OutwardService.updateOutwardDispatchDetails(
+        docId,
+        {
+          timeOut: updated.timeOut,
+          dispatchDate: updated.dcDate ? toDateInputValue(updated.dcDate) : undefined,
+          vehicleNumber: updated.vehicleNumber,
+          driverName: updated.driverName,
+          remarks: updated.notes
+        },
+        user || { uid: 'system', name: 'User' },
+        isDemoMode
+      );
+      setSaveSuccessMessage('DC details saved successfully!');
+      setTimeout(() => setSaveSuccessMessage(null), 3000);
+    } catch (e) {
+      console.warn('Failed to save DC details to backend:', e);
+    }
   };
 
-  // Direct download handler (using live challanData)
+  // Save check-out time specifically
+  const handleSaveTimeOut = async () => {
+    if (!challanData.timeOut || challanData.timeOut.trim() === '' || challanData.timeOut === '—') {
+      setTimeOutError('Checkout time (Time Out) is mandatory. Please enter a valid time.');
+      return;
+    }
+    setTimeOutError(null);
+    setIsSavingTimeOut(true);
+    try {
+      const docId = outward.id || (outward as any).outwardId;
+      await OutwardService.updateOutwardDispatchDetails(
+        docId,
+        {
+          timeOut: challanData.timeOut,
+          dispatchDate: challanData.dcDate ? toDateInputValue(challanData.dcDate) : undefined,
+          vehicleNumber: challanData.vehicleNumber,
+          driverName: challanData.driverName,
+          remarks: challanData.notes
+        },
+        user || { uid: 'system', name: 'User' },
+        isDemoMode
+      );
+      setSaveSuccessMessage('Check-out time saved successfully!');
+      setTimeout(() => setSaveSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to save checkout time:', err);
+      setTimeOutError(err.message || 'Failed to save check-out time.');
+    } finally {
+      setIsSavingTimeOut(false);
+    }
+  };
+
+  // Direct download handler (enforcing mandatory check-out time)
   const handleDownloadPdf = () => {
+    if (!challanData.timeOut || challanData.timeOut.trim() === '' || challanData.timeOut === '—') {
+      setTimeOutError('Checkout time (Time Out) is mandatory before downloading DC. Please enter Time Out.');
+      return;
+    }
+    setTimeOutError(null);
     DeliveryChallanPdfService.downloadPdfFromData(challanData);
   };
 
@@ -350,13 +440,13 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
               Edit All DC Details
             </Button>
 
-            {/* Black Download Button */}
+            {/* Download Button */}
             <button
               onClick={handleDownloadPdf}
-              className="bg-black hover:bg-slate-800 active:bg-slate-900 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4 text-white" />
-              Download 3-Copy DC (PDF)
+              Download DC (PDF)
             </button>
           </div>
         </div>
@@ -373,26 +463,60 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                 const val = e.target.value;
                 setChallanData((prev) => ({ ...prev, dcDate: val ? formatDisplayDate(val) : '' }));
               }}
-              className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-1 focus:ring-black"
+              className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
             />
           </div>
 
-          <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
-            <Clock className="w-3.5 h-3.5 text-slate-600" />
-            <span className="font-bold text-slate-800">Time Out:</span>
+          <div className={`flex items-center gap-2 text-xs border px-3 py-1.5 rounded-lg transition-colors ${
+            timeOutError ? 'bg-red-50 border-red-300 ring-1 ring-red-400' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <Clock className={`w-3.5 h-3.5 ${timeOutError ? 'text-red-600' : 'text-slate-600'}`} />
+            <span className="font-bold text-slate-800 flex items-center gap-1">
+              Time Out <span className="text-red-500 font-black text-sm">*</span>:
+            </span>
             <input
               type="time"
+              required
               value={toTimeInputValue(challanData.timeOut)}
               onChange={(e) => {
                 const val = e.target.value;
+                setTimeOutError(null);
                 setChallanData((prev) => ({ ...prev, timeOut: val ? formatTimeDisplay(val) : '' }));
               }}
-              className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-1 focus:ring-black"
+              className={`bg-white border rounded px-2 py-0.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-1 ${
+                timeOutError ? 'border-red-400 focus:ring-red-500' : 'border-slate-300 focus:ring-[#1F4E79]'
+              }`}
             />
           </div>
 
+          {/* Button to save check-out time */}
+          <button
+            type="button"
+            onClick={handleSaveTimeOut}
+            disabled={isSavingTimeOut}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1F4E79] hover:bg-[#163a5c] text-white text-xs font-bold rounded-lg shadow-2xs transition disabled:opacity-50 cursor-pointer"
+            title="Save check-out time to database"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{isSavingTimeOut ? 'Saving...' : 'Save Time Out'}</span>
+          </button>
+
+          {saveSuccessMessage && (
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1 animate-in fade-in">
+              <Check className="w-3.5 h-3.5" />
+              {saveSuccessMessage}
+            </span>
+          )}
+
+          {timeOutError && (
+            <span className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md flex items-center gap-1 animate-in fade-in">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {timeOutError}
+            </span>
+          )}
+
           <span className="text-[11px] text-slate-500 font-medium ml-auto">
-            Edits update the challan preview & PDF live.
+            Edits update the challan preview &amp; PDF live.
           </span>
         </div>
       </div>
@@ -565,7 +689,7 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Time Out
+                    Time Out <span className="text-red-500 font-bold">*</span>
                   </label>
                   <input
                     type="time"
@@ -591,7 +715,14 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                   onClick={() => {
                     const nextItems = [
                       ...formState.items,
-                      { sNo: formState.items.length + 1, description: 'Fabric / Garments', quantity: '01 ps' }
+                      {
+                        sNo: formState.items.length + 1,
+                        itemName: 'Fabric / Garments',
+                        colour: '-',
+                        process: '-',
+                        description: 'Fabric / Garments',
+                        quantity: '01 ps'
+                      }
                     ];
                     const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
                     setFormState({ ...formState, items: nextItems, totalQuantityStr: autoTotal });
@@ -603,77 +734,126 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
               </div>
 
               <div className="space-y-2">
-                {formState.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-white p-2 border border-slate-200 rounded">
-                    <span className="w-6 text-center font-bold text-slate-700">{idx + 1}</span>
-                    <input
-                      type="text"
-                      value={item.description}
-                      onChange={(e) => {
-                        const nextItems = [...formState.items];
-                        nextItems[idx].description = e.target.value;
-                        setFormState({ ...formState, items: nextItems });
-                      }}
-                      className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 text-xs"
-                      placeholder="Item Description / Colour / Process"
-                    />
-                    {(() => {
-                      const { value: qVal, unit: qUnit } = parseQuantityAndUnit(item.quantity);
-                      return (
-                        <div className="flex items-center border border-slate-300 rounded overflow-hidden bg-white shrink-0 shadow-2xs">
-                          <input
-                            type="text"
-                            value={qVal}
-                            onChange={(e) => {
-                              const newNum = e.target.value.trim();
-                              const nextItems = [...formState.items];
-                              nextItems[idx].quantity = newNum ? `${newNum} ${qUnit}` : '';
-                              const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
-                              setFormState({
-                                ...formState,
-                                items: nextItems,
-                                totalQuantityStr: autoTotal
-                              });
-                            }}
-                            className="w-16 px-2 py-1 text-xs font-bold text-right text-slate-900 focus:outline-none"
-                            placeholder="0"
-                          />
-                          <select
-                            value={qUnit}
-                            onChange={(e) => {
-                              const newUnit = e.target.value as 'kg' | 'ps';
-                              const nextItems = [...formState.items];
-                              nextItems[idx].quantity = qVal ? `${qVal} ${newUnit}` : `0 ${newUnit}`;
-                              const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
-                              setFormState({
-                                ...formState,
-                                items: nextItems,
-                                totalQuantityStr: autoTotal
-                              });
-                            }}
-                            className="bg-slate-100 border-l border-slate-300 px-2 py-1 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none hover:bg-slate-200 transition-colors"
-                          >
-                            <option value="kg">kg</option>
-                            <option value="ps">ps</option>
-                          </select>
-                        </div>
-                      );
-                    })()}
-                    {formState.items.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextItems = formState.items.filter((_, i) => i !== idx).map((it, i) => ({ ...it, sNo: i + 1 }));
-                          const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
-                          setFormState({ ...formState, items: nextItems, totalQuantityStr: autoTotal });
+                {formState.items.map((item, idx) => {
+                  const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+                  return (
+                    <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-2 border border-slate-200 rounded">
+                      <span className="w-6 text-center font-bold text-slate-700">{idx + 1}</span>
+                      <input
+                        type="text"
+                        value={item.itemName !== undefined ? item.itemName : parsed.itemName}
+                        onChange={(e) => {
+                          const nextItems = [...formState.items];
+                          const curColour = nextItems[idx].colour !== undefined ? nextItems[idx].colour : parsed.colour;
+                          const curProcess = nextItems[idx].process !== undefined ? nextItems[idx].process : parsed.process;
+                          nextItems[idx] = {
+                            ...nextItems[idx],
+                            itemName: e.target.value,
+                            colour: curColour,
+                            process: curProcess,
+                            description: [e.target.value, curColour && curColour !== '-' ? `Colour: ${curColour}` : null, curProcess && curProcess !== '-' ? `Process: ${curProcess}` : null].filter(Boolean).join(' - ')
+                          };
+                          setFormState({ ...formState, items: nextItems });
                         }}
-                        className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        className="flex-1 min-w-[120px] bg-white border border-slate-300 rounded px-2 py-1 text-xs"
+                        placeholder="Particulars (Item)"
+                      />
+                      <input
+                        type="text"
+                        value={item.colour !== undefined ? item.colour : (parsed.colour !== '-' ? parsed.colour : '')}
+                        onChange={(e) => {
+                          const nextItems = [...formState.items];
+                          const curItem = nextItems[idx].itemName !== undefined ? nextItems[idx].itemName : parsed.itemName;
+                          const curProcess = nextItems[idx].process !== undefined ? nextItems[idx].process : parsed.process;
+                          nextItems[idx] = {
+                            ...nextItems[idx],
+                            itemName: curItem,
+                            colour: e.target.value,
+                            process: curProcess,
+                            description: [curItem, e.target.value ? `Colour: ${e.target.value}` : null, curProcess && curProcess !== '-' ? `Process: ${curProcess}` : null].filter(Boolean).join(' - ')
+                          };
+                          setFormState({ ...formState, items: nextItems });
+                        }}
+                        className="w-28 bg-white border border-slate-300 rounded px-2 py-1 text-xs"
+                        placeholder="Colour"
+                      />
+                      <input
+                        type="text"
+                        value={item.process !== undefined ? item.process : (parsed.process !== '-' ? parsed.process : '')}
+                        onChange={(e) => {
+                          const nextItems = [...formState.items];
+                          const curItem = nextItems[idx].itemName !== undefined ? nextItems[idx].itemName : parsed.itemName;
+                          const curColour = nextItems[idx].colour !== undefined ? nextItems[idx].colour : parsed.colour;
+                          nextItems[idx] = {
+                            ...nextItems[idx],
+                            itemName: curItem,
+                            colour: curColour,
+                            process: e.target.value,
+                            description: [curItem, curColour && curColour !== '-' ? `Colour: ${curColour}` : null, e.target.value ? `Process: ${e.target.value}` : null].filter(Boolean).join(' - ')
+                          };
+                          setFormState({ ...formState, items: nextItems });
+                        }}
+                        className="w-28 bg-white border border-slate-300 rounded px-2 py-1 text-xs"
+                        placeholder="Process"
+                      />
+                      {(() => {
+                        const { value: qVal, unit: qUnit } = parseQuantityAndUnit(item.quantity);
+                        return (
+                          <div className="flex items-center border border-slate-300 rounded overflow-hidden bg-white shrink-0 shadow-2xs">
+                            <input
+                              type="text"
+                              value={qVal}
+                              onChange={(e) => {
+                                const newNum = e.target.value.trim();
+                                const nextItems = [...formState.items];
+                                nextItems[idx].quantity = newNum ? `${newNum} ${qUnit}` : '';
+                                const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
+                                setFormState({
+                                  ...formState,
+                                  items: nextItems,
+                                  totalQuantityStr: autoTotal
+                                });
+                              }}
+                              className="w-16 px-2 py-1 text-xs font-bold text-right text-slate-900 focus:outline-none"
+                              placeholder="0"
+                            />
+                            <select
+                              value={qUnit}
+                              onChange={(e) => {
+                                const newUnit = e.target.value as 'kg' | 'ps';
+                                const nextItems = [...formState.items];
+                                nextItems[idx].quantity = qVal ? `${qVal} ${newUnit}` : `0 ${newUnit}`;
+                                const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
+                                setFormState({
+                                  ...formState,
+                                  items: nextItems,
+                                  totalQuantityStr: autoTotal
+                                });
+                              }}
+                              className="bg-slate-100 border-l border-slate-300 px-2 py-1 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none hover:bg-slate-200 transition-colors"
+                            >
+                              <option value="kg">kg</option>
+                              <option value="ps">ps</option>
+                            </select>
+                          </div>
+                        );
+                      })()}
+                      {formState.items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextItems = formState.items.filter((_, i) => i !== idx).map((it, i) => ({ ...it, sNo: i + 1 }));
+                            const autoTotal = DeliveryChallanPdfService.calculateTotalQuantity(nextItems);
+                            setFormState({ ...formState, items: nextItems, totalQuantityStr: autoTotal });
+                          }}
+                          className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="pt-2 border-t border-slate-200">
@@ -702,6 +882,20 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
               </div>
             </div>
 
+            {/* 5. DC Note / Remarks Section */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+              <label className="block text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                Delivery Challan Note / Dispatch Remarks
+              </label>
+              <textarea
+                rows={2}
+                value={formState.notes || ''}
+                onChange={(e) => setFormState({ ...formState, notes: e.target.value })}
+                className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                placeholder="e.g. 10 Cartons, Goods dispatched as per PO specifications..."
+              />
+            </div>
+
             {/* Modal Actions */}
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
               <Button variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)}>
@@ -710,7 +904,7 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
               <button
                 type="button"
                 onClick={handleSaveEditModal}
-                className="bg-black hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Check className="w-4 h-4" />
                 Apply Changes to Challan

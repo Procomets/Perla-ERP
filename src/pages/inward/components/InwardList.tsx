@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Zap, ChevronRight, Package, Table } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 export type InwardSortField =
@@ -33,6 +33,8 @@ interface InwardListProps {
   onFilterChange: (filters: InwardFilterOptions) => void;
   onPageChange: (page: number) => void;
   onNewInward: () => void;
+  onQuickInward?: () => void;
+  onSelectPoForInward?: (po: PurchaseOrder) => void;
   onViewDetails: (inwardId: string) => void;
   onPrint?: (inwardId: string) => void;
   onEdit: (inwardId: string) => void;
@@ -53,6 +55,8 @@ export const InwardList: React.FC<InwardListProps> = ({
   onFilterChange,
   onPageChange,
   onNewInward,
+  onQuickInward,
+  onSelectPoForInward,
   onViewDetails,
   onPrint,
   onEdit,
@@ -64,6 +68,7 @@ export const InwardList: React.FC<InwardListProps> = ({
   lockedPOMap = {}
 }) => {
   const [showFilters, setShowFilters] = useState(false);
+  const [showQuickInwardCards, setShowQuickInwardCards] = useState(false);
   const [deleteTargetInward, setDeleteTargetInward] = useState<InwardEntry | null>(null);
 
   // Floating hover popover state for Company and PO Number
@@ -347,6 +352,133 @@ export const InwardList: React.FC<InwardListProps> = ({
     }
   };
 
+  // Vendor mapping for quick inward cards
+  const vendorMap = useMemo(() => {
+    const map = new Map<string, Vendor>();
+    vendors.forEach((v) => {
+      if (v.id) map.set(v.id, v);
+      if (v.vendorId) map.set(v.vendorId, v);
+    });
+    return map;
+  }, [vendors]);
+
+  // Compute PO stats for eligible Quick Inward cards
+  const eligiblePoCards = useMemo(() => {
+    const postedInwards = inwards.filter(
+      (inw) => (inw.status || '').toLowerCase() === 'posted'
+    );
+
+    return pos
+      .filter((p) => {
+        const s = (p.status || '').toLowerCase();
+        return s !== 'cancelled' && s !== 'completed';
+      })
+      .map((po) => {
+        const poId = po.id || po.poId;
+        const poNumber = po.poNumber;
+
+        const matchingInwards = postedInwards.filter(
+          (inw) =>
+            (poId && (inw.poId === poId || inw.id === poId)) ||
+            (poNumber && (inw.poNumber === poNumber || inw.poNumberSnapshot === poNumber))
+        );
+
+        const lines = po.colourLines || po.lines || [];
+
+        let orderedPieces = 0;
+        let orderedKg = 0;
+
+        if (po.totalQtyByUnit) {
+          orderedPieces = Number(po.totalQtyByUnit.piece || 0);
+          orderedKg = Number(po.totalQtyByUnit.kg || 0);
+        } else if (lines.length > 0) {
+          lines.forEach((l) => {
+            const u = (l.unit || '').toLowerCase();
+            const q = Number(l.quantity || 0);
+            if (u === 'kg') orderedKg += q;
+            else orderedPieces += q;
+          });
+        } else {
+          orderedPieces = Number(po.totalQuantity || 0);
+        }
+
+        let receivedPieces = 0;
+        let receivedKg = 0;
+
+        matchingInwards.forEach((inw) => {
+          if (inw.lines && inw.lines.length > 0) {
+            inw.lines.forEach((line) => {
+              const u = (line.unit || '').toLowerCase();
+              const q = Number(line.receivedQty || 0);
+              if (u === 'kg') receivedKg += q;
+              else receivedPieces += q;
+            });
+          } else if (inw.totalQtyByUnit) {
+            receivedPieces += Number(inw.totalQtyByUnit.piece || 0);
+            receivedKg += Number(inw.totalQtyByUnit.kg || 0);
+          } else {
+            receivedPieces += Number(inw.totalQuantity || 0);
+          }
+        });
+
+        const outstandingPieces = Math.max(0, orderedPieces - receivedPieces);
+        const outstandingKg = Math.max(0, orderedKg - receivedKg);
+
+        const totalOrdered = orderedPieces + orderedKg;
+        const totalOutstanding = outstandingPieces + outstandingKg;
+
+        const vendor =
+          vendorMap.get(po.customerId || '') ||
+          vendorMap.get(po.customerVendorId || '');
+        const customerName =
+          vendor?.companyName ||
+          po.customerName ||
+          po.customerCompanyNameSnapshot ||
+          'Customer';
+        const vendorCode = vendor?.vendorId || po.customerCode || '';
+
+        const processType = (po.processCategory || 'WASHING').toUpperCase();
+
+        return {
+          po,
+          customerName,
+          vendorCode,
+          processType,
+          orderedPieces,
+          orderedKg,
+          receivedPieces,
+          receivedKg,
+          outstandingPieces,
+          outstandingKg,
+          totalOrdered,
+          totalOutstanding
+        };
+      })
+      .filter((stat) => stat.totalOutstanding > 0);
+  }, [pos, inwards, vendorMap]);
+
+  // Filter Quick Inward cards by the search input
+  const filteredPoCards = useMemo(() => {
+    if (!filters.searchQuery?.trim()) return eligiblePoCards;
+    const q = filters.searchQuery.toLowerCase();
+    return eligiblePoCards.filter((stat) => {
+      const p = stat.po;
+      return (
+        (p.poNumber || '').toLowerCase().includes(q) ||
+        (p.styleNo || p.styleNumber || '').toLowerCase().includes(q) ||
+        (p.itemName || '').toLowerCase().includes(q) ||
+        stat.customerName.toLowerCase().includes(q) ||
+        stat.vendorCode.toLowerCase().includes(q)
+      );
+    });
+  }, [eligiblePoCards, filters.searchQuery]);
+
+  const formatCardQtyStr = (pcs: number, kg: number) => {
+    if (pcs > 0 && kg > 0) return `${pcs} pcs + ${kg} kg`;
+    if (kg > 0) return `${kg} kg`;
+    return `${pcs} pcs`;
+  };
+
   return (
     <div className="space-y-4">
       {/* Action and Search Toolbar */}
@@ -374,6 +506,17 @@ export const InwardList: React.FC<InwardListProps> = ({
             >
               Filters {showFilters ? '(Hide)' : ''}
             </Button>
+
+            {canManage && (
+              <Button
+                variant={showQuickInwardCards ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => setShowQuickInwardCards(!showQuickInwardCards)}
+                className={showQuickInwardCards ? 'bg-black text-white hover:bg-slate-900 border-black' : 'border-slate-300 hover:border-slate-400 font-medium text-slate-700'}
+              >
+                {showQuickInwardCards ? 'Show Table View' : 'Quick Inward'}
+              </Button>
+            )}
 
             {canManage && (
               <Button
@@ -453,8 +596,137 @@ export const InwardList: React.FC<InwardListProps> = ({
         )}
       </div>
 
-      {/* Grid Table Container */}
-      <Card className="overflow-hidden">
+      {/* Quick Inward Cards View (Shown instead of table when Quick Inward is toggled) */}
+      {showQuickInwardCards ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Ready for Inward — Purchase Orders</h3>
+              <p className="text-xs text-slate-500">
+                {filteredPoCards.length} purchase orders capable of having an inward receipt
+              </p>
+            </div>
+            <button
+              onClick={() => setShowQuickInwardCards(false)}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+            >
+              Switch back to table view
+            </button>
+          </div>
+
+          {filteredPoCards.length === 0 ? (
+            <Card className="p-12 text-center border-dashed border-slate-200">
+              <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-700">No Eligible Purchase Orders Found</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                {filters.searchQuery
+                  ? 'No purchase orders match your current search.'
+                  : 'All purchase orders have been fully received or completed.'}
+              </p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredPoCards.map((stat) => {
+                const {
+                  po,
+                  customerName,
+                  vendorCode,
+                  processType,
+                  orderedPieces,
+                  orderedKg,
+                  receivedPieces,
+                  receivedKg,
+                  outstandingPieces,
+                  outstandingKg
+                } = stat;
+
+                return (
+                  <div
+                    key={po.id || po.poId}
+                    className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between text-xs"
+                  >
+                    <div>
+                      {/* Top Header: PO No & Customer on Left, Ready Badge on Right */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-sm tracking-tight truncate">
+                            {po.poNumber}
+                          </div>
+                          <div className="text-slate-600 font-medium text-[11px] uppercase tracking-wide truncate">
+                            {customerName} {vendorCode ? `(${vendorCode})` : ''}
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                          Ready For Inward
+                        </span>
+                      </div>
+
+                      {/* Item / Style / Process */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="text-slate-700 truncate">
+                          <span className="font-bold text-slate-800">Item: {po.itemName || '—'}</span>
+                          <span className="mx-1.5 text-slate-300">•</span>
+                          <span className="font-medium text-slate-600">Style: {po.styleNo || po.styleNumber || '—'}</span>
+                        </div>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-slate-100 text-slate-700 uppercase shrink-0">
+                          {processType}
+                        </span>
+                      </div>
+
+                      {/* Metrics Box (Ordered, Received, Outstanding) */}
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 grid grid-cols-3 text-center mb-3">
+                        <div className="border-r border-slate-200/80 pr-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Ordered
+                          </div>
+                          <div className="font-bold text-slate-900 text-xs">
+                            {formatCardQtyStr(orderedPieces, orderedKg)}
+                          </div>
+                        </div>
+
+                        <div className="border-r border-slate-200/80 px-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Received
+                          </div>
+                          <div className="font-bold text-blue-600 text-xs">
+                            {formatCardQtyStr(receivedPieces, receivedKg)}
+                          </div>
+                        </div>
+
+                        <div className="pl-2">
+                          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+                            Outstanding
+                          </div>
+                          <div className="font-bold text-amber-600 text-xs">
+                            {formatCardQtyStr(outstandingPieces, outstandingKg)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer: Order Date & Receive Goods Action */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+                      <div className="text-[11px] text-slate-500">
+                        Order Date: <span className="font-medium text-slate-700">{formatDate(po.orderDate)}</span>
+                      </div>
+
+                      <button
+                        onClick={() => (onSelectPoForInward ? onSelectPoForInward(po) : onNewInward())}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors group cursor-pointer"
+                      >
+                        <span>Receive Goods</span>
+                        <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Grid Table Container */
+        <Card className="overflow-hidden">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400">
             <p className="text-xs">Loading inward receipts from Firebase...</p>
@@ -845,6 +1117,7 @@ export const InwardList: React.FC<InwardListProps> = ({
           </div>
         )}
       </Card>
+      )}
 
       {/* Admin Delete Confirmation Modal */}
       <Modal
@@ -922,19 +1195,23 @@ export const InwardList: React.FC<InwardListProps> = ({
               ? vendor.vendorCategory.replace('_', ' ')
               : 'Main Company';
             const type = vendor?.vendorType || 'Customer';
-            const gstin = vendor?.taxDetails?.gstin || vendor?.gstin || 'Unregistered';
-            const pan = vendor?.taxDetails?.pan || vendor?.pan || 'N/A';
-            const location =
-              [vendor?.address?.city, vendor?.address?.state].filter(Boolean).join(', ') ||
-              'Tamil Nadu';
-            const phone =
-              vendor?.communication?.mobileNumber ||
-              vendor?.communication?.officePhone ||
-              'N/A';
-            const email = vendor?.communication?.officialEmail || vendor?.email || 'N/A';
-            const paymentTerms = vendor?.financialDetails?.paymentTerms
-              ? String(vendor.financialDetails.paymentTerms).replace('_', ' ')
-              : 'Standard';
+            const gstin = vendor?.taxDetails?.gstin || vendor?.gstin || 'Unregistered / N/A';
+
+            // Full Address
+            const addressParts = [
+              vendor?.address?.addressLine1,
+              vendor?.address?.addressLine2,
+              vendor?.address?.city || vendor?.city,
+              vendor?.address?.district,
+              vendor?.address?.state || vendor?.state,
+              vendor?.address?.pinCode || vendor?.pinCode
+            ].filter(Boolean);
+            const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : (vendor?.city ? `${vendor.city}, ${vendor.state || 'Tamil Nadu'}` : 'N/A');
+
+            // Primary Contact Person & Contact No
+            const primaryContact = vendor?.contacts?.find((c) => c.isPrimary && c.status !== 'inactive') || vendor?.contacts?.[0];
+            const personName = vendor?.primaryContactName || primaryContact?.personName || 'N/A';
+            const primaryContactNo = vendor?.primaryContactPhone || primaryContact?.contactNumber || vendor?.communication?.mobileNumber || vendor?.communication?.officePhone || vendor?.phone || 'N/A';
 
             return (
               <div className="space-y-2.5">
@@ -955,30 +1232,29 @@ export const InwardList: React.FC<InwardListProps> = ({
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="space-y-1.5 text-[11px] text-slate-600">
+                  {/* Address */}
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">GSTIN</span>
-                    <span className="font-semibold text-slate-800">{gstin}</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Address</span>
+                    <span className="font-medium text-slate-800 leading-relaxed block">{fullAddress}</span>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">PAN</span>
-                    <span className="font-semibold text-slate-800">{pan}</span>
+
+                  {/* Person Name & Primary Contact No */}
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-50">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Contact Person</span>
+                      <span className="font-semibold text-slate-800">{personName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Primary Contact No.</span>
+                      <span className="font-semibold text-slate-800">{primaryContactNo}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">City / State</span>
-                    <span className="font-medium text-slate-700">{location}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Payment Terms</span>
-                    <span className="font-medium text-slate-700 capitalize">{paymentTerms}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Phone</span>
-                    <span className="font-medium text-slate-700">{phone}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Email</span>
-                    <span className="font-medium text-slate-700 truncate block" title={email}>{email}</span>
+
+                  {/* GST NO */}
+                  <div className="pt-1 border-t border-slate-50">
+                    <span className="text-slate-400 block text-[10px] uppercase font-medium">GST No.</span>
+                    <span className="font-mono font-bold text-slate-800">{gstin}</span>
                   </div>
                 </div>
 

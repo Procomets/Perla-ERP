@@ -139,7 +139,12 @@ export class InvoiceService {
       if (app.poColourLineId) seenLineKeys.add(app.poColourLineId);
 
       const po = pos.find((p) => p.id === app.purchaseOrderId || p.poNumber === app.poNumber);
-      const poLine = po?.lines?.find((l) => l.lineId === app.poColourLineId);
+      const poLine = po?.lines?.find((l) => l.lineId === app.poColourLineId)
+                  || po?.colourLines?.find((l) => l.lineId === app.poColourLineId)
+                  || po?.lines?.find((l) => (l.colourName || '').toLowerCase() === (app.colourName || '').toLowerCase())
+                  || po?.colourLines?.find((l) => (l.colourName || '').toLowerCase() === (app.colourName || '').toLowerCase());
+
+      const hsnSac = (app as any).hsnNo || poLine?.hsnNo || (poLine as any)?.hsnNo || '998821';
 
       const rateBasis: RateBasis =
         (poLine as any)?.rateBasis || (app as any).rateBasis || ((po as any)?.rateBasis as RateBasis) || 'per_piece';
@@ -180,6 +185,8 @@ export class InvoiceService {
         colour: app.colourName,
         processCategory,
         washType,
+        hsnSac,
+        hsnNo: hsnSac,
         approvedQuantity,
         previouslyInvoicedQty,
         remainingApprovedQty,
@@ -301,7 +308,7 @@ export class InvoiceService {
         processCategorySnapshot: item.processCategory,
         washTypeSnapshot: item.washType,
         description: `Textile processing – ${item.washType} – Style ${item.styleNo} – Colour ${item.colour}`,
-        hsnSac: settings.defaultHsnSacCode || '998821',
+        hsnSac: item.hsnSac || (item as any).hsnNo || settings.defaultHsnSacCode || '998821',
         colour: item.colour,
         process: item.washType,
         qty: item.remainingApprovedQty,
@@ -473,8 +480,15 @@ export class InvoiceService {
     const now = new Date();
     const financialYear = draftInvoice.financialYear || getFinancialYear(now);
 
-    // 1. Allocate next sequence number
-    const finalInvoiceNo = await this.getNextInvoiceNumber(financialYear, isDemo);
+    // 1. Allocate next sequence number if not already assigned a valid number
+    const userChosenInvoiceNo =
+      draftInvoice.invoiceNo &&
+      !draftInvoice.invoiceNo.toLowerCase().includes('draft') &&
+      !draftInvoice.invoiceNo.toLowerCase().includes('pending')
+        ? draftInvoice.invoiceNo
+        : null;
+
+    const finalInvoiceNo = userChosenInvoiceNo || (await this.getNextInvoiceNumber(financialYear, isDemo));
     const finalInvoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const finalizedInvoice: Invoice = {
@@ -483,6 +497,9 @@ export class InvoiceService {
       invoiceId: finalInvoiceId,
       invoiceNo: finalInvoiceNo,
       invoiceNumber: finalInvoiceNo,
+      invoiceDate: draftInvoice.invoiceDate || now.toISOString().split('T')[0],
+      modeOfPayment: draftInvoice.modeOfPayment || draftInvoice.paymentTerms || 'Against Delivery / 30 Days',
+      paymentTerms: draftInvoice.modeOfPayment || draftInvoice.paymentTerms || 'Against Delivery / 30 Days',
       status: 'finalized',
       finalizedBy: user.uid,
       finalizedByName: user.displayName || 'Authorized User',

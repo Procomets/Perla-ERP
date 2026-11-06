@@ -75,6 +75,7 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
       idx + 1,
       `${line.colourName}${line.colourCode ? ` (${line.colourCode})` : ''}`,
       line.processType,
+      line.hsnNo || '—',
       line.quantity.toLocaleString('en-IN'),
       line.unit.toUpperCase(),
       line.rateBasis.replace('_', ' '),
@@ -89,6 +90,7 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
           '#',
           'Colour',
           'Wash / Process',
+          'HSN/SAC',
           'Qty',
           'Unit',
           'Rate Basis',
@@ -305,6 +307,7 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
                 <th className="py-2.5 px-3">#</th>
                 <th className="py-2.5 px-3">Colour Specification</th>
                 <th className="py-2.5 px-3">Wash / Processing Type</th>
+                <th className="py-2.5 px-3">HSN / SAC</th>
                 <th className="py-2.5 px-3 text-right">Order Qty</th>
                 <th className="py-2.5 px-3">Unit</th>
                 <th className="py-2.5 px-3">Rate Basis</th>
@@ -328,6 +331,9 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
                   </td>
                   <td className="py-2.5 px-3 text-slate-700">
                     {line.processType}
+                  </td>
+                  <td className="py-2.5 px-3 font-mono font-semibold text-slate-700">
+                    {line.hsnNo || '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right font-bold text-slate-900">
                     {line.quantity.toLocaleString('en-IN')}
