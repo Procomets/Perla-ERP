@@ -1,33 +1,219 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { WarehouseItemStock, StockTransaction, StockHealthStatus } from '../../types/warehouse';
+import { WarehouseItemStock, StockHealthStatus } from '../../types/warehouse';
+import {
+  RawMaterialPurchase,
+  PurchaseLineItem,
+  PurchaseType,
+  PurchaseStatus
+} from '../../types/purchase';
+import { Vendor } from '../../types/vendor';
 import { WarehouseService } from '../../services/warehouseService';
+import { RawMaterialPurchaseService } from '../../services/rawMaterialPurchaseService';
+import { VendorService } from '../../services/vendorService';
 import { Modal } from '../../components/ui/Modal';
 import { formatDate, formatCurrency } from '../../utils/formatters';
+import { SearchableSelect, SelectOption, SelectOptionGroup } from '../inward/components/SearchableSelect';
 import {
-  Warehouse,
   Package,
-  ArrowDownLeft,
-  AlertTriangle,
+  ShoppingBag,
   CheckCircle2,
   XCircle,
   FileSpreadsheet,
   Plus,
   RefreshCw,
   Search,
-  IndianRupee
+  IndianRupee,
+  Calendar,
+  Truck,
+  Building2,
+  Trash2,
+  Info,
+  ChevronDown,
+  Check,
+  X
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+
+interface MaterialLineInput {
+  lineId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  categoryName: string;
+  quantity: number | '';
+  unit: string;
+  rate: number | '';
+  amount: number;
+}
+
+interface SearchableItemSelectProps {
+  value: string;
+  items: WarehouseItemStock[];
+  onSelect: (item: WarehouseItemStock) => void;
+  disabled?: boolean;
+}
+
+const SearchableItemSelect: React.FC<SearchableItemSelectProps> = ({
+  value,
+  items,
+  onSelect,
+  disabled = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
+  const selectedItem = items.find((it) => it.itemId === value);
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (it) =>
+        it.itemName.toLowerCase().includes(q) ||
+        it.itemCode.toLowerCase().includes(q) ||
+        (it.categoryName || '').toLowerCase().includes(q)
+    );
+  }, [items, searchQuery]);
+
+  return (
+    <div className={`relative w-full ${isOpen ? 'z-50' : 'z-10'}`} ref={containerRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        className="w-full h-10 bg-white border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-left flex items-center justify-between gap-1.5 transition focus:outline-none focus:ring-1 focus:ring-slate-900 cursor-pointer disabled:opacity-50"
+      >
+        {selectedItem ? (
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[10px] bg-slate-100 text-slate-700 shrink-0">
+              {selectedItem.itemCode}
+            </span>
+            <span className="font-semibold text-slate-900 truncate">
+              {selectedItem.itemName}
+            </span>
+            {selectedItem.categoryName && (
+              <span className="text-[10px] text-slate-400 shrink-0 hidden md:inline">
+                ({selectedItem.categoryName})
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-400 font-normal">-- Choose Item from Master --</span>
+        )}
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[320px] max-w-[480px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+          <div className="p-2 border-b border-slate-100 bg-slate-50/80">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search material name, code, category..."
+                className="w-full h-8 pl-8 pr-7 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 p-1">
+            {filteredItems.length === 0 ? (
+              <div className="py-5 text-center text-xs text-slate-400 italic">
+                No active materials found matching "{searchQuery}".
+              </div>
+            ) : (
+              filteredItems.map((it) => {
+                const isSelected = it.itemId === value;
+                return (
+                  <div
+                    key={it.itemId}
+                    onClick={() => {
+                      onSelect(it);
+                      setIsOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between gap-2 text-xs ${
+                      isSelected ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[10px] bg-slate-200/70 text-slate-800 shrink-0">
+                        {it.itemCode}
+                      </span>
+                      <div className="truncate">
+                        <div className="font-semibold text-slate-900 truncate">{it.itemName}</div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {it.categoryName || 'General'} · Stock: {(it.availableStock || 0).toLocaleString('en-IN')}{' '}
+                          {it.baseUnit}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase px-1.5 py-0.5 bg-slate-100 rounded">
+                        {it.baseUnit}
+                      </span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-slate-900" />}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const WarehousePage: React.FC = () => {
   const { user } = useAuth();
 
-  // Active Tab: 'overview' (Stock Overview) or 'inward' (Inward Receipts)
-  const [activeTab, setActiveTab] = useState<'overview' | 'inward'>('overview');
+  // Active Tab: 'overview' (Stock Overview) or 'purchases' (Raw Material Purchase)
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchases'>('overview');
 
   // Live Data directly from Firebase
   const [stockItems, setStockItems] = useState<WarehouseItemStock[]>([]);
-  const [inwardTransactions, setInwardTransactions] = useState<StockTransaction[]>([]);
+  const [purchases, setPurchases] = useState<RawMaterialPurchase[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
@@ -35,16 +221,25 @@ export const WarehousePage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<StockHealthStatus | 'ALL'>('ALL');
 
-  // Inward Modal
-  const [isInwardModalOpen, setIsInwardModalOpen] = useState(false);
-  const [inwardItemId, setInwardItemId] = useState('');
-  const [inwardQuantity, setInwardQuantity] = useState<number | ''>('');
-  const [inwardSource, setInwardSource] = useState<'MANUAL_INWARD' | 'PURCHASE_RECEIPT' | 'FIREWOOD_PURCHASE' | 'RETURN'>('MANUAL_INWARD');
-  const [inwardReferenceNo, setInwardReferenceNo] = useState('');
-  const [inwardReceivedFrom, setInwardReceivedFrom] = useState('');
-  const [inwardDate, setInwardDate] = useState(new Date().toISOString().split('T')[0]);
-  const [inwardRemarks, setInwardRemarks] = useState('');
-  const [inwardSubmitting, setInwardSubmitting] = useState(false);
+  // Purchase Entry Modal State
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [purchaseType, setPurchaseType] = useState<PurchaseType>('Raw Material');
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vendorId, setVendorId] = useState('');
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
+  const [supplierInvoiceDate, setSupplierInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vehicleNo, setVehicleNo] = useState('');
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [formLines, setFormLines] = useState<MaterialLineInput[]>([]);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+
+  // View Purchase Modal State
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingPurchase, setViewingPurchase] = useState<RawMaterialPurchase | null>(null);
 
   // Toast State
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -76,9 +271,10 @@ export const WarehousePage: React.FC = () => {
         }
       }
 
-      const [stocksRes, txsRes] = await Promise.all([
+      const [stocksRes, purchasesRes, vendorsRes] = await Promise.all([
         WarehouseService.getStockItems(),
-        WarehouseService.getStockTransactions({ type: 'INWARD' })
+        RawMaterialPurchaseService.getPurchases(),
+        VendorService.getVendors({}, { page: 1, pageSize: 500 }, false)
       ]);
 
       // Retain strictly valid active items from Item Master (must have name and code, never dummy)
@@ -95,7 +291,8 @@ export const WarehousePage: React.FC = () => {
       });
 
       setStockItems(cleanStocks);
-      setInwardTransactions(txsRes.filter((t) => t.type === 'INWARD'));
+      setPurchases(purchasesRes);
+      setVendors(vendorsRes.vendors || []);
     } catch (err: any) {
       console.error('Error loading warehouse data:', err);
       showToast('error', err.message || 'Failed to load live warehouse items from Firebase.');
@@ -114,6 +311,47 @@ export const WarehousePage: React.FC = () => {
     () => stockItems.filter((i) => Boolean(i.itemName?.trim()) && !i.id?.startsWith('itm-')),
     [stockItems]
   );
+
+  // Filter strictly to suppliers and vendors who are both customer and supplier (vendorType === 'supplier' || 'both')
+  const supplierVendors = useMemo(() => {
+    return vendors.filter((v) => {
+      if (v.status === 'inactive') return false;
+      const type = (v.vendorType || (v as any).type || '').toString().toLowerCase().trim();
+      return type === 'supplier' || type === 'both';
+    });
+  }, [vendors]);
+
+  // Option groups for SearchableSelect Supplier dropdown
+  const supplierOptionGroups: SelectOptionGroup[] = useMemo(() => {
+    return [
+      {
+        title: 'Suppliers & Vendors (Supplier / Both)',
+        options: supplierVendors.map((v) => ({
+          id: v.vendorId || v.id || '',
+          primaryText: v.companyName,
+          secondaryText: `Code: ${v.vendorCode || v.vendorId || '—'}${v.address?.city ? ` · ${v.address.city}` : ''}`,
+          badge: v.vendorType === 'both' ? 'Customer & Supplier' : 'Supplier',
+          badgeVariant: v.vendorType === 'both' ? 'blue' : 'slate'
+        }))
+      }
+    ];
+  }, [supplierVendors]);
+
+  // Option groups for SearchableSelect Purchase Type dropdown
+  const purchaseTypeOptionGroups: SelectOptionGroup[] = useMemo(() => {
+    return [
+      {
+        title: 'Purchase Types',
+        options: [
+          { id: 'Raw Material', primaryText: 'Raw Material Purchase' },
+          { id: 'Firewood', primaryText: 'Firewood Purchase' },
+          { id: 'Chemical', primaryText: 'Chemical Purchase' },
+          { id: 'Packaging', primaryText: 'Packaging Purchase' },
+          { id: 'General', primaryText: 'General Purchase' }
+        ]
+      }
+    ];
+  }, []);
 
   // Top 5 KPI Calculations
   const todayStr = new Date().toISOString().split('T')[0];
@@ -148,15 +386,14 @@ export const WarehousePage: React.FC = () => {
     [validItems]
   );
 
-  // Total low stock count for KPI card 2 (low stock + critical)
   const totalLowAlertCount = lowStockCount + criticalCount;
 
-  // Received Today Count
+  // Received Today Count from Purchases
   const receivedTodayCount = useMemo(() => {
-    return inwardTransactions
-      .filter((tx) => tx.date === todayStr)
-      .reduce((acc, curr) => acc + (curr.quantity || 0), 0);
-  }, [inwardTransactions, todayStr]);
+    return purchases
+      .filter((p) => (p.purchaseDate === todayStr || p.receivedDate === todayStr) && p.status === 'Received')
+      .reduce((acc, curr) => acc + (curr.totalQuantity || 0), 0);
+  }, [purchases, todayStr]);
 
   // Total Inventory Value
   const totalInventoryValue = useMemo(() => {
@@ -194,19 +431,20 @@ export const WarehousePage: React.FC = () => {
     });
   }, [validItems, searchQuery, activeStatusFilter]);
 
-  // Filtered Inward Receipts
-  const filteredInwardTransactions = useMemo(() => {
-    return inwardTransactions.filter((tx) => {
+  // Filtered Purchases Ledger
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter((p) => {
       const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
       return (
-        !q ||
-        tx.itemName.toLowerCase().includes(q) ||
-        tx.itemCode.toLowerCase().includes(q) ||
-        tx.referenceNumber.toLowerCase().includes(q) ||
-        (tx.receivedFrom && tx.receivedFrom.toLowerCase().includes(q))
+        p.purchaseNumber.toLowerCase().includes(q) ||
+        p.vendorName.toLowerCase().includes(q) ||
+        p.supplierInvoiceNo.toLowerCase().includes(q) ||
+        (p.vehicleNo && p.vehicleNo.toLowerCase().includes(q)) ||
+        p.lines?.some((l) => l.itemName.toLowerCase().includes(q) || l.itemCode.toLowerCase().includes(q))
       );
     });
-  }, [inwardTransactions, searchQuery]);
+  }, [purchases, searchQuery]);
 
   // Export to Excel using exceljs
   const handleExportExcel = async () => {
@@ -214,7 +452,6 @@ export const WarehousePage: React.FC = () => {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Warehouse Stock');
 
-      // Title & Header info
       worksheet.mergeCells('A1:H1');
       const titleCell = worksheet.getCell('A1');
       titleCell.value = 'PERLA TEXTILES PROCESSORS - WAREHOUSE MANAGEMENT OVERVIEW';
@@ -292,63 +529,291 @@ export const WarehousePage: React.FC = () => {
     }
   };
 
-  // Open Inward Entry Modal
-  const handleOpenInwardModal = () => {
+  // Open New Purchase Entry Modal
+  const handleOpenNewPurchase = () => {
+    setIsEditMode(false);
+    setEditingPurchaseId(null);
+    setPurchaseType('Raw Material');
+    setPurchaseDate(new Date().toISOString().split('T')[0]);
+    setVendorId('');
+    setSupplierInvoiceNo('');
+    setSupplierInvoiceDate(new Date().toISOString().split('T')[0]);
+    setVehicleNo('');
+    setDriverName('');
+    setDriverPhone('');
+    setRemarks('');
+
     if (validItems.length > 0) {
-      setInwardItemId(validItems[0].itemId);
+      const first = validItems[0];
+      setFormLines([
+        {
+          lineId: `line_1_${Date.now()}`,
+          itemId: first.itemId,
+          itemCode: first.itemCode,
+          itemName: first.itemName,
+          categoryName: first.categoryName || '',
+          quantity: '',
+          unit: first.baseUnit || 'kg',
+          rate: first.averageRate && first.averageRate > 0 ? first.averageRate : '',
+          amount: 0
+        }
+      ]);
     } else {
-      setInwardItemId('');
+      setFormLines([]);
     }
-    setInwardQuantity('');
-    setInwardSource('MANUAL_INWARD');
-    setInwardReferenceNo('');
-    setInwardReceivedFrom('');
-    setInwardDate(new Date().toISOString().split('T')[0]);
-    setInwardRemarks('');
-    setIsInwardModalOpen(true);
+    setIsPurchaseModalOpen(true);
   };
 
-  // Submit Inward Entry to Firebase
-  const handleSubmitInward = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inwardItemId) {
-      showToast('error', 'Please select an item for stock inward.');
-      return;
-    }
-    const targetItem = validItems.find((s) => s.itemId === inwardItemId);
-    const qty = Number(inwardQuantity);
-    if (!qty || qty <= 0) {
-      showToast('error', 'Please enter a valid inward quantity greater than 0.');
-      return;
-    }
-    if (!inwardReferenceNo.trim()) {
-      showToast('error', 'Reference / DC number is required.');
-      return;
-    }
+  // Open Edit Purchase Modal
+  const handleOpenEditPurchase = (p: RawMaterialPurchase) => {
+    setIsEditMode(true);
+    setEditingPurchaseId(p.id);
+    setPurchaseType(p.purchaseType || 'Raw Material');
+    setPurchaseDate(p.purchaseDate || new Date().toISOString().split('T')[0]);
+    setVendorId(p.vendorId || '');
+    setSupplierInvoiceNo(p.supplierInvoiceNo || '');
+    setSupplierInvoiceDate(p.supplierInvoiceDate || p.purchaseDate || new Date().toISOString().split('T')[0]);
+    setVehicleNo(p.vehicleNo || '');
+    setDriverName(p.driverName || '');
+    setDriverPhone(p.driverPhone || '');
+    setRemarks(p.remarks || '');
+    setFormLines(
+      (p.lines || []).map((l, idx) => ({
+        lineId: l.lineId || `line_${idx}_${Date.now()}`,
+        itemId: l.itemId,
+        itemCode: l.itemCode,
+        itemName: l.itemName,
+        categoryName: l.categoryName || '',
+        quantity: l.quantity,
+        unit: l.unit,
+        rate: l.rate,
+        amount: l.amount || (l.quantity * l.rate)
+      }))
+    );
+    setIsPurchaseModalOpen(true);
+  };
 
-    setInwardSubmitting(true);
+  // Open View Purchase Modal
+  const handleOpenViewPurchase = (p: RawMaterialPurchase) => {
+    setViewingPurchase(p);
+    setIsViewModalOpen(true);
+  };
+
+  // Delete Purchase Entry
+  const handleDeletePurchase = async (p: RawMaterialPurchase) => {
+    const confirmMsg = p.stockInwardCompleted
+      ? `Are you sure you want to delete purchase "${p.purchaseNumber}"?\n\nThe raw material quantities will be deducted back from warehouse stock automatically.`
+      : `Are you sure you want to delete purchase "${p.purchaseNumber}"?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
     try {
-      await WarehouseService.inwardMaterial(
-        {
-          itemId: inwardItemId,
-          quantity: qty,
-          source: inwardSource,
-          referenceNumber: inwardReferenceNo.trim(),
-          receivedFrom: inwardReceivedFrom.trim(),
-          date: inwardDate || new Date().toISOString().split('T')[0],
-          remarks: inwardRemarks.trim()
-        },
-        currentUser
-      );
-
-      showToast('success', `Successfully inwarded ${qty} ${targetItem?.baseUnit || ''} of ${targetItem?.itemName || 'material'}. Stock updated.`);
-      setIsInwardModalOpen(false);
+      await RawMaterialPurchaseService.deletePurchase(p.id, currentUser);
+      showToast('success', `Purchase ${p.purchaseNumber} deleted and warehouse stock adjusted.`);
       await loadData(true);
     } catch (err: any) {
-      console.error('Inward error:', err);
-      showToast('error', err.message || 'Failed to record inward in Firebase.');
+      console.error('Delete purchase error:', err);
+      showToast('error', err.message || 'Failed to delete purchase.');
+    }
+  };
+
+  // Material Line Handlers
+  const handleAddMaterialLine = () => {
+    if (validItems.length === 0) {
+      showToast('error', 'No active items available in Item Master.');
+      return;
+    }
+    const first = validItems[0];
+    setFormLines((prev) => [
+      ...prev,
+      {
+        lineId: `line_${prev.length + 1}_${Date.now()}`,
+        itemId: first.itemId,
+        itemCode: first.itemCode,
+        itemName: first.itemName,
+        categoryName: first.categoryName || '',
+        quantity: '',
+        unit: first.baseUnit || 'kg',
+        rate: first.averageRate && first.averageRate > 0 ? first.averageRate : '',
+        amount: 0
+      }
+    ]);
+  };
+
+  const handleRemoveMaterialLine = (index: number) => {
+    if (formLines.length <= 1) {
+      showToast('error', 'At least one material line item is required.');
+      return;
+    }
+    setFormLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLineItemChange = (index: number, itemId: string) => {
+    const it = validItems.find((s) => s.itemId === itemId);
+    if (!it) return;
+    setFormLines((prev) => {
+      const copy = [...prev];
+      const qty = Number(copy[index].quantity) || 0;
+      const rate = copy[index].rate !== '' ? Number(copy[index].rate) : (it.averageRate || 0);
+      copy[index] = {
+        ...copy[index],
+        itemId: it.itemId,
+        itemCode: it.itemCode,
+        itemName: it.itemName,
+        categoryName: it.categoryName || '',
+        unit: it.baseUnit || 'kg',
+        rate: copy[index].rate !== '' ? copy[index].rate : (it.averageRate || ''),
+        amount: Math.round(qty * rate * 100) / 100
+      };
+      return copy;
+    });
+  };
+
+  const handleLineQtyChange = (index: number, val: string) => {
+    const qty = val === '' ? '' : Number(val);
+    setFormLines((prev) => {
+      const copy = [...prev];
+      const numericQty = val === '' ? 0 : Number(val);
+      const numericRate = copy[index].rate === '' ? 0 : Number(copy[index].rate);
+      copy[index] = {
+        ...copy[index],
+        quantity: qty,
+        amount: Math.round(numericQty * numericRate * 100) / 100
+      };
+      return copy;
+    });
+  };
+
+  const handleLineRateChange = (index: number, val: string) => {
+    const rate = val === '' ? '' : Number(val);
+    setFormLines((prev) => {
+      const copy = [...prev];
+      const numericQty = copy[index].quantity === '' ? 0 : Number(copy[index].quantity);
+      const numericRate = val === '' ? 0 : Number(val);
+      copy[index] = {
+        ...copy[index],
+        rate: rate,
+        amount: Math.round(numericQty * numericRate * 100) / 100
+      };
+      return copy;
+    });
+  };
+
+  const formTotalQuantity = useMemo(() => {
+    return formLines.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
+  }, [formLines]);
+
+  const formGrandTotal = useMemo(() => {
+    return formLines.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  }, [formLines]);
+
+  // Save Purchase (Draft or Confirm & Inward to Warehouse)
+  const handleSavePurchase = async (statusToSave: 'Draft' | 'Confirmed') => {
+    if (!vendorId) {
+      showToast('error', 'Please select a supplier / vendor.');
+      return;
+    }
+    const selectedVendor = vendors.find((v) => (v.id === vendorId || v.vendorId === vendorId));
+    if (!selectedVendor) {
+      showToast('error', 'Selected supplier not found.');
+      return;
+    }
+    if (!supplierInvoiceNo.trim()) {
+      showToast('error', 'Supplier invoice / DC number is required.');
+      return;
+    }
+    if (formLines.length === 0) {
+      showToast('error', 'Please add at least one material line item.');
+      return;
+    }
+
+    for (let i = 0; i < formLines.length; i++) {
+      const l = formLines[i];
+      if (!l.itemId) {
+        showToast('error', `Please select an item for line #${i + 1}.`);
+        return;
+      }
+      const q = Number(l.quantity);
+      if (!q || q <= 0) {
+        showToast('error', `Please enter a valid quantity for line #${i + 1}.`);
+        return;
+      }
+    }
+
+    setFormSubmitting(true);
+    try {
+      const linesPayload = formLines.map((l) => ({
+        itemId: l.itemId,
+        itemCode: l.itemCode,
+        itemName: l.itemName,
+        categoryName: l.categoryName,
+        quantity: Number(l.quantity) || 0,
+        unit: l.unit || 'kg',
+        rate: Number(l.rate) || 0,
+        amount: Math.round((Number(l.quantity) || 0) * (Number(l.rate) || 0) * 100) / 100
+      }));
+
+      if (isEditMode && editingPurchaseId) {
+        await RawMaterialPurchaseService.updatePurchase(
+          editingPurchaseId,
+          {
+            purchaseType,
+            purchaseDate,
+            vendorId: selectedVendor.vendorId || selectedVendor.id || '',
+            vendorName: selectedVendor.companyName,
+            vendorCode: selectedVendor.vendorCode,
+            supplierInvoiceNo: supplierInvoiceNo.trim(),
+            supplierInvoiceDate,
+            vehicleNo: vehicleNo.trim(),
+            driverName: driverName.trim(),
+            driverPhone: driverPhone.trim(),
+            remarks: remarks.trim(),
+            lines: linesPayload as any
+          },
+          currentUser
+        );
+
+        if (statusToSave === 'Confirmed') {
+          await RawMaterialPurchaseService.receivePurchase(editingPurchaseId, currentUser, purchaseDate);
+        }
+
+        showToast('success', 'Purchase entry updated successfully.');
+      } else {
+        const created = await RawMaterialPurchaseService.createPurchase(
+          {
+            purchaseType,
+            purchaseDate,
+            vendorId: selectedVendor.vendorId || selectedVendor.id || '',
+            vendorName: selectedVendor.companyName,
+            vendorCode: selectedVendor.vendorCode,
+            supplierInvoiceNo: supplierInvoiceNo.trim(),
+            supplierInvoiceDate,
+            vehicleNo: vehicleNo.trim(),
+            driverName: driverName.trim(),
+            driverPhone: driverPhone.trim(),
+            remarks: remarks.trim(),
+            status: statusToSave === 'Confirmed' ? 'Confirmed' : 'Draft',
+            lines: linesPayload
+          },
+          currentUser
+        );
+
+        // If confirmed, immediately receive into warehouse stock
+        if (statusToSave === 'Confirmed') {
+          await RawMaterialPurchaseService.receivePurchase(created.id, currentUser, purchaseDate);
+          showToast('success', `Purchase confirmed! Raw materials added to warehouse stock.`);
+        } else {
+          showToast('success', `Purchase ${created.purchaseNumber} saved as draft.`);
+        }
+      }
+
+      setIsPurchaseModalOpen(false);
+      await loadData(true);
+    } catch (err: any) {
+      console.error('Error saving purchase:', err);
+      showToast('error', err.message || 'Failed to save purchase.');
     } finally {
-      setInwardSubmitting(false);
+      setFormSubmitting(false);
     }
   };
 
@@ -372,136 +837,97 @@ export const WarehousePage: React.FC = () => {
         </div>
       )}
 
-      {/* HEADER SECTION: Title, Subtitle, and Refresh Button */}
+      {/* HEADER SECTION: Title, Subtitle, and White Reload Button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1F4E79] shadow-2xs">
-            <Warehouse className="w-5 h-5 text-[#1F4E79]" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Warehouse Management</h1>
-            <p className="text-xs text-slate-400 font-normal mt-0.5">
-              Raw material inventory · Inward receipts · Stock monitoring
-            </p>
-          </div>
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Warehouse Management</h1>
+          <p className="text-xs text-slate-400 font-normal mt-0.5">
+            Raw material inventory · Inward receipts · Stock monitoring
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Reload button in white color */}
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="w-9 h-9 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 flex items-center justify-center transition shadow-2xs cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50 flex items-center justify-center transition shadow-2xs cursor-pointer disabled:opacity-50"
             title="Refresh Data from Firebase"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-[#1F4E79]' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-slate-900' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* TOP 5 KPI STRIP CARDS (Matching user's reference screenshot) */}
+      {/* TOP 5 KPI CARDS (Clean Minimal Monochrome UI - No Colors) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Card 1: Total Stock */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2 hover:shadow-xs transition">
-          <div className="flex items-center justify-between">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100/60">
-              <Warehouse className="w-4 h-4" />
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-100">
-              Inventory
-            </span>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-slate-300 transition">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Total Stock
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              {totalStockVolume.toLocaleString('en-IN', {
-                minimumFractionDigits: 1,
-                maximumFractionDigits: 1
-              })}{' '}
-              <span className="text-sm font-bold text-slate-500">{primaryUnit}</span>
-            </div>
-            <div className="text-xs text-slate-400 font-medium mt-0.5">Total Stock</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {totalStockVolume.toLocaleString('en-IN', {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1
+            })}{' '}
+            <span className="text-xs font-bold text-slate-500 uppercase">{primaryUnit}</span>
           </div>
+          <div className="text-[11px] text-slate-400 font-medium">Available physical stock</div>
         </div>
 
         {/* Card 2: Low Stock */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2 hover:shadow-xs transition">
-          <div className="flex items-center justify-between">
-            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100/60">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-100">
-              Materials
-            </span>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-slate-300 transition">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Low Stock
           </div>
-          <div>
-            <div className={`text-xl sm:text-2xl font-black tracking-tight ${totalLowAlertCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-              {totalLowAlertCount}
-            </div>
-            <div className="text-xs text-slate-400 font-medium mt-0.5">Low Stock</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {totalLowAlertCount}
           </div>
+          <div className="text-[11px] text-slate-400 font-medium">Below minimum alert level</div>
         </div>
 
         {/* Card 3: Healthy Stock */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2 hover:shadow-xs transition">
-          <div className="flex items-center justify-between">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100/60">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
-              Materials
-            </span>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-slate-300 transition">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Healthy Stock
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl font-black text-emerald-600 tracking-tight">
-              {healthyStockCount}
-            </div>
-            <div className="text-xs text-slate-400 font-medium mt-0.5">Healthy Stock</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {healthyStockCount}
           </div>
+          <div className="text-[11px] text-slate-400 font-medium">Sufficient stock balance</div>
         </div>
 
         {/* Card 4: Received Today */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2 hover:shadow-xs transition">
-          <div className="flex items-center justify-between">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100/60">
-              <ArrowDownLeft className="w-4 h-4" />
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-100">
-              Materials
-            </span>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-slate-300 transition">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Received Today
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl font-black text-purple-700 tracking-tight">
-              {receivedTodayCount > 0 ? receivedTodayCount.toLocaleString('en-IN') : '0'}
-            </div>
-            <div className="text-xs text-slate-400 font-medium mt-0.5">Received Today</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {receivedTodayCount > 0 ? receivedTodayCount.toLocaleString('en-IN') : '0'}
           </div>
+          <div className="text-[11px] text-slate-400 font-medium">Inward entries today</div>
         </div>
 
         {/* Card 5: Inventory Value */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2 hover:shadow-xs transition">
-          <div className="flex items-center justify-between">
-            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center border border-teal-100/60">
-              <IndianRupee className="w-4 h-4" />
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-600 border border-teal-100">
-              Inventory
-            </span>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-slate-300 transition">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Inventory Value
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl font-black text-teal-700 tracking-tight">
-              {formatInventoryValueBadge(totalInventoryValue)}
-            </div>
-            <div className="text-xs text-slate-400 font-medium mt-0.5">Inventory Value</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {formatInventoryValueBadge(totalInventoryValue)}
           </div>
+          <div className="text-[11px] text-slate-400 font-medium">Valuation at avg. cost</div>
         </div>
       </div>
 
-      {/* TABS ROW: Stock Overview & Inward Receipts */}
+      {/* TABS ROW: Stock Overview & Raw Material Purchase */}
       <div className="flex items-center gap-8 border-b border-slate-200/90 px-1 pt-1">
         <button
           onClick={() => setActiveTab('overview')}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
             activeTab === 'overview'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
+              ? 'border-slate-900 text-slate-900'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -510,15 +936,15 @@ export const WarehousePage: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('inward')}
+          onClick={() => setActiveTab('purchases')}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
-            activeTab === 'inward'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
+            activeTab === 'purchases'
+              ? 'border-slate-900 text-slate-900'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <ArrowDownLeft className="w-4 h-4" />
-          <span>Inward Receipts</span>
+          <ShoppingBag className="w-4 h-4" />
+          <span>Raw Material Purchase</span>
         </button>
       </div>
 
@@ -529,59 +955,55 @@ export const WarehousePage: React.FC = () => {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search materials..."
+            placeholder={activeTab === 'overview' ? 'Search materials...' : 'Search purchases, suppliers, items...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </div>
 
         {/* Health Status Filter Pills (Active only on Stock Overview tab) */}
         {activeTab === 'overview' && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* Healthy Pill */}
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Healthy' ? 'ALL' : 'Healthy')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                 activeStatusFilter === 'Healthy'
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                  : 'bg-[#ecfdf5] text-[#047857] border-[#a7f3d0] hover:bg-[#d1fae5]'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
               Healthy: {healthyStockCount}
             </button>
 
-            {/* Low Stock Pill */}
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Low Stock' ? 'ALL' : 'Low Stock')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                 activeStatusFilter === 'Low Stock'
-                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
-                  : 'bg-[#fffbeb] text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7]'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
               Low Stock: {lowStockCount}
             </button>
 
-            {/* Critical Stock Pill */}
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Critical' ? 'ALL' : 'Critical')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                 activeStatusFilter === 'Critical'
-                  ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                  : 'bg-[#fff1f2] text-[#e11d48] border-[#fecdd3] hover:bg-[#ffe4e6]'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
               Critical Stock: {criticalCount}
             </button>
 
-            {/* Out Of Stock Pill */}
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Out Of Stock' ? 'ALL' : 'Out Of Stock')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                 activeStatusFilter === 'Out Of Stock'
-                  ? 'bg-red-700 text-white border-red-700 shadow-2xs'
-                  : 'bg-[#fef2f2] text-[#b91c1c] border-[#fca5a5] hover:bg-[#fee2e2]'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
               Out Of Stock: {outOfStockCount}
@@ -589,34 +1011,34 @@ export const WarehousePage: React.FC = () => {
           </div>
         )}
 
-        {/* Right Actions: Export Excel & Add Inward */}
+        {/* Right Actions: Export Excel & Add Purchase Entry (All Black Buttons) */}
         <div className="flex items-center gap-2 ml-auto">
           {activeTab === 'overview' && (
             <button
               onClick={handleExportExcel}
-              className="bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 font-semibold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
+              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs transition shadow-2xs cursor-pointer"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <FileSpreadsheet className="w-4 h-4 text-white" />
               <span>Export Excel</span>
             </button>
           )}
 
           <button
-            onClick={handleOpenInwardModal}
-            className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-semibold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
+            onClick={handleOpenNewPurchase}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Inward Material</span>
+            <span>New Purchase Entry</span>
           </button>
         </div>
       </div>
 
-      {/* TAB 1: STOCK OVERVIEW (CARDS GRID MATCHING USER SCREENSHOT) */}
+      {/* TAB 1: STOCK OVERVIEW (CARDS GRID: 3 CARDS PER ROW) */}
       {activeTab === 'overview' && (
         <div className="pt-1">
           {loading ? (
             <div className="py-20 text-center text-xs text-slate-500">
-              <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#1F4E79] mb-2" />
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto text-slate-900 mb-2" />
               Loading active materials from Item Master...
             </div>
           ) : filteredStockItems.length === 0 ? (
@@ -628,13 +1050,12 @@ export const WarehousePage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredStockItems.map((item) => {
                 const health = item.healthStatus || 'Healthy';
                 const curStock = item.availableStock || 0;
                 const minStock = item.minimumStockLevel || 0;
 
-                // Color themes matching reference screenshot
                 let cardBg = 'bg-[#f0fdf4] border-[#bbf7d0]'; // Healthy
                 let progressBg = 'bg-emerald-500';
                 let currentTextColor = 'text-emerald-700';
@@ -657,7 +1078,6 @@ export const WarehousePage: React.FC = () => {
                   healthBadge = 'bg-[#fee2e2] text-[#b91c1c] border-[#fca5a5]/60';
                 }
 
-                // Progress ratio: filled up to 100%
                 const progressRatio =
                   minStock > 0
                     ? Math.min(100, Math.max(curStock > 0 ? 6 : 0, Math.round((curStock / minStock) * 100)))
@@ -671,11 +1091,9 @@ export const WarehousePage: React.FC = () => {
                     {/* Top Row: Code Badge, Material Name, Health Chip */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        {/* Item Code Badge */}
                         <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-[#ede9fe] text-[#6d28d9] border border-[#ddd6fe] shrink-0 uppercase">
                           {item.itemCode || 'ITEM'}
                         </span>
-                        {/* Material Name */}
                         <span
                           className="font-bold text-slate-900 text-sm leading-snug line-clamp-1"
                           title={item.itemName}
@@ -684,7 +1102,6 @@ export const WarehousePage: React.FC = () => {
                         </span>
                       </div>
 
-                      {/* Health Status Pill */}
                       <span
                         className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 ${healthBadge}`}
                       >
@@ -748,65 +1165,125 @@ export const WarehousePage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: INWARD RECEIPTS */}
-      {activeTab === 'inward' && (
+      {/* TAB 2: RAW MATERIAL PURCHASES */}
+      {activeTab === 'purchases' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Inward Receipts Ledger</h3>
-              <p className="text-xs text-slate-500">Materials received into the warehouse from purchases and deliveries</p>
+              <h3 className="text-sm font-bold text-slate-900">Raw Material Purchases Ledger</h3>
+              <p className="text-xs text-slate-500">
+                Recorded supplier deliveries and raw material purchases linked to warehouse inventory
+              </p>
             </div>
             <button
-              onClick={handleOpenInwardModal}
-              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white font-semibold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
+              onClick={handleOpenNewPurchase}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Record Inward Entry</span>
+              <span>New Purchase Entry</span>
             </button>
           </div>
 
           <div className="p-4 overflow-x-auto">
             {loading ? (
               <div className="py-12 text-center text-xs text-slate-500">
-                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#1F4E79] mb-2" />
-                Loading inward transactions...
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-slate-900 mb-2" />
+                Loading purchase entries...
               </div>
-            ) : filteredInwardTransactions.length === 0 ? (
+            ) : filteredPurchases.length === 0 ? (
               <div className="py-12 text-center text-xs text-slate-400">
-                No inward receipts recorded in Firebase yet.
+                No raw material purchase entries recorded in Firebase yet.
               </div>
             ) : (
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-bold uppercase text-[10px]">
-                    <th className="p-3">TX No</th>
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Reference No</th>
-                    <th className="p-3">Material / Item</th>
-                    <th className="p-3">Received Qty</th>
-                    <th className="p-3">Updated Balance</th>
-                    <th className="p-3">Received From</th>
-                    <th className="p-3">Recorded By</th>
+                    <th className="p-3">Purchase No & Date</th>
+                    <th className="p-3">Supplier / Vendor</th>
+                    <th className="p-3">Invoice & Vehicle</th>
+                    <th className="p-3">Materials / Items</th>
+                    <th className="p-3">Total Qty & Amount</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredInwardTransactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50/50">
-                      <td className="p-3 font-mono font-bold text-slate-800">{tx.transactionNumber}</td>
-                      <td className="p-3 text-slate-600 whitespace-nowrap">{formatDate(tx.date)}</td>
-                      <td className="p-3 font-mono font-medium text-[#1F4E79]">{tx.referenceNumber}</td>
+                  {filteredPurchases.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/50">
                       <td className="p-3">
-                        <div className="font-bold text-slate-900">{tx.itemName}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">{tx.itemCode}</div>
+                        <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
+                        <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
                       </td>
-                      <td className="p-3 font-bold text-emerald-700">
-                        +{tx.quantity} {tx.baseUnit}
+                      <td className="p-3">
+                        <div className="font-bold text-slate-900">{p.vendorName}</div>
+                        {p.vendorCode && <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>}
                       </td>
-                      <td className="p-3 font-mono font-semibold text-slate-800">
-                        {tx.newStock} {tx.baseUnit}
+                      <td className="p-3">
+                        <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                        {p.vehicleNo && <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>}
                       </td>
-                      <td className="p-3 text-slate-700">{tx.receivedFrom || '—'}</td>
-                      <td className="p-3 text-slate-500">{tx.createdByName || 'System'}</td>
+                      <td className="p-3">
+                        <div className="space-y-0.5">
+                          {p.lines?.slice(0, 2).map((l, idx) => (
+                            <div key={idx} className="text-slate-700">
+                              <span className="font-semibold text-slate-900">{l.itemName}</span>: {l.quantity} {l.unit}
+                            </div>
+                          ))}
+                          {p.lines && p.lines.length > 2 && (
+                            <div className="text-[11px] text-slate-400 font-medium">
+                              +{p.lines.length - 2} more item(s)
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="font-bold text-slate-900">
+                          {p.totalQuantity.toLocaleString('en-IN')} {p.lines[0]?.unit || 'kg'}
+                        </div>
+                        <div className="text-xs font-semibold text-slate-700">
+                          {formatCurrency(p.grandTotal)}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                            p.status === 'Received'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : p.status === 'Confirmed'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : p.status === 'Draft'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      {/* ACTIONS COLUMN: All actions in text only! No icons! */}
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-2 text-xs">
+                          <button
+                            onClick={() => handleOpenViewPurchase(p)}
+                            className="text-slate-800 font-semibold hover:text-slate-950 hover:underline cursor-pointer"
+                          >
+                            View
+                          </button>
+                          <span className="text-slate-300 font-light">|</span>
+                          <button
+                            onClick={() => handleOpenEditPurchase(p)}
+                            className="text-blue-700 font-semibold hover:text-blue-900 hover:underline cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <span className="text-slate-300 font-light">|</span>
+                          <button
+                            onClick={() => handleDeletePurchase(p)}
+                            className="text-rose-600 font-semibold hover:text-rose-800 hover:underline cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -816,136 +1293,374 @@ export const WarehousePage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: INWARD MATERIAL ENTRY */}
+      {/* MODAL: NEW / EDIT RAW MATERIAL PURCHASE ENTRY */}
       <Modal
-        isOpen={isInwardModalOpen}
-        onClose={() => setIsInwardModalOpen(false)}
-        title="Stock Inward Entry (Add Received Materials)"
-        maxWidth="lg"
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        title={isEditMode ? 'Edit Raw Material Purchase Entry' : 'New Raw Material Purchase Entry'}
+        maxWidth="4xl"
       >
-        <form onSubmit={handleSubmitInward} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Select Material / Item <span className="text-rose-500">*</span>
-            </label>
-            <select
-              value={inwardItemId}
-              onChange={(e) => setInwardItemId(e.target.value)}
-              required
-              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-            >
-              <option value="">-- Choose Item From Master --</option>
-              {validItems.map((s) => (
-                <option key={s.itemId} value={s.itemId}>
-                  {s.itemName} ({s.itemCode}) — Current Balance: {s.availableStock} {s.baseUnit}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Inward Source <span className="text-rose-500">*</span>
+        <div className="space-y-4">
+          {/* Top Row: Select Supplier / Vendor (Searchable, wide), Purchase Type (Searchable), Purchase Date */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Select Supplier / Vendor <span className="text-rose-500">*</span>
               </label>
-              <select
-                value={inwardSource}
-                onChange={(e) => setInwardSource(e.target.value as any)}
-                required
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-              >
-                <option value="MANUAL_INWARD">Manual Inward Receipt</option>
-                <option value="PURCHASE_RECEIPT">Raw Material Purchase Receipt</option>
-                <option value="FIREWOOD_PURCHASE">Firewood Fuel Delivery</option>
-                <option value="RETURN">Shopfloor Return / Excess Stock</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Reference No (DC / Invoice No) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. PUR-2026-0001, DC-WOOD-90"
-                value={inwardReferenceNo}
-                onChange={(e) => setInwardReferenceNo(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Received Quantity <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="any"
-                min="0.01"
-                placeholder="0"
-                value={inwardQuantity === '' ? '' : inwardQuantity}
-                onChange={(e) => setInwardQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                required
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+              <SearchableSelect
+                value={vendorId}
+                placeholder="-- Choose Supplier / Vendor --"
+                searchPlaceholder="Search supplier company name, code, city..."
+                groups={supplierOptionGroups}
+                onSelect={(opt) => setVendorId(opt.id)}
+                formatTriggerLabel={(opt) => (
+                  <span className="truncate font-semibold text-slate-900 text-xs flex items-center justify-between w-full">
+                    <span className="truncate">{opt.primaryText}</span>
+                    {opt.badge && (
+                      <span
+                        className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                          opt.badge === 'Customer & Supplier'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {opt.badge}
+                      </span>
+                    )}
+                  </span>
+                )}
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Receipt Date <span className="text-rose-500">*</span>
+            <div className="md:col-span-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Purchase Type <span className="text-rose-500">*</span>
+              </label>
+              <SearchableSelect
+                value={purchaseType}
+                placeholder="Select Purchase Type..."
+                searchPlaceholder="Search purchase type..."
+                groups={purchaseTypeOptionGroups}
+                onSelect={(opt) => setPurchaseType(opt.id as PurchaseType)}
+                formatTriggerLabel={(opt) => (
+                  <span className="truncate font-semibold text-slate-900 text-xs">
+                    {opt.primaryText}
+                  </span>
+                )}
+              />
+            </div>
+
+            <div className="md:col-span-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Purchase Date <span className="text-rose-500">*</span>
               </label>
               <input
                 type="date"
-                value={inwardDate}
-                onChange={(e) => setInwardDate(e.target.value)}
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
                 required
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Received From (Supplier / Delivery Person)</label>
-            <input
-              type="text"
-              placeholder="e.g. Sree Kumar Chemicals, Direct Delivery"
-              value={inwardReceivedFrom}
-              onChange={(e) => setInwardReceivedFrom(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-            />
+          {/* Second Row: Supplier Invoice / DC No, Invoice Date, Vehicle No, Driver Name & Phone */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 truncate">
+                Supplier Invoice / DC No <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. INV-901, DC-WOOD-44"
+                value={supplierInvoiceNo}
+                onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                required
+                className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 truncate">Invoice Date</label>
+              <input
+                type="date"
+                value={supplierInvoiceDate}
+                onChange={(e) => setSupplierInvoiceDate(e.target.value)}
+                className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 truncate">Vehicle No</label>
+              <input
+                type="text"
+                placeholder="e.g. TN-22-BY-8901"
+                value={vehicleNo}
+                onChange={(e) => setVehicleNo(e.target.value)}
+                className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 truncate">Driver Name & Phone</label>
+              <input
+                type="text"
+                placeholder="e.g. S. Kumar (9876543210)"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
           </div>
 
+          {/* Section: MATERIALS & LINE ITEMS */}
+          <div className="space-y-2 pt-2 border-t border-slate-200/80">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                MATERIALS & LINE ITEMS ({formLines.length})
+              </span>
+              <button
+                type="button"
+                onClick={handleAddMaterialLine}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-800 transition cursor-pointer"
+              >
+                + Add Material Line
+              </button>
+            </div>
+
+            {/* Line Items Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                    <th className="p-2.5">MATERIAL / ITEM</th>
+                    <th className="p-2.5 w-16">UNIT</th>
+                    <th className="p-2.5 w-24">QUANTITY</th>
+                    <th className="p-2.5 w-24">RATE (₹)</th>
+                    <th className="p-2.5 w-28 text-right">AMOUNT (₹)</th>
+                    {formLines.length > 1 && <th className="p-2.5 w-8"></th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {formLines.map((line, idx) => (
+                    <tr key={line.lineId || idx} className="hover:bg-slate-50/40">
+                      <td className="p-2">
+                        <select
+                          value={line.itemId}
+                          onChange={(e) => handleLineItemChange(idx, e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          required
+                        >
+                          <option value="">-- Choose Item from Master --</option>
+                          {validItems.map((s) => (
+                            <option key={s.itemId} value={s.itemId}>
+                              {s.itemName} ({s.itemCode})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2 font-bold text-slate-600 text-center uppercase">
+                        {line.unit || 'kg'}
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.01"
+                          placeholder="0"
+                          value={line.quantity === '' ? '' : line.quantity}
+                          onChange={(e) => handleLineQtyChange(idx, e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 text-right focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          required
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          placeholder="0"
+                          value={line.rate === '' ? '' : line.rate}
+                          onChange={(e) => handleLineRateChange(idx, e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 text-right focus:outline-none focus:ring-1 focus:ring-slate-900"
+                        />
+                      </td>
+                      <td className="p-2 text-right font-black text-slate-900">
+                        {formatCurrency(line.amount || 0)}
+                      </td>
+                      {formLines.length > 1 && (
+                        <td className="p-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMaterialLine(idx)}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-bold p-1 cursor-pointer"
+                            title="Remove Line"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Summary Bottom Bar */}
+              <div className="bg-slate-50/80 p-3 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span className="text-slate-600 font-semibold">
+                  Total Items: {formLines.length} | Total Quantity: {formTotalQuantity.toLocaleString('en-IN')}
+                </span>
+                <span className="font-black text-slate-900 text-sm">
+                  Grand Total: {formatCurrency(formGrandTotal)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Remarks */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Remarks (Optional)</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Remarks & Observations (Optional)
+            </label>
             <textarea
               rows={2}
-              placeholder="e.g. Weighbridge slip verified, packaging intact"
-              value={inwardRemarks}
-              onChange={(e) => setInwardRemarks(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+              placeholder="e.g. Weighbridge gross/tare recorded, quality verified..."
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
           </div>
 
-          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          {/* Modal Footer Buttons */}
+          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2.5">
             <button
               type="button"
-              onClick={() => setIsInwardModalOpen(false)}
+              onClick={() => setIsPurchaseModalOpen(false)}
               className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
             >
               Cancel
             </button>
             <button
-              type="submit"
-              disabled={inwardSubmitting}
-              className="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-[#1F4E79] hover:bg-[#163a5c] transition shadow-2xs disabled:opacity-50 cursor-pointer"
+              type="button"
+              disabled={formSubmitting}
+              onClick={() => handleSavePurchase('Draft')}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer disabled:opacity-50"
             >
-              {inwardSubmitting ? 'Recording Inward...' : 'Confirm Inward & Add to Stock'}
+              Save as Draft
+            </button>
+            <button
+              type="button"
+              disabled={formSubmitting}
+              onClick={() => handleSavePurchase('Confirmed')}
+              className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition shadow-2xs disabled:opacity-50 cursor-pointer"
+            >
+              {formSubmitting ? 'Recording Purchase...' : 'Save & Confirm Purchase'}
             </button>
           </div>
-        </form>
+        </div>
+      </Modal>
+
+      {/* MODAL: VIEW PURCHASE DETAILS */}
+      <Modal
+        isOpen={isViewModalOpen}
+        onClose={() => setIsViewModalOpen(false)}
+        title={viewingPurchase ? `Purchase Details: ${viewingPurchase.purchaseNumber}` : 'Purchase Details'}
+        maxWidth="lg"
+      >
+        {viewingPurchase && (
+          <div className="space-y-4 text-xs">
+            {/* Header info strip */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Purchase Date</div>
+                <div className="font-bold text-slate-900">{formatDate(viewingPurchase.purchaseDate)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Status</div>
+                <div className="font-bold text-slate-900">{viewingPurchase.status}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Invoice / DC No</div>
+                <div className="font-bold text-slate-900">{viewingPurchase.supplierInvoiceNo || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Vehicle No</div>
+                <div className="font-bold text-slate-900">{viewingPurchase.vehicleNo || '—'}</div>
+              </div>
+            </div>
+
+            {/* Supplier Info */}
+            <div className="p-3 bg-white rounded-xl border border-slate-200">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Supplier / Vendor</div>
+              <div className="text-sm font-bold text-slate-900">{viewingPurchase.vendorName}</div>
+              {viewingPurchase.vendorCode && (
+                <div className="text-[11px] font-mono text-slate-500">Code: {viewingPurchase.vendorCode}</div>
+              )}
+            </div>
+
+            {/* Materials Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+              <div className="p-2.5 bg-slate-50 font-bold text-slate-700 text-xs border-b border-slate-200 uppercase">
+                Purchased Materials
+              </div>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/50 text-[10px] uppercase text-slate-500 font-bold">
+                    <th className="p-2.5">Material</th>
+                    <th className="p-2.5">Code</th>
+                    <th className="p-2.5 text-right">Quantity</th>
+                    <th className="p-2.5 text-right">Rate</th>
+                    <th className="p-2.5 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {viewingPurchase.lines?.map((line, idx) => (
+                    <tr key={idx}>
+                      <td className="p-2.5 font-bold text-slate-900">{line.itemName}</td>
+                      <td className="p-2.5 font-mono text-slate-500">{line.itemCode}</td>
+                      <td className="p-2.5 text-right font-semibold text-slate-900">
+                        {line.quantity} {line.unit}
+                      </td>
+                      <td className="p-2.5 text-right text-slate-700">₹{Number(line.rate || 0).toFixed(2)}</td>
+                      <td className="p-2.5 text-right font-black text-slate-900">
+                        {formatCurrency(line.amount || 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between font-bold">
+                <span>Total Quantity: {viewingPurchase.totalQuantity.toLocaleString('en-IN')}</span>
+                <span className="text-sm text-slate-900">
+                  Grand Total: {formatCurrency(viewingPurchase.grandTotal)}
+                </span>
+              </div>
+            </div>
+
+            {viewingPurchase.remarks && (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Remarks</div>
+                <div className="text-slate-700">{viewingPurchase.remarks}</div>
+              </div>
+            )}
+
+            <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+              <span>Recorded By: {viewingPurchase.createdByName || 'System'}</span>
+              <span>Stock Status: {viewingPurchase.stockInwardCompleted ? 'Added to Warehouse Stock' : 'Pending Inward'}</span>
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsViewModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

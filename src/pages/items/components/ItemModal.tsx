@@ -10,18 +10,13 @@ import {
 } from '../../../services/itemCategoryMasterService';
 import { ItemCategoryMasterItem } from '../../../types/categoryMaster';
 import {
-  FlaskConical,
-  Flame,
   AlertCircle,
   CheckCircle2,
   Info,
   Lock,
   Package,
-  Layers,
-  Box,
-  Wrench,
-  Sparkles,
-  Settings
+  Plus,
+  X
 } from 'lucide-react';
 
 interface ItemModalProps {
@@ -36,16 +31,6 @@ interface ItemModalProps {
   vendors?: Vendor[];
   currentUser: { uid: string; displayName?: string };
 }
-
-// Helper to determine icon by category code / name
-const getCategoryIcon = (codeOrName: string) => {
-  const str = (codeOrName || '').toLowerCase();
-  if (str.includes('chm') || str.includes('chemical') || str.includes('dye') || str.includes('auxiliary')) return FlaskConical;
-  if (str.includes('rwd') || str.includes('wood') || str.includes('fuel') || str.includes('boiler')) return Flame;
-  if (str.includes('pkg') || str.includes('pack')) return Box;
-  if (str.includes('mnt') || str.includes('spare') || str.includes('maint')) return Wrench;
-  return Package;
-};
 
 // Helper to infer itemType from category
 const inferItemType = (catName: string, catCode: string): ItemType => {
@@ -120,6 +105,14 @@ export const ItemModal: React.FC<ItemModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Inline Add Category State
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatCode, setNewCatCode] = useState('');
+  const [newCatDesc, setNewCatDesc] = useState('');
+  const [isSavingCat, setIsSavingCat] = useState(false);
+  const [catError, setCatError] = useState<string | null>(null);
 
   // 1. Fetch categories directly from General Settings on open
   useEffect(() => {
@@ -196,7 +189,20 @@ export const ItemModal: React.FC<ItemModalProps> = ({
 
   // 2. Initialize or reset form state
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setShowAddCategory(false);
+      setNewCatName('');
+      setNewCatCode('');
+      setNewCatDesc('');
+      setCatError(null);
+      return;
+    }
+
+    setShowAddCategory(false);
+    setNewCatName('');
+    setNewCatCode('');
+    setNewCatDesc('');
+    setCatError(null);
 
     if (initialItem) {
       // Edit Mode
@@ -263,6 +269,70 @@ export const ItemModal: React.FC<ItemModalProps> = ({
     }
   };
 
+  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === '__ADD_NEW__') {
+      setShowAddCategory(true);
+      setCatError(null);
+    } else {
+      setShowAddCategory(false);
+      handleCategorySelect(val);
+    }
+  };
+
+  const handleSaveNewCategory = async () => {
+    const trimmedName = newCatName.trim();
+    if (!trimmedName) {
+      setCatError('Category name is required.');
+      return;
+    }
+    const code = (newCatCode.trim() || trimmedName.slice(0, 3)).toUpperCase();
+    if (!code) {
+      setCatError('Category code is required.');
+      return;
+    }
+
+    try {
+      setIsSavingCat(true);
+      setCatError(null);
+
+      const savedCat = await ItemCategoryMasterService.addCategory(
+        trimmedName,
+        code,
+        newCatDesc.trim() || undefined,
+        currentUser.uid
+      );
+
+      // Add to general categories list immediately
+      setGeneralCategories((prev) => {
+        const filtered = prev.filter((p) => p.id !== savedCat.id && p.categoryId !== savedCat.id);
+        return [...filtered, savedCat];
+      });
+
+      const newCatId = savedCat.categoryId || savedCat.id;
+      setCategoryId(newCatId);
+
+      if (!isEditing) {
+        setBaseUnit(inferDefaultUom(savedCat.categoryName || savedCat.name, savedCat.categoryCode));
+        try {
+          const nextCode = await ItemService.getNextItemCode(savedCat.categoryCode);
+          setItemCode(nextCode);
+        } catch (e) {
+          console.warn('Failed to generate item code:', e);
+        }
+      }
+
+      setNewCatName('');
+      setNewCatCode('');
+      setNewCatDesc('');
+      setShowAddCategory(false);
+    } catch (err: any) {
+      setCatError(err?.message || 'Failed to add category.');
+    } finally {
+      setIsSavingCat(false);
+    }
+  };
+
   // 4. Form Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,7 +340,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
       setError('Full Item / Material Name is required.');
       return;
     }
-    if (!categoryId) {
+    if (!categoryId || categoryId === '__ADD_NEW__') {
       setError('Please select an Item Category.');
       return;
     }
@@ -355,76 +425,139 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           </div>
         )}
 
-        {/* 1. Item Category (Fetched from General Settings) */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-[#1F4E79]" />
-              <span>Item Category <span className="text-red-500">*</span></span>
-            </label>
-            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              General Settings
-            </span>
-          </div>
+        {/* 1. Item Category Dropdown */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Item Category <span className="text-red-500">*</span>
+          </label>
 
-          {/* Quick-Select Pills from General Settings */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <select
+            value={showAddCategory ? '__ADD_NEW__' : categoryId}
+            disabled={isEditing}
+            onChange={handleCategoryChange}
+            className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs disabled:bg-slate-50 disabled:text-slate-500 cursor-pointer"
+            required
+          >
+            <option value="">-- Select Item Category --</option>
             {selectableCategories.map((c) => {
               const catId = c.categoryId || c.id;
-              const isSelected = (categoryId === catId) || (selectedCategory && (selectedCategory.categoryId === catId || selectedCategory.id === catId));
-              const Icon = getCategoryIcon(c.categoryCode || c.categoryName);
-
               return (
-                <button
-                  key={catId}
-                  type="button"
-                  disabled={isEditing}
-                  onClick={() => handleCategorySelect(catId)}
-                  className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all text-xs font-medium ${
-                    isSelected
-                      ? 'bg-blue-50/90 border-[#1F4E79] text-[#1F4E79] shadow-2xs ring-2 ring-[#1F4E79]/20 font-bold'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                  } ${isEditing ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                      isSelected ? 'bg-[#1F4E79] text-white shadow-2xs' : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate leading-tight">{c.categoryName}</div>
-                    <div className="font-mono text-[10px] text-slate-400 mt-0.5">{c.categoryCode}</div>
-                  </div>
-                </button>
+                <option key={catId} value={catId}>
+                  {c.categoryName} ({c.categoryCode})
+                </option>
               );
             })}
-          </div>
+            <option value="__ADD_NEW__" className="font-bold text-[#1F4E79]">
+              + Add New Category...
+            </option>
+          </select>
 
-          {/* Fallback Dropdown if list is long or user prefers dropdown */}
-          <div className="pt-1">
-            <select
-              value={categoryId}
-              disabled={isEditing}
-              onChange={(e) => handleCategorySelect(e.target.value)}
-              className="w-full h-10 bg-white border border-slate-300 rounded-xl px-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79] transition shadow-2xs disabled:bg-slate-50 disabled:text-slate-500"
-              required
-            >
-              <option value="">-- Or Choose from All Categories --</option>
-              {selectableCategories.map((c) => {
-                const catId = c.categoryId || c.id;
-                return (
-                  <option key={catId} value={catId}>
-                    {c.categoryName} ({c.categoryCode})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
+          {/* Inline Add Category Form */}
+          {showAddCategory && (
+            <div className="p-3.5 bg-slate-50 border border-blue-200 rounded-xl space-y-3 mt-2 shadow-2xs animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#1F4E79]">
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add New Category</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddCategory(false);
+                    setCatError(null);
+                    if (categoryId === '__ADD_NEW__') {
+                      setCategoryId(selectableCategories[0]?.categoryId || selectableCategories[0]?.id || '');
+                    }
+                  }}
+                  className="text-slate-400 hover:text-slate-600 text-xs font-bold p-1 cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-          {selectedCategory?.description && (
+              {catError && (
+                <div className="text-[11px] text-red-600 bg-red-50 p-2 rounded-lg border border-red-200 font-medium">
+                  {catError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Category Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Chemicals / Auxiliaries"
+                    value={newCatName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewCatName(val);
+                      if (!newCatCode || newCatCode.length <= 3) {
+                        const clean = val.replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase();
+                        if (clean) setNewCatCode(clean);
+                      }
+                    }}
+                    className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Category Code <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. CHM"
+                    maxLength={5}
+                    value={newCatCode}
+                    onChange={(e) => setNewCatCode(e.target.value.toUpperCase())}
+                    className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 uppercase focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Description (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Textile processing chemicals and softeners"
+                  value={newCatDesc}
+                  onChange={(e) => setNewCatDesc(e.target.value)}
+                  className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-200/60">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddCategory(false);
+                    setCatError(null);
+                    if (categoryId === '__ADD_NEW__') {
+                      setCategoryId(selectableCategories[0]?.categoryId || selectableCategories[0]?.id || '');
+                    }
+                  }}
+                  className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingCat || !newCatName.trim()}
+                  onClick={handleSaveNewCategory}
+                  className="px-3 py-1 bg-[#1F4E79] hover:bg-[#163a5c] text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                >
+                  {isSavingCat ? 'Saving...' : 'Save & Select Category'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedCategory?.description && !showAddCategory && (
             <div className="text-[11px] text-slate-500 italic pl-1">
               {selectedCategory.description}
             </div>

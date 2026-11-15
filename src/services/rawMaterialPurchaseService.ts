@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -294,8 +295,8 @@ export class RawMaterialPurchaseService {
     if (!existing) {
       throw new Error(`Purchase record ${purchaseId} not found.`);
     }
-    if (existing.status !== 'Draft') {
-      throw new Error(`Cannot modify purchase in '${existing.status}' status. Only Draft purchases can be edited.`);
+    if (existing.status === 'Cancelled') {
+      throw new Error(`Cannot modify purchase in 'Cancelled' status.`);
     }
 
     const nowIso = new Date().toISOString();
@@ -318,6 +319,50 @@ export class RawMaterialPurchaseService {
       };
     });
 
+    // If this purchase was already received into warehouse stock, adjust warehouse stock for any quantity changes
+    if (existing.stockInwardCompleted && Array.isArray(lines)) {
+      const oldLineMap = new Map<string, number>();
+      (existing.lines || []).forEach((l) => oldLineMap.set(l.itemId, (oldLineMap.get(l.itemId) || 0) + (l.quantity || 0)));
+
+      const newLineMap = new Map<string, number>();
+      lines.forEach((l) => newLineMap.set(l.itemId, (newLineMap.get(l.itemId) || 0) + (l.quantity || 0)));
+
+      const allItemIds = Array.from(new Set([...oldLineMap.keys(), ...newLineMap.keys()]));
+      for (const itId of allItemIds) {
+        const oldQty = oldLineMap.get(itId) || 0;
+        const newQty = newLineMap.get(itId) || 0;
+        const diff = newQty - oldQty;
+
+        if (diff > 0) {
+          await WarehouseService.inwardMaterial(
+            {
+              itemId: itId,
+              quantity: diff,
+              source: 'PURCHASE_RECEIPT',
+              referenceNumber: existing.purchaseNumber,
+              referenceId: existing.id,
+              receivedFrom: updates.vendorName || existing.vendorName,
+              date: updates.purchaseDate || existing.purchaseDate || nowIso.split('T')[0],
+              remarks: `Purchase update adjustment (+${diff}) for ${existing.purchaseNumber}`
+            },
+            user
+          );
+        } else if (diff < 0) {
+          await WarehouseService.issueMaterial(
+            {
+              itemId: itId,
+              quantity: Math.abs(diff),
+              purpose: `Purchase Update Adjustment (-${Math.abs(diff)})`,
+              issuedTo: updates.vendorName || existing.vendorName,
+              date: updates.purchaseDate || existing.purchaseDate || nowIso.split('T')[0],
+              remarks: `Purchase update adjustment (-${Math.abs(diff)}) for ${existing.purchaseNumber}`
+            },
+            user
+          );
+        }
+      }
+    }
+
     await updateDoc(doc(db, 'raw_material_purchases', purchaseId), {
       ...updates,
       lines,
@@ -327,6 +372,56 @@ export class RawMaterialPurchaseService {
       updatedByName: user.name,
       updatedAt: nowIso
     });
+  }
+
+  /**
+   * Delete purchase record
+   * If the purchase was received, reverts the stock in warehouse properly.
+   */
+  static async deletePurchase(
+    purchaseId: string,
+    user: { uid: string; name: string }
+  ): Promise<void> {
+    const existing = await this.getPurchaseById(purchaseId);
+    if (!existing) throw new Error('Purchase record not found.');
+
+    // If stock inward was completed, revert the stock in warehouse
+    if (existing.stockInwardCompleted && Array.isArray(existing.lines)) {
+      for (const line of existing.lines) {
+        if (line.quantity > 0 && line.itemId) {
+          try {
+            await WarehouseService.issueMaterial(
+              {
+                itemId: line.itemId,
+                quantity: line.quantity,
+                purpose: `Purchase Deletion Reversal: ${existing.purchaseNumber}`,
+                issuedTo: 'Warehouse Stock Reversal',
+                date: new Date().toISOString().split('T')[0],
+                remarks: `Reverting stock due to deletion of purchase ${existing.purchaseNumber}`
+              },
+              user
+            );
+          } catch (revertErr) {
+            console.warn(`Could not revert stock for item ${line.itemId}:`, revertErr);
+          }
+        }
+      }
+    }
+
+    // Delete purchase record from Firestore
+    await deleteDoc(doc(db, 'raw_material_purchases', purchaseId));
+
+    // Update local cache
+    try {
+      const cached = safeGetStorage(PURCHASES_STORAGE_KEY);
+      if (cached) {
+        const list: RawMaterialPurchase[] = JSON.parse(cached);
+        const filtered = list.filter((p) => p.id !== purchaseId);
+        safeSetStorage(PURCHASES_STORAGE_KEY, JSON.stringify(filtered));
+      }
+    } catch {
+      // ignore
+    }
   }
 
   /**

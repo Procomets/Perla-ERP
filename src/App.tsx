@@ -63,7 +63,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   statement: { title: 'Inward vs Outward Reconciliation Statement', subtitle: 'Colour-wise balance ledger & invoice approval' },
   invoices: { title: 'Tax Invoices', subtitle: 'GST invoice generation, billing, and PDF printouts' },
   chemical: { title: 'Chemical Entry & Processing', subtitle: 'Shopfloor chemical batch consumption & machine logs' },
-  warehouse: { title: 'Warehouse Stock Ledger', subtitle: 'Real-time inventory levels for chemicals and firewood fuel' },
+  warehouse: { title: 'Warehouse Management', subtitle: 'Raw material inventory · Inward receipts · Stock monitoring' },
   purchases: { title: 'Raw Material & Firewood Purchases', subtitle: 'Supplier receipts, deliveries, and weighbridge records' },
   attendance: { title: 'Employee Attendance', subtitle: 'Shift attendance and overtime hours' },
   salary: { title: 'Employee Salary', subtitle: 'Salary calculation and payment status' },
