@@ -109,7 +109,7 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
     for (let i = startDay; i <= endDay; i++) {
       const dateStr = formatDateYYYYMMDD(currentYear, currentMonth, i);
       const attRecord = attendanceRecords.find((r) => r.employeeId === employeeId && r.date === dateStr);
-      if (attRecord?.status === 'Present') {
+      if (attRecord?.status === 'Present' || attRecord?.status === 'N') {
         presentCount++;
       } else if (attRecord?.status === 'P/N') {
         presentCount += 2;
@@ -150,7 +150,7 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
         for (let i = startDay; i <= endDay; i++) {
           const dateStr = formatDateYYYYMMDD(currentYear, currentMonth, i);
           const attRecord = attendanceRecords.find((r) => r.employeeId === emp.employeeId && r.date === dateStr);
-          if (attRecord?.status === 'Present') {
+          if (attRecord?.status === 'Present' || attRecord?.status === 'N') {
             presentCount++;
           } else if (attRecord?.status === 'P/N') {
             presentCount += 2;
@@ -301,6 +301,11 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
                     presentCount++;
                     dailyPresentCount[dIndex]++;
                     cellStyle = { color: '#166534', fontWeight: 'bold' };
+                  } else if (attRecord?.status === 'N') {
+                    cellValue = 'N';
+                    presentCount++;
+                    dailyPresentCount[dIndex]++;
+                    cellStyle = { backgroundColor: '#ede7f6', color: '#4527a0', fontWeight: 'bold' };
                   } else if (attRecord?.status === 'P/N') {
                     cellValue = 'P/N';
                     presentCount += 2;

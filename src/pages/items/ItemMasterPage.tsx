@@ -14,18 +14,13 @@ import { StatusChip } from '../../components/ui/StatusChip';
 import { ItemModal } from './components/ItemModal';
 import { ItemDetailsModal } from './components/ItemDetailsModal';
 import {
-  FlaskConical,
-  Flame,
   Search,
   Plus,
-  Eye,
-  Edit2,
-  RotateCcw,
   AlertTriangle,
   CheckCircle2,
   Package,
-  Trash2,
-  Archive
+  Archive,
+  Layers
 } from 'lucide-react';
 
 export const ItemMasterPage: React.FC = () => {
@@ -46,12 +41,12 @@ export const ItemMasterPage: React.FC = () => {
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'chemical' | 'firewood'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive'>('active');
 
   // Modals State
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [itemModalDefaultType, setItemModalDefaultType] = useState<ItemType>('chemical');
+  const [itemModalDefaultCategoryId, setItemModalDefaultCategoryId] = useState<string | undefined>(undefined);
   const [selectedItemForEdit, setSelectedItemForEdit] = useState<MasterItem | null>(null);
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -64,16 +59,32 @@ export const ItemMasterPage: React.FC = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Load items and units (categories are loaded by real-time subscribeCategories listener)
+  // Load items, units and categories from General Settings
   const loadMasterData = useCallback(async () => {
     try {
       setLoading(true);
-      const [itemsRes, unitRes] = await Promise.all([
+      const [itemsRes, unitRes, catsRes] = await Promise.all([
         ItemService.getItems({}, { page: 1, pageSize: 1000 }, isDemoMode),
-        ItemService.getUnitsOfMeasure(isDemoMode)
+        ItemService.getUnitsOfMeasure(isDemoMode),
+        ItemCategoryMasterService.getCategories()
       ]);
       setItems(itemsRes.items || []);
       setUnits(unitRes || []);
+      if (catsRes && catsRes.length > 0) {
+        setCategories(
+          catsRes.map((c) => ({
+            id: c.id,
+            categoryId: c.categoryId || c.id,
+            categoryName: c.categoryName || c.name,
+            categoryCode: c.categoryCode,
+            description: c.description,
+            status: c.isActive ? 'active' : 'inactive',
+            itemCount: 0,
+            createdAt: typeof c.createdAt === 'string' ? c.createdAt : '',
+            updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : ''
+          }))
+        );
+      }
     } catch (err) {
       console.warn('Failed to load item master data:', err);
     } finally {
@@ -85,7 +96,7 @@ export const ItemMasterPage: React.FC = () => {
     loadMasterData();
   }, [loadMasterData]);
 
-  // Real-time subscribe to Item Category Master updates
+  // Real-time subscribe to Item Category Master updates from General Settings
   useEffect(() => {
     const unsubscribe = ItemCategoryMasterService.subscribeCategories((cats) => {
       if (cats && cats.length > 0) {
@@ -109,17 +120,17 @@ export const ItemMasterPage: React.FC = () => {
   }, []);
 
   // Derived counts
-  const chemicalItemsCount = useMemo(
-    () => items.filter((i) => i.itemType === 'chemical' && i.status === 'active').length,
-    [items]
-  );
-  const firewoodItemsCount = useMemo(
-    () => items.filter((i) => i.itemType === 'firewood' && i.status === 'active').length,
-    [items]
-  );
   const totalActiveCount = useMemo(
     () => items.filter((i) => i.status === 'active').length,
     [items]
+  );
+  const inactiveCount = useMemo(
+    () => items.filter((i) => i.status === 'inactive').length,
+    [items]
+  );
+  const activeCategoriesCount = useMemo(
+    () => categories.filter((c) => c.status === 'active').length,
+    [categories]
   );
   const lowStockCount = useMemo(
     () => items.filter((i) => (i.currentStock || 0) <= (i.minimumStockLevel || 0) && i.status === 'active').length,
@@ -136,8 +147,14 @@ export const ItemMasterPage: React.FC = () => {
       list = list.filter((i) => i.status === 'inactive');
     }
 
-    if (typeFilter !== 'all') {
-      list = list.filter((i) => i.itemType === typeFilter);
+    if (categoryFilter !== 'all') {
+      list = list.filter((i) => {
+        const cat = categories.find((c) => c.categoryId === categoryFilter || c.id === categoryFilter);
+        return (
+          i.categoryId === categoryFilter ||
+          (cat && i.categoryName?.toLowerCase() === cat.categoryName?.toLowerCase())
+        );
+      });
     }
 
     if (searchQuery.trim()) {
@@ -147,23 +164,24 @@ export const ItemMasterPage: React.FC = () => {
           it.itemName?.toLowerCase().includes(q) ||
           it.itemCode?.toLowerCase().includes(q) ||
           it.categoryName?.toLowerCase().includes(q) ||
-          it.description?.toLowerCase().includes(q)
+          it.description?.toLowerCase().includes(q) ||
+          it.baseUnit?.toLowerCase().includes(q)
       );
     }
 
     return list;
-  }, [items, statusFilter, typeFilter, searchQuery]);
+  }, [items, statusFilter, categoryFilter, categories, searchQuery]);
 
   // Modal Handlers
-  const handleAddNewItem = (type: ItemType = 'chemical') => {
+  const handleAddNewItem = () => {
     setSelectedItemForEdit(null);
-    setItemModalDefaultType(type === 'firewood' ? 'firewood' : 'chemical');
+    setItemModalDefaultCategoryId(categoryFilter !== 'all' ? categoryFilter : undefined);
     setIsItemModalOpen(true);
   };
 
   const handleEditItem = (item: MasterItem) => {
     setSelectedItemForEdit(item);
-    setItemModalDefaultType(item.itemType);
+    setItemModalDefaultCategoryId(item.categoryId);
     setIsItemModalOpen(true);
   };
 
@@ -240,24 +258,6 @@ export const ItemMasterPage: React.FC = () => {
       )
     },
     {
-      header: 'Classification',
-      accessor: (row) => {
-        const isWood = row.itemType === 'firewood';
-        return (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-              isWood
-                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                : 'bg-indigo-50 text-indigo-800 border-indigo-200'
-            }`}
-          >
-            {isWood ? <Flame className="w-3.5 h-3.5 text-amber-600" /> : <FlaskConical className="w-3.5 h-3.5 text-indigo-600" />}
-            <span>{isWood ? 'Raw Wood' : 'Chemical'}</span>
-          </span>
-        );
-      }
-    },
-    {
       header: 'Category',
       accessor: (row) => (
         <span className="text-xs text-slate-700 font-medium">
@@ -282,21 +282,6 @@ export const ItemMasterPage: React.FC = () => {
       )
     },
     {
-      header: 'Current Stock',
-      accessor: (row) => {
-        const isLow = (row.currentStock || 0) <= (row.minimumStockLevel || 0);
-        return (
-          <span
-            className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${
-              isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
-            }`}
-          >
-            {row.currentStock || 0} {row.baseUnit}
-          </span>
-        );
-      }
-    },
-    {
       header: 'Status',
       accessor: (row) => (
         <StatusChip
@@ -312,51 +297,47 @@ export const ItemMasterPage: React.FC = () => {
           {/* View Details */}
           <button
             onClick={() => handleViewItem(row)}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 transition-colors"
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"
             title="View Details"
           >
-            <Eye className="w-4 h-4" />
+            View
           </button>
 
           {/* Edit */}
           <button
             onClick={() => handleEditItem(row)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs"
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs cursor-pointer"
             title="Edit Item"
           >
-            <Edit2 className="w-3.5 h-3.5" />
-            <span>Edit</span>
+            Edit
           </button>
 
           {/* Deactivate / Reactivate */}
           {row.status === 'active' ? (
             <button
               onClick={() => handleDeactivate(row)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs"
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs cursor-pointer"
               title="Deactivate Item"
             >
-              <Archive className="w-3.5 h-3.5" />
-              <span>Deactivate</span>
+              Deactivate
             </button>
           ) : (
             <button
               onClick={() => handleReactivate(row)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs"
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
               title="Reactivate Item"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reactivate</span>
+              Reactivate
             </button>
           )}
 
           {/* Delete */}
           <button
             onClick={() => handleDeleteItem(row)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs"
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
             title="Delete Item"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete</span>
+            Delete
           </button>
         </div>
       )
@@ -370,11 +351,11 @@ export const ItemMasterPage: React.FC = () => {
         <div
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${
             toast.type === 'success'
-              ? 'bg-emerald-900 text-white border-emerald-700'
-              : 'bg-rose-900 text-white border-rose-700'
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/25'
+              : 'bg-rose-600 text-white border-rose-500 shadow-rose-600/25'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4" />
+          <CheckCircle2 className="w-4 h-4 text-white" />
           <span>{toast.message}</span>
         </div>
       )}
@@ -392,20 +373,11 @@ export const ItemMasterPage: React.FC = () => {
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Chemicals</span>
-            <FlaskConical className="w-4 h-4 text-slate-400" />
+            <span>Item Categories</span>
+            <Layers className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="text-2xl font-black text-slate-900">{chemicalItemsCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Processing chemicals & dyes</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
-            <span>Raw Wood</span>
-            <Flame className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="text-2xl font-black text-slate-900">{firewoodItemsCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Boiler fuel supplies</div>
+          <div className="text-2xl font-black text-slate-900">{activeCategoriesCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">From General Settings</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
@@ -414,13 +386,22 @@ export const ItemMasterPage: React.FC = () => {
             <AlertTriangle className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-2xl font-black text-slate-900">{lowStockCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">At or below min stock</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">At or below alert level</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">
+            <span>Inactive Items</span>
+            <Archive className="w-4 h-4 text-slate-400" />
+          </div>
+          <div className="text-2xl font-black text-slate-900">{inactiveCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Retired from catalogue</div>
         </div>
       </div>
 
       {/* Main Container: Controls & Single Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Controls Toolbar: Search, Filters, and Single Add Item Button */}
+        {/* Controls Toolbar: Search, Category Filter from General Settings, Status Filter, and Add Item */}
         <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
           {/* Left: Search & Filters aligned horizontally */}
           <div className="flex flex-wrap items-center gap-2.5 min-w-0">
@@ -429,22 +410,31 @@ export const ItemMasterPage: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search name or code..."
+                placeholder="Search name, code, UOM..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full h-9 bg-white border border-slate-300 rounded-lg pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79]"
               />
             </div>
 
-            {/* Classification Filter Dropdown */}
+            {/* Dynamic Category Filter Dropdown (From General Settings) */}
             <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'chemical' | 'firewood')}
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
               className="h-9 bg-white border border-slate-300 rounded-lg px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
             >
-              <option value="all">All ({items.length})</option>
-              <option value="chemical">Chemicals ({chemicalItemsCount})</option>
-              <option value="firewood">Raw Wood ({firewoodItemsCount})</option>
+              <option value="all">All Categories ({items.length})</option>
+              {categories.map((c) => {
+                const catId = c.categoryId || c.id;
+                const count = items.filter(
+                  (it) => it.categoryId === catId || it.categoryName?.toLowerCase() === c.categoryName.toLowerCase()
+                ).length;
+                return (
+                  <option key={catId} value={catId}>
+                    {c.categoryName} ({count})
+                  </option>
+                );
+              })}
             </select>
 
             {/* Status Filter */}
@@ -459,14 +449,14 @@ export const ItemMasterPage: React.FC = () => {
             </select>
           </div>
 
-          {/* Right: Single Add Item Button */}
+          {/* Right: Add Item Button */}
           {isAdminOrManager && (
             <div className="flex items-center shrink-0">
               <Button
                 variant="primary"
                 size="sm"
                 icon={<Plus className="w-4 h-4" />}
-                onClick={() => handleAddNewItem(typeFilter === 'firewood' ? 'firewood' : 'chemical')}
+                onClick={handleAddNewItem}
               >
                 Add Item
               </Button>
@@ -477,15 +467,15 @@ export const ItemMasterPage: React.FC = () => {
         {/* Single Table View */}
         <div className="p-4">
           {loading ? (
-            <div className="py-16 text-center text-xs text-slate-400">Loading master items...</div>
+            <div className="py-16 text-center text-xs text-slate-400">Loading master catalogue items...</div>
           ) : filteredItems.length === 0 ? (
             <div className="py-16 text-center">
               <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-700">No master items found</p>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                {searchQuery || typeFilter !== 'all'
-                  ? 'Try clearing your search query or filters.'
-                  : 'Get started by creating your first Chemical or Raw Wood item.'}
+                {searchQuery || categoryFilter !== 'all'
+                  ? 'Try clearing your search query or category filters.'
+                  : 'Get started by creating your first master catalogue item.'}
               </p>
               {isAdminOrManager && (
                 <div className="mt-4 flex justify-center gap-2">
@@ -493,9 +483,9 @@ export const ItemMasterPage: React.FC = () => {
                     variant="primary"
                     size="sm"
                     icon={<Plus className="w-4 h-4" />}
-                    onClick={() => handleAddNewItem(typeFilter === 'firewood' ? 'firewood' : 'chemical')}
+                    onClick={handleAddNewItem}
                   >
-                    Add {typeFilter === 'firewood' ? 'Raw Wood' : 'Chemical'}
+                    Add Master Item
                   </Button>
                 </div>
               )}
@@ -512,7 +502,7 @@ export const ItemMasterPage: React.FC = () => {
         onClose={() => setIsItemModalOpen(false)}
         onSaved={handleItemSaved}
         initialItem={selectedItemForEdit}
-        defaultType={itemModalDefaultType}
+        defaultCategoryId={itemModalDefaultCategoryId}
         categories={categories}
         units={units}
         currentUser={currentUser}

@@ -60,7 +60,7 @@ export const exportMonthlySalaryToPdf = async (
     const perDayPay = noOfDays > 0 ? salary / noOfDays : 0;
 
     const empAtt = attendanceRecords.filter(r => r.employeeId === emp.employeeId);
-    const noOfPresent = empAtt.filter(r => r.status === 'Present' || r.status === 'N').length;
+    const noOfPresent = empAtt.reduce((sum, r) => r.status === 'P/N' ? sum + 2 : (r.status === 'Present' || r.status === 'N' ? sum + 1 : sum), 0);
     const noOfLeave = Math.max(0, noOfDays - noOfPresent);
     const paidLeave = Math.min(noOfLeave, 2);
     const paidDays = Math.min(noOfDays, noOfPresent + paidLeave);
@@ -230,6 +230,10 @@ export const exportFifteenDaysSalaryToPdf = async (
       let cellValue = '-';
       if (attRecord?.status === 'Present') {
         cellValue = 'P';
+        presentCount += 1;
+        dailyPresentCount[dIndex] += 1;
+      } else if (attRecord?.status === 'N') {
+        cellValue = 'N';
         presentCount += 1;
         dailyPresentCount[dIndex] += 1;
       } else if (attRecord?.status === 'P/N') {

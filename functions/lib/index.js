@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reactivateItem = exports.deactivateItem = exports.listItems = exports.getItem = exports.updateItem = exports.createItem = exports.getInvoiceHistory = exports.cancelInvoice = exports.finalizeInvoice = exports.createInvoiceDraft = exports.getInvoiceEligibleLines = exports.exportStatement = exports.getStatementInvoiceHistory = exports.approveStatementLineForInvoice = exports.getStatementColourSummary = exports.getStatementData = exports.getStatementFilters = exports.reverseOutwardEntry = exports.updateOutwardDraft = exports.listOutwardEntries = exports.getOutwardEntry = exports.postOutwardEntry = exports.createOutwardDraft = exports.getOutwardBalances = exports.getEligibleOutwardPurchaseOrders = exports.deleteInwardReceipt = exports.reverseInwardReceipt = exports.updateInwardDraft = exports.listInwardReceipts = exports.getInwardReceipt = exports.postInwardReceipt = exports.createInwardDraft = exports.getInwardBalances = exports.getEligiblePurchaseOrders = exports.generateInwardNumber = exports.amendPurchaseOrder = exports.cancelPurchaseOrder = exports.rejectPurchaseOrder = exports.approvePurchaseOrder = exports.submitPurchaseOrder = exports.updatePurchaseOrder = exports.createPurchaseOrder = exports.archiveVendorDocument = exports.assignVendorParent = exports.setVendorContactStatus = exports.updateVendorContact = exports.addVendorContact = exports.setVendorStatus = exports.updateVendor = exports.createVendor = void 0;
-exports.getItemUsageHistory = exports.getItemStockSummary = exports.updateUnitOfMeasure = exports.createUnitOfMeasure = exports.updateItemCategory = exports.createItemCategory = exports.updateChemicalDetails = exports.createChemicalDetails = void 0;
+exports.receiveRawMaterialPurchase = exports.createRawMaterialPurchase = exports.getWarehouseDashboardMetrics = exports.recordStockTransaction = exports.getItemUsageHistory = exports.getItemStockSummary = exports.updateUnitOfMeasure = exports.createUnitOfMeasure = exports.updateItemCategory = exports.createItemCategory = exports.updateChemicalDetails = exports.createChemicalDetails = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
@@ -1822,4 +1822,12 @@ Object.defineProperty(exports, "createUnitOfMeasure", { enumerable: true, get: f
 Object.defineProperty(exports, "updateUnitOfMeasure", { enumerable: true, get: function () { return itemFunctions_1.updateUnitOfMeasure; } });
 Object.defineProperty(exports, "getItemStockSummary", { enumerable: true, get: function () { return itemFunctions_1.getItemStockSummary; } });
 Object.defineProperty(exports, "getItemUsageHistory", { enumerable: true, get: function () { return itemFunctions_1.getItemUsageHistory; } });
+// Warehouse Management Cloud Functions
+var warehouseFunctions_1 = require("./warehouseFunctions");
+Object.defineProperty(exports, "recordStockTransaction", { enumerable: true, get: function () { return warehouseFunctions_1.recordStockTransaction; } });
+Object.defineProperty(exports, "getWarehouseDashboardMetrics", { enumerable: true, get: function () { return warehouseFunctions_1.getWarehouseDashboardMetrics; } });
+// Raw Material Purchase Cloud Functions
+var purchaseFunctions_1 = require("./purchaseFunctions");
+Object.defineProperty(exports, "createRawMaterialPurchase", { enumerable: true, get: function () { return purchaseFunctions_1.createRawMaterialPurchase; } });
+Object.defineProperty(exports, "receiveRawMaterialPurchase", { enumerable: true, get: function () { return purchaseFunctions_1.receiveRawMaterialPurchase; } });
 //# sourceMappingURL=index.js.map

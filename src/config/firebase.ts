@@ -6,6 +6,7 @@ import {
   persistentMultipleTabManager
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : ((globalThis as any).process?.env || {});
 
@@ -33,6 +34,7 @@ export const db = initializeFirestore(app, {
 });
 
 export const storage = getStorage(app);
+export const functions = getFunctions(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export default app;

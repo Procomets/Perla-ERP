@@ -14,6 +14,7 @@ interface EmployeePdfModalProps {
     totalPresent: number;
     totalAbsent: number;
     percent: number;
+    totalHours?: number;
   };
 }
 
@@ -219,19 +220,18 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
                       <th className="py-2.5 px-3 text-center">Calendar Days</th>
                       <th className="py-2.5 px-3 text-center">Working Days</th>
                       <th className="py-2.5 px-3 text-center text-emerald-700">Present (P)</th>
-                      {isLabour ? (
-                        <th className="py-2.5 px-3 text-center text-sky-700">Double Duty (P/N)</th>
-                      ) : (
-                        <th className="py-2.5 px-3 text-center text-purple-700">Night Shift (N)</th>
-                      )}
+                      <th className="py-2.5 px-3 text-center text-purple-700">Night (N)</th>
+                      <th className="py-2.5 px-3 text-center text-sky-700">Double (P/N)</th>
                       <th className="py-2.5 px-3 text-center text-rose-700">Absent (AB)</th>
+                      <th className="py-2.5 px-3 text-center text-indigo-700 font-bold">Hours</th>
                       <th className="py-2.5 px-3 text-center text-slate-800">Attendance %</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {monthlyStats.map((stat) => {
-                      const effectivePresent = stat.presentDays + (isLabour ? stat.pnDays * 2 : 0);
+                      const effectivePresent = stat.presentDays + stat.nightDays + (stat.pnDays * 2);
                       const rate = stat.workingDays > 0 ? Math.round((effectivePresent / stat.workingDays) * 100) : 0;
+                      const hoursStr = stat.totalWorkingHours && stat.totalWorkingHours > 0 ? `${stat.totalWorkingHours}` : '-';
 
                       return (
                         <tr key={stat.monthName} className="hover:bg-slate-50/60">
@@ -239,8 +239,10 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
                           <td className="py-2 px-3 text-center text-slate-500">{stat.totalDays}</td>
                           <td className="py-2 px-3 text-center text-slate-700 font-medium">{stat.workingDays}</td>
                           <td className="py-2 px-3 text-center font-bold text-emerald-700">{stat.presentDays}</td>
+                          <td className="py-2 px-3 text-center font-bold text-purple-700">{stat.nightDays}</td>
                           <td className="py-2 px-3 text-center font-bold text-sky-700">{stat.pnDays}</td>
                           <td className="py-2 px-3 text-center font-bold text-rose-700">{stat.absentDays}</td>
+                          <td className="py-2 px-3 text-center font-bold text-indigo-700">{hoursStr}</td>
                           <td className="py-2 px-3 text-center font-bold text-slate-800">{rate}%</td>
                         </tr>
                       );
@@ -251,8 +253,10 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
                       <td className="py-2.5 px-3 text-center text-slate-500">-</td>
                       <td className="py-2.5 px-3 text-center">{totals.totalWorking}</td>
                       <td className="py-2.5 px-3 text-center text-emerald-700">{totals.totalPresent}</td>
+                      <td className="py-2.5 px-3 text-center text-purple-700">-</td>
                       <td className="py-2.5 px-3 text-center text-sky-700">-</td>
                       <td className="py-2.5 px-3 text-center text-rose-700">{totals.totalAbsent}</td>
+                      <td className="py-2.5 px-3 text-center text-indigo-700">{totals.totalHours && totals.totalHours > 0 ? `${totals.totalHours}` : '-'}</td>
                       <td className="py-2.5 px-3 text-center">{totals.percent}%</td>
                     </tr>
                   </tbody>

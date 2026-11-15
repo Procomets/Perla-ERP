@@ -187,20 +187,20 @@ export const SalarySheetPage: React.FC = () => {
       {/* Toast Notice */}
       {noticeMessage && (
         <div
-          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in slide-in-from-top-3 duration-150 ${
+          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-semibold animate-in slide-in-from-top-3 duration-150 ${
             noticeMessage.type === 'success'
-              ? 'bg-slate-900 border-slate-800 text-white'
+              ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/25'
               : noticeMessage.type === 'error'
-              ? 'bg-rose-50 border-rose-200 text-rose-700'
-              : 'bg-blue-50 border-blue-200 text-blue-700'
+              ? 'bg-rose-600 border-rose-500 text-white shadow-rose-600/25'
+              : 'bg-blue-600 border-blue-500 text-white shadow-blue-600/25'
           }`}
         >
           {noticeMessage.type === 'success' ? (
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-white shrink-0" />
           ) : noticeMessage.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-white shrink-0" />
           ) : (
-            <Info className="w-4 h-4 text-blue-500 shrink-0" />
+            <Info className="w-4 h-4 text-white shrink-0" />
           )}
           <span>{noticeMessage.text}</span>
         </div>

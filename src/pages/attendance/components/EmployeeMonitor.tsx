@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronUp, FileDown } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileDown, Clock } from 'lucide-react';
 import { EmployeeMaster } from '../../../types/employee';
 import { AttendanceRecord } from '../../../types/attendance';
-import { AttendanceService } from '../../../services/attendanceService';
+import { AttendanceService, calculateWorkingHours, formatTime24To12 } from '../../../services/attendanceService';
 import { EmployeePdfModal } from './EmployeePdfModal';
 
 interface EmployeeMonitorProps {
@@ -73,9 +73,17 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
       const workingDays = daysInMonth - sundaysCount;
 
       const monthRecords = records.filter((r) => r.monthYear === monthStr);
-      const presentDays = monthRecords.filter((r) => r.status === 'Present' || r.status === 'N').length;
+      const presentDays = monthRecords.filter((r) => r.status === 'Present').length;
+      const nightDays = monthRecords.filter((r) => r.status === 'N').length;
       const pnDays = monthRecords.filter((r) => r.status === 'P/N').length;
       const absentDays = monthRecords.filter((r) => r.status === 'Absent').length;
+
+      // Calculate monthly working hours dynamically
+      const totalWorkingHours = monthRecords.reduce((sum, r) => {
+        if (r.workingHours && r.workingHours > 0) return sum + r.workingHours;
+        if (r.timeIn && r.timeOut) return sum + calculateWorkingHours(r.timeIn, r.timeOut);
+        return sum;
+      }, 0);
 
       return {
         monthIndex: index,
@@ -84,8 +92,10 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
         totalDays: daysInMonth,
         workingDays,
         presentDays,
+        nightDays,
         pnDays,
         absentDays,
+        totalWorkingHours: Math.round(totalWorkingHours * 100) / 100,
         records: monthRecords
       };
     });
@@ -94,11 +104,18 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
   // Yearly totals
   const totals = useMemo(() => {
     const totalWorking = monthStats.reduce((acc, m) => acc + m.workingDays, 0);
-    const totalPresent = monthStats.reduce((acc, m) => acc + m.presentDays + (isLabour ? m.pnDays * 2 : m.pnDays), 0);
+    const totalPresent = monthStats.reduce((acc, m) => acc + m.presentDays + m.nightDays + (m.pnDays * 2), 0);
     const totalAbsent = monthStats.reduce((acc, m) => acc + m.absentDays, 0);
+    const totalHours = monthStats.reduce((acc, m) => acc + (m.totalWorkingHours || 0), 0);
     const percent = totalWorking > 0 ? Math.round((totalPresent / totalWorking) * 100) : 0;
-    return { totalWorking, totalPresent, totalAbsent, percent };
-  }, [monthStats, isLabour]);
+    return {
+      totalWorking,
+      totalPresent,
+      totalAbsent,
+      totalHours: Math.round(totalHours * 100) / 100,
+      percent
+    };
+  }, [monthStats]);
 
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
@@ -152,7 +169,7 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
         <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Working Days</span>
           <span className="text-xl font-bold text-slate-900 mt-1 block">{totals.totalWorking}</span>
@@ -164,6 +181,13 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
         <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[10px] font-bold uppercase text-slate-400 block">Days Absent</span>
           <span className="text-xl font-bold text-rose-700 mt-1 block">{totals.totalAbsent}</span>
+        </div>
+        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block flex items-center gap-1">
+            <Clock className="w-3 h-3 text-indigo-500" />
+            Working Hours
+          </span>
+          <span className="text-xl font-bold text-indigo-700 mt-1 block">{totals.totalHours}</span>
         </div>
         <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[10px] font-bold uppercase text-slate-400 block">Attendance Rate</span>
@@ -181,15 +205,17 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
                 <th className="py-2.5 px-4 font-bold text-slate-700">Month</th>
                 <th className="py-2.5 px-3 text-center">Calendar Days</th>
                 <th className="py-2.5 px-3 text-center">Working Days</th>
-                <th className="py-2.5 px-3 text-center text-emerald-700">Present</th>
-                {isLabour && <th className="py-2.5 px-3 text-center text-sky-700">P/N (Double)</th>}
-                <th className="py-2.5 px-3 text-center text-rose-700">Absent</th>
+                <th className="py-2.5 px-3 text-center text-emerald-700">Present (P)</th>
+                <th className="py-2.5 px-3 text-center text-purple-700">Night (N)</th>
+                <th className="py-2.5 px-3 text-center text-sky-700">Double (P/N)</th>
+                <th className="py-2.5 px-3 text-center text-rose-700">Absent (AB)</th>
+                <th className="py-2.5 px-3 text-center text-indigo-700 font-bold">Total Working Hours</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                  <td colSpan={9} className="py-8 text-center text-slate-400">
                     Loading yearly records...
                   </td>
                 </tr>
@@ -207,14 +233,24 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
                         <td className="py-2.5 px-3 text-center text-slate-600">{stat.totalDays}</td>
                         <td className="py-2.5 px-3 text-center text-slate-700 font-medium">{stat.workingDays}</td>
                         <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{stat.presentDays}</td>
-                        {isLabour && <td className="py-2.5 px-3 text-center font-bold text-sky-700">{stat.pnDays}</td>}
+                        <td className="py-2.5 px-3 text-center font-bold text-purple-700">{stat.nightDays}</td>
+                        <td className="py-2.5 px-3 text-center font-bold text-sky-700">{stat.pnDays}</td>
                         <td className="py-2.5 px-3 text-center font-bold text-rose-700">{stat.absentDays}</td>
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-800">
+                          {stat.totalWorkingHours > 0 ? (
+                            <span className="font-mono text-xs">
+                              {stat.totalWorkingHours}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">-</span>
+                          )}
+                        </td>
                       </tr>
 
                       {/* Expandable Date Breakdown */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="p-4 bg-slate-50/70 border-y border-slate-200">
+                          <td colSpan={9} className="p-4 bg-slate-50/70 border-y border-slate-200">
                             <div className="space-y-2">
                               <span className="text-[11px] font-bold text-slate-600 block">
                                 Day-by-Day Attendance: {stat.monthName} {selectedYear}
@@ -246,14 +282,22 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
                                     label = 'Sun';
                                   }
 
+                                  const hoursVal = rec?.workingHours || (rec?.timeIn && rec?.timeOut ? calculateWorkingHours(rec.timeIn, rec.timeOut) : 0);
+                                  const timingTitle = rec?.timeIn
+                                    ? ` • In: ${formatTime24To12(rec.timeIn)}${rec.timeOut ? ` | Out: ${formatTime24To12(rec.timeOut)}` : ''}${hoursVal > 0 ? ` (${hoursVal} hrs)` : ''}`
+                                    : '';
+
                                   return (
                                     <div
                                       key={day}
                                       className={`p-1.5 rounded-lg text-center flex flex-col items-center justify-center ${badge}`}
-                                      title={`${dateStr}: ${label}`}
+                                      title={`${dateStr}: ${label}${timingTitle}`}
                                     >
                                       <span className="text-[9px] opacity-70 leading-none">{day}</span>
                                       <span className="text-[10px] font-bold mt-0.5 leading-none">{label}</span>
+                                      {hoursVal > 0 && (
+                                        <span className="text-[8px] font-mono opacity-80 mt-0.5 leading-none">{hoursVal}</span>
+                                      )}
                                     </div>
                                   );
                                 })}

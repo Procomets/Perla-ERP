@@ -54,7 +54,12 @@ export const LEGACY_DUMMY_ITEM_IDS = [
   'item-chm-01',
   'item-chm-02',
   'item-fwd-01',
-  'item-raw-01'
+  'item-raw-01',
+  'itm-1',
+  'itm-2',
+  'itm-3',
+  'itm-4',
+  'itm-5'
 ];
 
 const memoryStore: Record<string, string> = {};
@@ -311,7 +316,7 @@ export class ItemService {
       taxRatePercent: itemData.taxRatePercent,
       batchTrackingEnabled: Boolean(itemData.batchTrackingEnabled || itemData.chemicalDetails?.batchTrackingRequired),
       expiryTrackingEnabled: Boolean(itemData.expiryTrackingEnabled || itemData.chemicalDetails?.expiryTrackingRequired),
-      status: 'active',
+      status: itemData.status || 'active',
       currentStock: itemData.currentStock || 0,
       remarks: itemData.remarks,
       createdBy: user.uid,
@@ -329,7 +334,7 @@ export class ItemService {
         chemicalCode: itemCode,
         chemicalName: newItem.itemName,
         chemicalDisplayName: itemData.chemicalDetails.chemicalDisplayName || newItem.itemName,
-        active: true,
+        active: itemData.status !== 'inactive',
         createdAt: now,
         updatedAt: now
       };

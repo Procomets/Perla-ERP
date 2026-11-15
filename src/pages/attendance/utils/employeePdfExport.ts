@@ -7,8 +7,10 @@ export interface MonthlyStatsItem {
   totalDays: number;
   workingDays: number;
   presentDays: number;
+  nightDays: number;
   pnDays: number;
   absentDays: number;
+  totalWorkingHours?: number;
 }
 
 export interface EmployeePdfExportParams {
@@ -20,6 +22,7 @@ export interface EmployeePdfExportParams {
     totalPresent: number;
     totalAbsent: number;
     percent: number;
+    totalHours?: number;
   };
 }
 
@@ -193,23 +196,24 @@ export const exportEmployeeReportToPdf = async (params: EmployeePdfExportParams)
   doc.text(`3. Month-by-Month Muster Breakdown (${selectedYear})`, marginX, currentY);
   currentY += 10;
 
-  const isLabour = employee.employeeType === 'Labour';
-
-  const tableHeaders = isLabour
-    ? [['Month', 'Calendar Days', 'Working Days', 'Present (P)', 'Double (P/N)', 'Absent (AB)', 'Rate %']]
-    : [['Month', 'Calendar Days', 'Working Days', 'Present (P)', 'Night (N)', 'Absent (AB)', 'Rate %']];
+  const tableHeaders = [
+    ['Month', 'Calendar Days', 'Working Days', 'Present (P)', 'Night (N)', 'Double (P/N)', 'Absent (AB)', 'Hours', 'Rate %']
+  ];
 
   const tableRows = monthlyStats.map((stat) => {
-    const effectivePresent = stat.presentDays + (isLabour ? stat.pnDays * 2 : 0);
+    const effectivePresent = stat.presentDays + stat.nightDays + (stat.pnDays * 2);
     const rate = stat.workingDays > 0 ? `${Math.round((effectivePresent / stat.workingDays) * 100)}%` : '0%';
+    const hoursStr = stat.totalWorkingHours && stat.totalWorkingHours > 0 ? `${stat.totalWorkingHours}h` : '-';
 
     return [
       stat.monthName,
       String(stat.totalDays),
       String(stat.workingDays),
       String(stat.presentDays),
+      String(stat.nightDays),
       String(stat.pnDays),
       String(stat.absentDays),
+      hoursStr,
       rate
     ];
   });
@@ -217,13 +221,16 @@ export const exportEmployeeReportToPdf = async (params: EmployeePdfExportParams)
   // Append Total Row
   const totalEffectivePresent = totals.totalPresent;
   const totalRate = totals.totalWorking > 0 ? `${totals.percent}%` : '0%';
+  const totalHoursStr = totals.totalHours && totals.totalHours > 0 ? `${totals.totalHours}h` : '-';
   tableRows.push([
     'FULL YEAR TOTAL',
     '-',
     String(totals.totalWorking),
-    String(totals.totalPresent),
+    String(totalEffectivePresent),
+    '-',
     '-',
     String(totals.totalAbsent),
+    totalHoursStr,
     totalRate
   ]);
 

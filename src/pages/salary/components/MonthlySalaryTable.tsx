@@ -181,7 +181,7 @@ export const MonthlySalaryTable = React.forwardRef<SalaryTableRef, MonthlySalary
 
               // Attendance & Leave calculations (Matching exact formula)
               const empAtt = attendanceRecords.filter((r) => r.employeeId === emp.employeeId);
-              const noOfPresent = empAtt.filter((r) => r.status === 'Present' || r.status === 'N').length;
+              const noOfPresent = empAtt.reduce((sum, r) => r.status === 'P/N' ? sum + 2 : (r.status === 'Present' || r.status === 'N' ? sum + 1 : sum), 0);
               const noOfLeave = Math.max(0, noOfDays - noOfPresent);
               const paidLeave = Math.min(noOfLeave, 2);
               const paidDays = Math.min(noOfDays, noOfPresent + paidLeave);

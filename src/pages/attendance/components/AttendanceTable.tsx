@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { EmployeeMaster } from '../../../types/employee';
 import { AttendanceRecord, AttendanceStatus } from '../../../types/attendance';
+import { formatTime24To12 } from '../../../services/attendanceService';
 
 interface AttendanceTableProps {
   employees: EmployeeMaster[];
@@ -211,12 +212,15 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                     }
 
                     const isClickable = isAdmin || (isTod && !isSettingsBlocked && !isTimeBlocked);
+                    const timingDetails = record?.timeIn
+                      ? ` • In: ${formatTime24To12(record.timeIn)}${record.timeOut ? ` | Out: ${formatTime24To12(record.timeOut)} (${record.workingHours || 0})` : ' (In Progress)'}`
+                      : '';
 
                     return (
                       <td
                         key={day}
                         onClick={() => handleCellClick(emp.employeeId, day)}
-                        title={`${emp.fullName} - ${dateStr} (${text})`}
+                        title={`${emp.fullName} - ${dateStr} (${text})${timingDetails}`}
                         style={{ backgroundColor: bgColor }}
                         className={`p-0 h-10 min-h-[40px] w-9 min-w-[38px] text-center border-r border-b border-[#e0e0e0] transition-colors select-none ${
                           isClickable ? 'cursor-pointer hover:brightness-95' : 'cursor-default'

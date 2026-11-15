@@ -194,7 +194,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
               />
             )}
             {moduleId === 'chemical' && <ChemicalEntryPage entries={props.chemicalEntries} pos={props.pos} onAddEntry={props.onAddChemicalEntry} />}
-            {moduleId === 'warehouse' && <WarehousePage inventory={props.inventory} />}
+            {moduleId === 'warehouse' && <WarehousePage />}
             {moduleId === 'purchases' && <PurchasesPage />}
             {moduleId === 'employees' && <EmployeeMasterPage />}
             {moduleId === 'attendance' && <AttendancePage employees={props.employees} />}

@@ -5,7 +5,6 @@ import {
   Clock,
   Lock,
   Unlock,
-  Settings,
   Download,
   Printer,
   Search,
@@ -19,10 +18,10 @@ import { useAuth } from '../../context/AuthContext';
 import { EmployeeMaster } from '../../types/employee';
 import { EmployeeService } from '../../services/employeeService';
 import { AttendanceRecord, AttendanceStatus, GeneralSettings } from '../../types/attendance';
-import { AttendanceService, DEFAULT_GENERAL_SETTINGS } from '../../services/attendanceService';
+import { AttendanceService, DEFAULT_GENERAL_SETTINGS, calculateShiftStatus } from '../../services/attendanceService';
 import { AttendanceTable } from './components/AttendanceTable';
 import { EmployeeMonitor } from './components/EmployeeMonitor';
-import { GeneralSettingsModal } from './components/GeneralSettingsModal';
+import { TodayAttendanceView } from './components/TodayAttendanceView';
 import { exportAttendanceToExcel } from './utils/attendanceExcelExport';
 
 interface AttendancePageProps {
@@ -43,8 +42,8 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
   const [currentYear, setCurrentYear] = useState<number>(now.getFullYear());
   const [currentMonth, setCurrentMonth] = useState<number>(now.getMonth()); // 0-indexed
 
-  // State: Tab (0 = Monthly, 1 = Labour, 2 = Monitor)
-  const [activeTab, setActiveTab] = useState<number>(0);
+  // State: Tab (3 = Today's Attendance default, 0 = Monthly, 1 = Labour, 2 = Monitor)
+  const [activeTab, setActiveTab] = useState<number>(3);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // State: Data
@@ -54,8 +53,9 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [isTimeBlocked, setIsTimeBlocked] = useState<boolean>(false);
 
-  // Modals & Notices
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  // State: Modals & Notices
+  const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const [targetDateForModal, setTargetDateForModal] = useState<string>(todayDateStr);
   const [noticeMessage, setNoticeMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
 
   const monthYearStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
@@ -93,13 +93,28 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
     }
   };
 
+  // Live real-time subscription to General Settings + Initial fetch
   useEffect(() => {
     fetchEmployeesAndSettings();
+    const unsubscribeSettings = AttendanceService.subscribeGeneralSettings((liveSettings) => {
+      setSettings(liveSettings);
+    });
+    return () => {
+      unsubscribeSettings();
+    };
   }, []);
 
   useEffect(() => {
     fetchMonthlyAttendance();
   }, [monthYearStr]);
+
+  // Combined Refresh Handler
+  const handleRefresh = async () => {
+    await Promise.all([
+      fetchMonthlyAttendance(),
+      fetchEmployeesAndSettings()
+    ]);
+  };
 
   // Check timing restriction for non-admin users
   useEffect(() => {
@@ -158,14 +173,22 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
     const emp = employees.find((e) => e.employeeId === employeeId);
     const isLabour = emp?.employeeType === 'Labour';
 
-    // Status transition:
-    // Labour: null -> Present -> Absent -> P/N -> null
-    // Monthly: null -> Present -> Absent -> N -> null
+    // All 4 statuses for both Monthly Salary and Daily Salary / Labour employees:
+    // null (-) -> Present (P) -> Night Shift (N) -> Double Shift (P/N) -> Absent (AB) -> null (-)
     let nextStatus: AttendanceStatus | null = null;
-    if (currentStatus === null) nextStatus = 'Present';
-    else if (currentStatus === 'Present') nextStatus = 'Absent';
-    else if (currentStatus === 'Absent') nextStatus = isLabour ? 'P/N' : 'N';
-    else nextStatus = null;
+    if (!currentStatus) {
+      nextStatus = 'Present';
+    } else if (currentStatus === 'Present') {
+      nextStatus = 'N';
+    } else if (currentStatus === 'N') {
+      nextStatus = 'P/N';
+    } else if (currentStatus === 'P/N') {
+      nextStatus = 'Absent';
+    } else if (currentStatus === 'Absent') {
+      nextStatus = null;
+    } else {
+      nextStatus = 'Present';
+    }
 
     // Optimistic UI update
     setAttendanceRecords((prev) => {
@@ -199,16 +222,68 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
     }
   };
 
-  // Update General Settings in Firebase
-  const handleSaveGeneralSettings = async (updated: Partial<GeneralSettings>) => {
+  // Record Time-based Attendance (Time In, Time Out, Working Hours)
+  const handleRecordTimeAttendance = async (
+    employeeId: string,
+    data: {
+      timeIn?: string | null;
+      timeOut?: string | null;
+      status?: AttendanceStatus;
+      workingHours?: number;
+    }
+  ) => {
+    const targetDate = targetDateForModal;
+    const targetMonthYear = targetDate.substring(0, 7);
+
+    // Optimistically update attendanceRecords in parent so table immediately shows calculated shift status
+    setAttendanceRecords((prev) => {
+      const existingIdx = prev.findIndex((r) => r.employeeId === employeeId && r.date === targetDate);
+      const existing = existingIdx >= 0 ? prev[existingIdx] : undefined;
+      const effectiveTimeIn = data.timeIn !== undefined ? data.timeIn : existing?.timeIn;
+      const effectiveTimeOut = data.timeOut !== undefined ? data.timeOut : existing?.timeOut;
+      const effectiveHours = data.workingHours !== undefined ? data.workingHours : existing?.workingHours;
+      const updatedStatus: AttendanceStatus =
+        data.status || calculateShiftStatus(effectiveTimeIn, effectiveTimeOut, effectiveHours);
+
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = {
+          ...copy[existingIdx],
+          ...data,
+          status: updatedStatus,
+          markedBy: currentUserEmail
+        };
+        return copy;
+      } else {
+        return [
+          ...prev,
+          {
+            employeeId,
+            date: targetDate,
+            monthYear: targetMonthYear,
+            status: updatedStatus,
+            timeIn: data.timeIn ?? null,
+            timeOut: data.timeOut ?? null,
+            workingHours: data.workingHours ?? 0,
+            markedBy: currentUserEmail
+          }
+        ];
+      }
+    });
+
     try {
-      await AttendanceService.updateGeneralSettings(updated, currentUserEmail);
-      setSettings((prev) => ({ ...prev, ...updated }));
-      showNotice('success', 'General attendance settings updated successfully in Firebase.');
+      await AttendanceService.recordTimeAttendance(
+        employeeId,
+        targetDate,
+        targetMonthYear,
+        data,
+        currentUserEmail
+      );
+      showNotice('success', 'Attendance timing saved live to Firebase.');
     } catch (err: any) {
-      console.error('Failed to update general settings:', err);
-      showNotice('error', 'Failed to save settings.');
-      throw err;
+      console.error('Failed to record time attendance:', err);
+      showNotice('error', 'Failed to save attendance timing.');
+      await fetchMonthlyAttendance();
     }
   };
 
@@ -253,20 +328,20 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
       {/* Toast Notice */}
       {noticeMessage && (
         <div
-          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in slide-in-from-top-3 duration-150 ${
+          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-semibold animate-in slide-in-from-top-3 duration-150 ${
             noticeMessage.type === 'success'
-              ? 'bg-slate-900 border-slate-800 text-white'
+              ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/25'
               : noticeMessage.type === 'error'
-              ? 'bg-rose-50 border-rose-200 text-rose-700'
-              : 'bg-blue-50 border-blue-200 text-blue-700'
+              ? 'bg-rose-600 border-rose-500 text-white shadow-rose-600/25'
+              : 'bg-blue-600 border-blue-500 text-white shadow-blue-600/25'
           }`}
         >
           {noticeMessage.type === 'success' ? (
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-white shrink-0" />
           ) : noticeMessage.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-white shrink-0" />
           ) : (
-            <Info className="w-4 h-4 text-blue-500 shrink-0" />
+            <Info className="w-4 h-4 text-white shrink-0" />
           )}
           <span>{noticeMessage.text}</span>
         </div>
@@ -301,17 +376,6 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition cursor-pointer"
-            >
-              <Settings className="w-3.5 h-3.5 text-slate-500" />
-              <span>Timing Settings</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={handleExportExcel}
@@ -382,11 +446,25 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
 
           <button
             type="button"
-            onClick={fetchMonthlyAttendance}
-            title="Refresh Attendance Records"
+            onClick={handleRefresh}
+            title="Refresh Attendance Records & Settings"
             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Enter Today's Attendance Button */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(3)}
+            className={`inline-flex items-center px-3.5 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer border ${
+              activeTab === 3
+                ? 'bg-slate-100 text-slate-900 border-slate-400'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+            title="Open Today's Time In / Time Out Attendance Section"
+          >
+            <span>Enter Today&apos;s Attendance</span>
           </button>
         </div>
 
@@ -406,7 +484,22 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
       {/* Main Tab Card */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
         {/* Tab Headers */}
-        <div className="flex items-center border-b border-slate-100 bg-slate-50/50 px-4 pt-2">
+        <div className="flex items-center border-b border-slate-100 bg-slate-50/50 px-4 pt-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveTab(3)}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              activeTab === 3
+                ? 'border-slate-900 text-slate-900 bg-white rounded-t-lg'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
+            }`}
+          >
+            <span>Today&apos;s Attendance</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono">
+              Live
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab(0)}
@@ -455,7 +548,16 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
 
         {/* Tab Content */}
         <div>
-          {activeTab === 2 ? (
+          {activeTab === 3 ? (
+            <TodayAttendanceView
+              employees={employees}
+              attendanceRecords={attendanceRecords}
+              onRecordAttendance={handleRecordTimeAttendance}
+              targetDate={targetDateForModal}
+              onTargetDateChange={(d) => setTargetDateForModal(d)}
+              defaultCategory="Monthly Salary"
+            />
+          ) : activeTab === 2 ? (
             <EmployeeMonitor employees={employees} currentYear={currentYear} />
           ) : loading ? (
             <div className="py-16 text-center text-slate-400 text-xs">
@@ -479,7 +581,7 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
         </div>
 
         {/* Legend Footer */}
-        {activeTab !== 2 && (
+        {activeTab !== 2 && activeTab !== 3 && (
           <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-1.5">
@@ -494,6 +596,26 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
 
               <div className="flex items-center gap-1.5">
                 <span
+                  style={{ backgroundColor: '#ede7f6', color: '#4527a0', borderColor: '#d1c4e9' }}
+                  className="w-6 h-6 border flex items-center justify-center rounded font-semibold text-xs"
+                >
+                  N
+                </span>
+                <span>Night Shift</span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span
+                  style={{ backgroundColor: '#e3f2fd', color: '#1565c0', borderColor: '#bbdefb' }}
+                  className="px-1.5 h-6 border flex items-center justify-center rounded font-semibold text-xs"
+                >
+                  P/N
+                </span>
+                <span>Double Shift</span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span
                   style={{ backgroundColor: '#ffebee', color: '#c62828', borderColor: '#ffcdd2' }}
                   className="w-6 h-6 border flex items-center justify-center rounded font-semibold text-xs"
                 >
@@ -501,28 +623,6 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
                 </span>
                 <span>Absent</span>
               </div>
-
-              {activeTab === 1 ? (
-                <div className="flex items-center gap-1.5">
-                  <span
-                    style={{ backgroundColor: '#e3f2fd', color: '#1565c0', borderColor: '#bbdefb' }}
-                    className="px-1.5 h-6 border flex items-center justify-center rounded font-semibold text-xs"
-                  >
-                    P/N
-                  </span>
-                  <span>Present + Night Shift (2 Days)</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <span
-                    style={{ backgroundColor: '#ede7f6', color: '#4527a0', borderColor: '#d1c4e9' }}
-                    className="w-6 h-6 border flex items-center justify-center rounded font-semibold text-xs"
-                  >
-                    N
-                  </span>
-                  <span>Night Shift</span>
-                </div>
-              )}
 
               <div className="flex items-center gap-1.5">
                 <span
@@ -551,15 +651,6 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
           </div>
         )}
       </div>
-
-      {/* Admin General Settings Modal */}
-      <GeneralSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSave={handleSaveGeneralSettings}
-        currentUserEmail={currentUserEmail}
-      />
     </div>
   );
 };

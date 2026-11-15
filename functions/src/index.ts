@@ -2280,5 +2280,17 @@ export {
   getItemUsageHistory
 } from './itemFunctions';
 
+// Warehouse Management Cloud Functions
+export {
+  recordStockTransaction,
+  getWarehouseDashboardMetrics
+} from './warehouseFunctions';
+
+// Raw Material Purchase Cloud Functions
+export {
+  createRawMaterialPurchase,
+  receiveRawMaterialPurchase
+} from './purchaseFunctions';
+
 
 

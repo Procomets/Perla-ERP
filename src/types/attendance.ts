@@ -6,6 +6,9 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   monthYear: string; // YYYY-MM
   status: AttendanceStatus;
+  timeIn?: string | null; // HH:mm format, e.g. "09:30"
+  timeOut?: string | null; // HH:mm format, e.g. "18:00"
+  workingHours?: number; // Total working hours (decimal, e.g. 8.5)
   markedBy: string;
   updatedAt?: any; // Firestore Timestamp
 }

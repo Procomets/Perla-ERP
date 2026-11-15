@@ -241,16 +241,16 @@ export const EmployeeMasterPage: React.FC = () => {
       {/* Feedback Toast */}
       {feedbackMessage && (
         <div
-          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-3.5 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in slide-in-from-top-3 duration-150 ${
+          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-3.5 py-2.5 rounded-xl shadow-lg border text-xs font-semibold animate-in slide-in-from-top-3 duration-150 ${
             feedbackMessage.type === 'success'
-              ? 'bg-slate-900 border-slate-800 text-white'
-              : 'bg-rose-50 border-rose-200 text-rose-700'
+              ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/25'
+              : 'bg-rose-600 border-rose-500 text-white shadow-rose-600/25'
           }`}
         >
           {feedbackMessage.type === 'success' ? (
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-white shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-white shrink-0" />
           )}
           <span>{feedbackMessage.text}</span>
         </div>
