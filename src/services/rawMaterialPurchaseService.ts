@@ -494,6 +494,7 @@ export class RawMaterialPurchaseService {
           {
             itemId: line.itemId,
             quantity: line.quantity,
+            rate: line.rate,
             source: 'PURCHASE_RECEIPT',
             referenceNumber: existing.purchaseNumber,
             referenceId: existing.id,

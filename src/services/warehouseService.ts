@@ -163,7 +163,31 @@ export class WarehouseService {
         }
       });
 
-      // 4. Merge master items with warehouse stock
+      // 4. Fetch purchase rate history to calculate average cost:
+      // (previous purchase cost + most recent purchase cost) / 2
+      const itemPurchaseRatesMap = new Map<string, number[]>();
+      try {
+        const purchaseSnap = await getDocs(
+          query(collection(db, 'raw_material_purchases'), orderBy('purchaseDate', 'asc'), limit(500))
+        );
+        purchaseSnap.docs.forEach((docSnap) => {
+          const pData = docSnap.data();
+          if (Array.isArray(pData.lines)) {
+            pData.lines.forEach((l: any) => {
+              const r = Number(l.rate || 0);
+              if (l.itemId && r > 0) {
+                const rates = itemPurchaseRatesMap.get(l.itemId) || [];
+                rates.push(r);
+                itemPurchaseRatesMap.set(l.itemId, rates);
+              }
+            });
+          }
+        });
+      } catch (pErr) {
+        console.warn('Could not load purchase rate history:', pErr);
+      }
+
+      // 5. Merge master items with warehouse stock
       stockList = items.map((item) => {
         const stockDocId = `stock_${item.id}`;
         const wsData = stockMap.get(stockDocId) || stockMap.get(item.id);
@@ -176,8 +200,47 @@ export class WarehouseService {
           ? Number(wsData.minimumStockLevel)
           : Number(item.minimumStockLevel || 0);
 
-        const avgRate = wsData?.averageRate || item.defaultPurchaseRate || item.lastPurchaseRate || 0;
+        // Calculate average cost: take most recent purchase cost and previous cost, and average them
+        const rates = itemPurchaseRatesMap.get(item.id) || itemPurchaseRatesMap.get(item.itemId) || [];
+        const existingAvg = Number(wsData?.averageRate || 0);
+        let calculatedAvg = existingAvg;
+
+        if (rates.length > 0) {
+          if (rates.length === 1) {
+            const recentCost = rates[0];
+            const prevCost = Number(item.defaultPurchaseRate || item.lastPurchaseRate || 0);
+            if (prevCost > 0 && prevCost !== recentCost) {
+              calculatedAvg = Math.round(((prevCost + recentCost) / 2) * 100) / 100;
+            } else {
+              calculatedAvg = recentCost;
+            }
+          } else {
+            // Take the most recent purchase cost and previous purchase cost, and average them
+            const recentCost = rates[rates.length - 1];
+            const previousCost = rates[rates.length - 2];
+            calculatedAvg = Math.round(((previousCost + recentCost) / 2) * 100) / 100;
+          }
+        } else if (existingAvg > 0) {
+          calculatedAvg = existingAvg;
+        } else {
+          calculatedAvg = Number(item.defaultPurchaseRate || item.lastPurchaseRate || 0);
+        }
+
+        const avgRate = calculatedAvg;
         const lastInward = wsData?.lastInwardDate || lastInwardMap.get(item.id) || item.lastInwardDate || undefined;
+
+        // Persist to warehouse_stock if averageRate is not set or changed
+        if (avgRate > 0 && (!wsData?.averageRate || wsData.averageRate !== avgRate)) {
+          setDoc(
+            doc(db, 'warehouse_stock', stockDocId),
+            {
+              averageRate: avgRate,
+              totalValue: Math.round(available * avgRate * 100) / 100,
+              updatedAt: new Date().toISOString()
+            },
+            { merge: true }
+          ).catch((e) => console.warn('Sync averageRate to warehouse_stock failed:', e));
+        }
 
         let health: 'Healthy' | 'Low Stock' | 'Critical' | 'Out Of Stock' = 'Healthy';
         if (available <= 0) {
@@ -554,6 +617,24 @@ export class WarehouseService {
         createdAt: nowIso
       };
 
+      // Calculate Average Cost: (previous cost + most recent purchase cost) / 2
+      const previousCost = Number(
+        stockSnap.data()?.averageRate ||
+        itemData?.defaultPurchaseRate ||
+        (itemData as any)?.lastPurchaseRate ||
+        0
+      );
+      const recentCost = Number(payload.rate || 0);
+
+      let newAvgCost = previousCost;
+      if (recentCost > 0) {
+        if (previousCost > 0) {
+          newAvgCost = Math.round(((previousCost + recentCost) / 2) * 100) / 100;
+        } else {
+          newAvgCost = Math.round(recentCost * 100) / 100;
+        }
+      }
+
       // 1. Update warehouse_stock
       txn.set(
         stockDocRef,
@@ -566,6 +647,8 @@ export class WarehouseService {
           categoryName: itemData.categoryName || '',
           baseUnit: itemData.baseUnit || '',
           availableStock: newStock,
+          averageRate: newAvgCost,
+          totalValue: Math.round(newStock * newAvgCost * 100) / 100,
           minimumStockLevel: Number(itemData.minimumStockLevel || 0),
           lastInwardDate: transactionRecord.date,
           updatedAt: nowIso,
@@ -574,9 +657,11 @@ export class WarehouseService {
         { merge: true }
       );
 
-      // 2. Synchronize currentStock in items collection
+      // 2. Synchronize currentStock and rates in items collection
       txn.update(itemDocRef, {
         currentStock: newStock,
+        defaultPurchaseRate: newAvgCost,
+        lastPurchaseRate: recentCost > 0 ? recentCost : ((itemData as any)?.lastPurchaseRate || previousCost),
         updatedAt: nowIso,
         updatedBy: user.name
       });

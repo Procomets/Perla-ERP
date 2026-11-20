@@ -28,6 +28,8 @@ import { ItemMasterPage } from './pages/masters/ItemMasterPage';
 import { UsersPage } from './pages/users/UsersPage';
 import { EmployeeMasterPage } from './pages/employees/EmployeeMasterPage';
 import { SalarySheetPage } from './pages/salary/SalarySheetPage';
+import { EBMonitoringPage } from './pages/ebMonitoring/EBMonitoringPage';
+import { VehicleMasterPage } from './pages/transportation/VehicleMasterPage';
 import { GeneralSettingsPage } from './pages/settings/GeneralSettingsPage';
 
 // Initial Mock Data
@@ -62,14 +64,14 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   outward: { title: 'Outward Dispatch Entry', subtitle: 'Record finished processed goods dispatched to customers' },
   statement: { title: 'Inward vs Outward Reconciliation Statement', subtitle: 'Colour-wise balance ledger & invoice approval' },
   invoices: { title: 'Tax Invoices', subtitle: 'GST invoice generation, billing, and PDF printouts' },
-  chemical: { title: 'Chemical Entry & Processing', subtitle: 'Shopfloor chemical batch consumption & machine logs' },
+  chemical: { title: 'Process Entry', subtitle: 'Shopfloor process stages, machine timings, chemical consumptions, and raw wood usage' },
   warehouse: { title: 'Warehouse Management', subtitle: 'Raw material inventory · Inward receipts · Stock monitoring' },
-  purchases: { title: 'Raw Material & Firewood Purchases', subtitle: 'Supplier receipts, deliveries, and weighbridge records' },
+  purchases: { title: 'Raw Material Purchase', subtitle: 'Supplier deliveries and raw material purchases linked to warehouse inventory' },
   attendance: { title: 'Employee Attendance', subtitle: 'Shift attendance and overtime hours' },
   salary: { title: 'Employee Salary', subtitle: 'Salary calculation and payment status' },
   employees: { title: 'Employee Master', subtitle: 'Manage employee directory, wages, documents, and roles' },
-  eb: { title: 'EB Electricity Expenses', subtitle: 'Utility meter readings and monthly cost breakdown' },
-  transport: { title: 'Transport Freight Expenses', subtitle: 'Logistics costs linked to customer delivery challans' },
+  eb: { title: 'EB Monitoring', subtitle: 'Daily meter readings, unit consumption (kW), and power cost tracking' },
+  transport: { title: 'Transportation', subtitle: 'Fleet vehicle master, trip dispatches, and freight management' },
   vendors: { title: 'Vendor Directory Master', subtitle: 'Directory of customers, suppliers, and subcontractors' },
   items: { title: 'Item & Chemical Master', subtitle: 'Catalog of chemicals, firewood, and packaging materials' },
   users: { title: 'User Management', subtitle: 'Manage system access, roles, and profiles' },
@@ -193,14 +195,14 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
                 onAddInvoice={props.onAddInvoice}
               />
             )}
-            {moduleId === 'chemical' && <ChemicalEntryPage entries={props.chemicalEntries} pos={props.pos} onAddEntry={props.onAddChemicalEntry} />}
-            {moduleId === 'warehouse' && <WarehousePage />}
-            {moduleId === 'purchases' && <PurchasesPage />}
+            {moduleId === 'chemical' && <ChemicalEntryPage />}
+            {moduleId === 'warehouse' && <WarehousePage initialTab="overview" />}
+            {moduleId === 'purchases' && <WarehousePage initialTab="purchases" />}
             {moduleId === 'employees' && <EmployeeMasterPage />}
             {moduleId === 'attendance' && <AttendancePage employees={props.employees} />}
             {moduleId === 'salary' && <SalarySheetPage />}
-            {moduleId === 'eb' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
-            {moduleId === 'transport' && <ExpensesPage ebEntries={props.ebEntries} transportExpenses={props.transportExpenses} />}
+            {moduleId === 'eb' && <EBMonitoringPage />}
+            {moduleId === 'transport' && <VehicleMasterPage />}
             {moduleId === 'vendors' && <VendorMasterPage />}
             {moduleId === 'items' && <ItemMasterPage />}
             {moduleId === 'users' && <UsersPage />}

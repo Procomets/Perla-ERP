@@ -70,6 +70,7 @@ export interface IssueMaterialPayload {
 export interface InwardMaterialPayload {
   itemId: string;
   quantity: number;
+  rate?: number;
   source: StockSourceType;
   referenceNumber: string;
   referenceId?: string;

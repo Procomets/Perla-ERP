@@ -639,7 +639,21 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 2. Customer - Left */}
+                {/* 2. Order Date - Center */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                    sortField === 'orderDate' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('orderDate')}
+                  title={getSortTooltip('orderDate', 'Order Date')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Order Date</span>
+                    {renderSortIcon('orderDate')}
+                  </div>
+                </th>
+
+                {/* 3. Customer - Left */}
                 <th
                   className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
                     sortField === 'customerName' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
@@ -653,7 +667,7 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 3. Cust PO - Left */}
+                {/* 4. Cust PO - Left */}
                 <th
                   className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
                     sortField === 'customerPoNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
@@ -667,7 +681,7 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 4. Process - Center */}
+                {/* 5. Process - Center */}
                 <th
                   className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
                     sortField === 'processCategory' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
@@ -681,7 +695,7 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 4. Style & Item - Left */}
+                {/* 6. Style & Item - Left */}
                 <th
                   className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
                     sortField === 'styleNo' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
@@ -692,20 +706,6 @@ export const POList: React.FC<POListProps> = ({
                   <div className="flex items-center gap-1.5 justify-start">
                     <span>Style & Item</span>
                     {renderSortIcon('styleNo')}
-                  </div>
-                </th>
-
-                {/* 5. Order Date - Center */}
-                <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                    sortField === 'orderDate' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
-                  }`}
-                  onClick={() => handleSort('orderDate')}
-                  title={getSortTooltip('orderDate', 'Order Date')}
-                >
-                  <div className="flex items-center gap-1.5 justify-center">
-                    <span>Order Date</span>
-                    {renderSortIcon('orderDate')}
                   </div>
                 </th>
 
@@ -824,6 +824,11 @@ export const POList: React.FC<POListProps> = ({
                         </div>
                       </td>
 
+                      {/* Order Date - Center */}
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap text-slate-600 text-center align-middle font-medium">
+                        {formatDate(po.orderDate)}
+                      </td>
+
                       {/* Customer - Left */}
                       <td
                         className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left"
@@ -892,11 +897,6 @@ export const POList: React.FC<POListProps> = ({
                         <div className="text-slate-500 text-[11px] truncate">
                           {po.itemName}
                         </div>
-                      </td>
-
-                      {/* Order Date - Center */}
-                      <td className="py-2.5 px-3.5 border-r border-slate-200 whitespace-nowrap text-slate-600 text-center align-middle font-medium">
-                        {formatDate(po.orderDate)}
                       </td>
 
                       {/* Total Qty - Right */}

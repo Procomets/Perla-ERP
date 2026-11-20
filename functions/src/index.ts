@@ -2292,5 +2292,13 @@ export {
   receiveRawMaterialPurchase
 } from './purchaseFunctions';
 
+// Chemical Entry & Consumption Cloud Functions
+export {
+  recordChemicalEntry,
+  receiveChemicalPurchase,
+  deleteChemicalEntry
+} from './chemicalFunctions';
+
+
 
 

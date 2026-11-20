@@ -60,9 +60,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'invoices', label: 'Invoice Generation', icon: <Receipt className="w-4 h-4" /> },
     ],
     [
-      { id: 'chemical', label: 'Chemical Entry', icon: <FlaskConical className="w-4 h-4" /> },
+      { id: 'chemical', label: 'Process Entry', icon: <FlaskConical className="w-4 h-4" /> },
       { id: 'warehouse', label: 'Warehouse & Stock', icon: <Warehouse className="w-4 h-4" /> },
-      { id: 'purchases', label: 'Purchases (Raw/Wood)', icon: <ShoppingBag className="w-4 h-4" /> },
+      { id: 'purchases', label: 'Raw Material Purchase', icon: <ShoppingBag className="w-4 h-4" /> },
     ],
     [
       { id: 'employees', label: 'Employee Master', icon: <UserCheck className="w-4 h-4" /> },
@@ -70,8 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'salary', label: 'Salary', icon: <Banknote className="w-4 h-4" /> },
     ],
     [
-      { id: 'eb', label: 'EB / Electricity Entry', icon: <Zap className="w-4 h-4" /> },
-      { id: 'transport', label: 'Transport Expenses', icon: <Truck className="w-4 h-4" /> },
+      { id: 'eb', label: 'EB Monitoring', icon: <Zap className="w-4 h-4" /> },
+      { id: 'transport', label: 'Transportation', icon: <Truck className="w-4 h-4" /> },
     ],
     [
       { id: 'vendors', label: 'Vendor Master', icon: <Building2 className="w-4 h-4" /> },

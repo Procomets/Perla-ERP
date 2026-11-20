@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reactivateItem = exports.deactivateItem = exports.listItems = exports.getItem = exports.updateItem = exports.createItem = exports.getInvoiceHistory = exports.cancelInvoice = exports.finalizeInvoice = exports.createInvoiceDraft = exports.getInvoiceEligibleLines = exports.exportStatement = exports.getStatementInvoiceHistory = exports.approveStatementLineForInvoice = exports.getStatementColourSummary = exports.getStatementData = exports.getStatementFilters = exports.reverseOutwardEntry = exports.updateOutwardDraft = exports.listOutwardEntries = exports.getOutwardEntry = exports.postOutwardEntry = exports.createOutwardDraft = exports.getOutwardBalances = exports.getEligibleOutwardPurchaseOrders = exports.deleteInwardReceipt = exports.reverseInwardReceipt = exports.updateInwardDraft = exports.listInwardReceipts = exports.getInwardReceipt = exports.postInwardReceipt = exports.createInwardDraft = exports.getInwardBalances = exports.getEligiblePurchaseOrders = exports.generateInwardNumber = exports.amendPurchaseOrder = exports.cancelPurchaseOrder = exports.rejectPurchaseOrder = exports.approvePurchaseOrder = exports.submitPurchaseOrder = exports.updatePurchaseOrder = exports.createPurchaseOrder = exports.archiveVendorDocument = exports.assignVendorParent = exports.setVendorContactStatus = exports.updateVendorContact = exports.addVendorContact = exports.setVendorStatus = exports.updateVendor = exports.createVendor = void 0;
-exports.receiveRawMaterialPurchase = exports.createRawMaterialPurchase = exports.getWarehouseDashboardMetrics = exports.recordStockTransaction = exports.getItemUsageHistory = exports.getItemStockSummary = exports.updateUnitOfMeasure = exports.createUnitOfMeasure = exports.updateItemCategory = exports.createItemCategory = exports.updateChemicalDetails = exports.createChemicalDetails = void 0;
+exports.deleteChemicalEntry = exports.receiveChemicalPurchase = exports.recordChemicalEntry = exports.receiveRawMaterialPurchase = exports.createRawMaterialPurchase = exports.getWarehouseDashboardMetrics = exports.recordStockTransaction = exports.getItemUsageHistory = exports.getItemStockSummary = exports.updateUnitOfMeasure = exports.createUnitOfMeasure = exports.updateItemCategory = exports.createItemCategory = exports.updateChemicalDetails = exports.createChemicalDetails = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
@@ -1830,4 +1830,9 @@ Object.defineProperty(exports, "getWarehouseDashboardMetrics", { enumerable: tru
 var purchaseFunctions_1 = require("./purchaseFunctions");
 Object.defineProperty(exports, "createRawMaterialPurchase", { enumerable: true, get: function () { return purchaseFunctions_1.createRawMaterialPurchase; } });
 Object.defineProperty(exports, "receiveRawMaterialPurchase", { enumerable: true, get: function () { return purchaseFunctions_1.receiveRawMaterialPurchase; } });
+// Chemical Entry & Consumption Cloud Functions
+var chemicalFunctions_1 = require("./chemicalFunctions");
+Object.defineProperty(exports, "recordChemicalEntry", { enumerable: true, get: function () { return chemicalFunctions_1.recordChemicalEntry; } });
+Object.defineProperty(exports, "receiveChemicalPurchase", { enumerable: true, get: function () { return chemicalFunctions_1.receiveChemicalPurchase; } });
+Object.defineProperty(exports, "deleteChemicalEntry", { enumerable: true, get: function () { return chemicalFunctions_1.deleteChemicalEntry; } });
 //# sourceMappingURL=index.js.map

@@ -234,6 +234,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // EB Readings Collection
+    match /eb_readings/{readingId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // EB Sequence Counters
+    match /eb_counters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Vehicle Master Collection (Transportation)
+    match /vehicles/{vehicleId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Default allow authenticated users
     match /{document=**} {
       allow read, write: if isAuthenticated();

@@ -204,11 +204,21 @@ const SearchableItemSelect: React.FC<SearchableItemSelectProps> = ({
   );
 };
 
-export const WarehousePage: React.FC = () => {
+interface WarehousePageProps {
+  initialTab?: 'overview' | 'purchases';
+}
+
+export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'overview' }) => {
   const { user } = useAuth();
 
   // Active Tab: 'overview' (Stock Overview) or 'purchases' (Raw Material Purchase)
-  const [activeTab, setActiveTab] = useState<'overview' | 'purchases'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchases'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Live Data directly from Firebase
   const [stockItems, setStockItems] = useState<WarehouseItemStock[]>([]);
@@ -1168,20 +1178,11 @@ export const WarehousePage: React.FC = () => {
       {/* TAB 2: RAW MATERIAL PURCHASES */}
       {activeTab === 'purchases' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Raw Material Purchases Ledger</h3>
-              <p className="text-xs text-slate-500">
-                Recorded supplier deliveries and raw material purchases linked to warehouse inventory
-              </p>
-            </div>
-            <button
-              onClick={handleOpenNewPurchase}
-              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Purchase Entry</span>
-            </button>
+          <div className="p-4 border-b border-slate-200">
+            <h3 className="text-sm font-bold text-slate-900">Raw Material Purchases Ledger</h3>
+            <p className="text-xs text-slate-500">
+              Recorded supplier deliveries and raw material purchases linked to warehouse inventory
+            </p>
           </div>
 
           <div className="p-4 overflow-x-auto">
@@ -1195,99 +1196,186 @@ export const WarehousePage: React.FC = () => {
                 No raw material purchase entries recorded in Firebase yet.
               </div>
             ) : (
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-bold uppercase text-[10px]">
-                    <th className="p-3">Purchase No & Date</th>
-                    <th className="p-3">Supplier / Vendor</th>
-                    <th className="p-3">Invoice & Vehicle</th>
-                    <th className="p-3">Materials / Items</th>
-                    <th className="p-3">Total Qty & Amount</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {filteredPurchases.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/50">
-                      <td className="p-3">
-                        <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
-                        <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="font-bold text-slate-900">{p.vendorName}</div>
-                        {p.vendorCode && <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>}
-                      </td>
-                      <td className="p-3">
-                        <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
-                        {p.vehicleNo && <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>}
-                      </td>
-                      <td className="p-3">
-                        <div className="space-y-0.5">
-                          {p.lines?.slice(0, 2).map((l, idx) => (
-                            <div key={idx} className="text-slate-700">
-                              <span className="font-semibold text-slate-900">{l.itemName}</span>: {l.quantity} {l.unit}
-                            </div>
-                          ))}
-                          {p.lines && p.lines.length > 2 && (
-                            <div className="text-[11px] text-slate-400 font-medium">
-                              +{p.lines.length - 2} more item(s)
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="font-bold text-slate-900">
-                          {p.totalQuantity.toLocaleString('en-IN')} {p.lines[0]?.unit || 'kg'}
-                        </div>
-                        <div className="text-xs font-semibold text-slate-700">
-                          {formatCurrency(p.grandTotal)}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <span
-                          className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                            p.status === 'Received'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : p.status === 'Confirmed'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : p.status === 'Draft'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
-                        >
-                          {p.status}
-                        </span>
-                      </td>
-                      {/* ACTIONS COLUMN: All actions in text only! No icons! */}
-                      <td className="p-3 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-2 text-xs">
-                          <button
-                            onClick={() => handleOpenViewPurchase(p)}
-                            className="text-slate-800 font-semibold hover:text-slate-950 hover:underline cursor-pointer"
-                          >
-                            View
-                          </button>
-                          <span className="text-slate-300 font-light">|</span>
-                          <button
-                            onClick={() => handleOpenEditPurchase(p)}
-                            className="text-blue-700 font-semibold hover:text-blue-900 hover:underline cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <span className="text-slate-300 font-light">|</span>
-                          <button
-                            onClick={() => handleDeletePurchase(p)}
-                            className="text-rose-600 font-semibold hover:text-rose-800 hover:underline cursor-pointer"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider">
+                      <th className="p-3 border border-slate-200">Purchase No & Date</th>
+                      <th className="p-3 border border-slate-200">Supplier / Vendor</th>
+                      <th className="p-3 border border-slate-200">Invoice & Vehicle</th>
+                      <th className="p-3 border border-slate-200">Material / Item</th>
+                      <th className="p-3 border border-slate-200 text-right">Quantity</th>
+                      <th className="p-3 border border-slate-200 text-right">Amount (₹)</th>
+                      <th className="p-3 border border-slate-200 text-center">Status</th>
+                      <th className="p-3 border border-slate-200 text-center">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white">
+                    {filteredPurchases.map((p) => {
+                      const lines = p.lines && p.lines.length > 0 ? p.lines : null;
+                      if (!lines) {
+                        return (
+                          <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="p-3 border border-slate-200 align-middle">
+                              <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
+                              <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle">
+                              <div className="font-bold text-slate-900">{p.vendorName}</div>
+                              {p.vendorCode && (
+                                <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle">
+                              <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                              {p.vehicleNo && <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-slate-400 italic">No items</td>
+                            <td className="p-3 border border-slate-200 align-middle text-right text-slate-400">—</td>
+                            <td className="p-3 border border-slate-200 align-middle text-right font-black text-slate-900">
+                              {formatCurrency(p.grandTotal)}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-center">
+                              <span
+                                className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                  p.status === 'Received'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : p.status === 'Confirmed'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : p.status === 'Draft'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                                }`}
+                              >
+                                {p.status}
+                              </span>
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                              <div className="inline-flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleOpenViewPurchase(p)}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => handleOpenEditPurchase(p)}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePurchase(p)}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <React.Fragment key={p.id}>
+                          {lines.map((line, idx) => (
+                            <tr key={`${p.id}_line_${line.lineId || idx}`} className="hover:bg-slate-50/70 transition-colors">
+                              {idx === 0 && (
+                                <>
+                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
+                                    <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
+                                    <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
+                                    {lines.length > 1 && (
+                                      <div className="text-[11px] font-black text-slate-900 mt-1.5 pt-1 border-t border-slate-100">
+                                        Total: {formatCurrency(p.grandTotal)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
+                                    <div className="font-bold text-slate-900">{p.vendorName}</div>
+                                    {p.vendorCode && (
+                                      <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>
+                                    )}
+                                  </td>
+                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
+                                    <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                                    {p.vehicleNo && (
+                                      <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>
+                                    )}
+                                  </td>
+                                </>
+                              )}
+
+                              {/* Separate Item Row: Material, Quantity, and Amount */}
+                              <td className="p-3 border border-slate-200 align-middle">
+                                <div className="font-semibold text-slate-900">{line.itemName}</div>
+                                {line.itemCode && (
+                                  <div className="text-[10px] font-mono text-slate-400">{line.itemCode}</div>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right font-bold text-slate-800 whitespace-nowrap">
+                                {Number(line.quantity).toLocaleString('en-IN')} {line.unit}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                <div className="font-black text-slate-900">
+                                  {formatCurrency(line.amount || (line.quantity * line.rate))}
+                                </div>
+                                {line.rate && Number(line.rate) > 0 ? (
+                                  <div className="text-[10px] text-slate-400 font-normal">
+                                    @ ₹{Number(line.rate).toFixed(2)}/{line.unit}
+                                  </div>
+                                ) : null}
+                              </td>
+
+                              {idx === 0 && (
+                                <>
+                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle bg-white">
+                                    <span
+                                      className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                        p.status === 'Received'
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          : p.status === 'Confirmed'
+                                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                          : p.status === 'Draft'
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                                      }`}
+                                    >
+                                      {p.status}
+                                    </span>
+                                  </td>
+                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
+                                    <div className="inline-flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => handleOpenViewPurchase(p)}
+                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                      >
+                                        View
+                                      </button>
+                                      <button
+                                        onClick={() => handleOpenEditPurchase(p)}
+                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeletePurchase(p)}
+                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

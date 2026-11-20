@@ -15,7 +15,8 @@ import {
   Layers,
   Receipt,
   FolderTree,
-  Hash
+  Hash,
+  Zap
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
@@ -34,6 +35,7 @@ import { Card } from '../../components/ui/Card';
 import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
 import { ItemCategorySettings } from './components/ItemCategorySettings';
 import { HsnMasterSettings } from './components/HsnMasterSettings';
+import { EBSettingsPanel } from './components/EBSettingsPanel';
 
 export const GeneralSettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -41,13 +43,13 @@ export const GeneralSettingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Navigation tab from query param or default to 'colours'
-  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | null;
-  const validTabs: Array<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance'> = ['colours', 'processes', 'categories', 'hsn', 'tax', 'attendance'];
-  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance'>(
+  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb' | null;
+  const validTabs: Array<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb'> = ['colours', 'processes', 'categories', 'hsn', 'tax', 'attendance', 'eb'];
+  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb'>(
     paramTab && validTabs.includes(paramTab) ? paramTab : 'colours'
   );
 
-  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance') => {
+  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb') => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
@@ -638,6 +640,17 @@ export const GeneralSettingsPage: React.FC = () => {
               <Clock className="w-4 h-4 shrink-0" />
               <span>Attendance Timing</span>
             </button>
+            <button
+              onClick={() => handleSelectTab('eb')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
+                activeTab === 'eb'
+                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Zap className="w-4 h-4 shrink-0" />
+              <span>EB / Electricity Unit Price</span>
+            </button>
           </nav>
         </aside>
 
@@ -1174,6 +1187,13 @@ export const GeneralSettingsPage: React.FC = () => {
       {/* ========================================================== */}
       {activeTab === 'tax' && (
         <TaxAndIssuerSettings onNotify={showNotification} />
+      )}
+
+      {/* ========================================================== */}
+      {/* TAB 6: EB / ELECTRICITY SETTINGS */}
+      {/* ========================================================== */}
+      {activeTab === 'eb' && (
+        <EBSettingsPanel onNotify={showNotification} />
       )}
         </div>
       </div>
