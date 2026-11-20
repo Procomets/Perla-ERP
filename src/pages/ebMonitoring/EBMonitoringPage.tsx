@@ -22,6 +22,40 @@ import {
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
+// Helper to convert time strings safely to HH:mm for <input type="time" />
+const toTimeInputFormat = (timeStr?: string | null): string => {
+  if (!timeStr) return '06:00';
+  const trimmed = timeStr.trim();
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) {
+    return trimmed;
+  }
+  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = match12[2];
+    const modifier = (match12[3] || '').toUpperCase();
+    if (modifier === 'PM' && hours < 12) hours += 12;
+    if (modifier === 'AM' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}:${minutes}`;
+  }
+  return trimmed;
+};
+
+// Helper to format time into 12-hour AM/PM display string
+const formatTimeDisplay = (timeStr?: string | null): string => {
+  if (!timeStr) return '';
+  const trimmed = timeStr.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  }
+  return trimmed;
+};
+
 export const EBMonitoringPage: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const userIsAdmin = Boolean(isAdmin || isUserAdmin(user));
@@ -144,13 +178,13 @@ export const EBMonitoringPage: React.FC = () => {
     return result;
   }, [readings, startDate, endDate, searchQuery]);
 
-  // Overall KPI Metrics
+  // Overall KPI Metrics (Dynamically calculated based on applied filters)
   const metrics = useMemo(() => {
-    const totalDays = readings.length;
+    const totalDays = filteredReadings.length;
     let totalUnits = 0;
     let totalCost = 0;
 
-    readings.forEach((r) => {
+    filteredReadings.forEach((r) => {
       totalUnits += Number(r.totalUnits || 0);
       totalCost += Number(r.totalCost || 0);
     });
@@ -165,12 +199,13 @@ export const EBMonitoringPage: React.FC = () => {
       avgUnitsPerDay,
       avgCostPerDay
     };
-  }, [readings]);
+  }, [filteredReadings]);
 
   // State to track auto-collected previous closing reading metadata
   const [previousClosingInfo, setPreviousClosingInfo] = useState<{
     value: number;
     date: string;
+    closingTime?: string;
     readingNumber?: string;
   } | null>(null);
 
@@ -201,7 +236,7 @@ export const EBMonitoringPage: React.FC = () => {
     return Math.round(liveTotalUnits * rate * 100) / 100;
   }, [liveTotalUnits, formSpendingAmountPerUnit]);
 
-  // Open Add Modal: Auto-populate opening reading from previous day's closing reading,
+  // Open Add Modal: Auto-populate opening reading & opening time from previous day's closing entry,
   // user name from logged-in user profile in the background, current time as closing time,
   // and unit rate from General Settings
   const handleOpenAddModal = async () => {
@@ -214,7 +249,6 @@ export const EBMonitoringPage: React.FC = () => {
     const currentTime = `${currentHours}:${currentMinutes}`;
 
     setFormDate(todayStr);
-    setFormOpeningTime('06:00');
     setFormClosingReading('');
     setFormClosingTime(currentTime); // Auto-populated with current time
     setFormRemarks('');
@@ -236,7 +270,7 @@ export const EBMonitoringPage: React.FC = () => {
       setFormSpendingAmountPerUnit(currentUnitPrice > 0 ? currentUnitPrice : 9.5);
     }
 
-    // 3. Automatically collect starting reading from previous closing entry
+    // 3. Automatically collect starting reading & opening time from previous closing entry
     let latest: EBReadingRecord | null = null;
     if (readings.length > 0) {
       latest = findPrecedingReading(todayStr, readings);
@@ -250,13 +284,16 @@ export const EBMonitoringPage: React.FC = () => {
 
     if (latest && typeof latest.closingReading === 'number') {
       setFormOpeningReading(latest.closingReading);
+      setFormOpeningTime(toTimeInputFormat(latest.closingTime || '06:00'));
       setPreviousClosingInfo({
         value: latest.closingReading,
         date: latest.date,
+        closingTime: latest.closingTime,
         readingNumber: latest.readingNumber
       });
     } else {
       setFormOpeningReading('');
+      setFormOpeningTime('06:00');
       setPreviousClosingInfo(null);
     }
 
@@ -270,9 +307,13 @@ export const EBMonitoringPage: React.FC = () => {
       const preceding = findPrecedingReading(newDate, readings);
       if (preceding && typeof preceding.closingReading === 'number') {
         setFormOpeningReading(preceding.closingReading);
+        if (preceding.closingTime) {
+          setFormOpeningTime(toTimeInputFormat(preceding.closingTime));
+        }
         setPreviousClosingInfo({
           value: preceding.closingReading,
           date: preceding.date,
+          closingTime: preceding.closingTime,
           readingNumber: preceding.readingNumber
         });
       }
@@ -289,9 +330,13 @@ export const EBMonitoringPage: React.FC = () => {
     }
     if (latest && typeof latest.closingReading === 'number') {
       setFormOpeningReading(latest.closingReading);
+      if (latest.closingTime) {
+        setFormOpeningTime(toTimeInputFormat(latest.closingTime));
+      }
       setPreviousClosingInfo({
         value: latest.closingReading,
         date: latest.date,
+        closingTime: latest.closingTime,
         readingNumber: latest.readingNumber
       });
     }
@@ -570,7 +615,11 @@ export const EBMonitoringPage: React.FC = () => {
             {metrics.totalUnits.toLocaleString('en-IN', { maximumFractionDigits: 2 })}{' '}
             <span className="text-xs font-bold text-slate-500">kW</span>
           </div>
-          <div className="text-xs text-slate-400 mt-1">Across {metrics.totalDays} recorded days</div>
+          <div className="text-xs text-slate-400 mt-1">
+            Across {metrics.totalDays}{' '}
+            {startDate || endDate || searchQuery ? 'filtered' : 'recorded'}{' '}
+            {metrics.totalDays === 1 ? 'day' : 'days'}
+          </div>
         </div>
 
         {/* Card 2: Total Cost */}
@@ -581,7 +630,11 @@ export const EBMonitoringPage: React.FC = () => {
           <div className="text-2xl font-bold text-slate-900 mt-2 font-mono">
             {formatCurrency(metrics.totalCost)}
           </div>
-          <div className="text-xs text-slate-400 mt-1">Total power spending to date</div>
+          <div className="text-xs text-slate-400 mt-1">
+            {startDate || endDate || searchQuery
+              ? 'Power spending for filtered period'
+              : 'Total power spending to date'}
+          </div>
         </div>
 
         {/* Card 3: Avg Units Per Day */}
@@ -911,7 +964,13 @@ export const EBMonitoringPage: React.FC = () => {
                   required
                   className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-[#1F4E79] focus:outline-none transition shadow-2xs"
                 />
-                <div className="mt-1.5 text-[11px] text-slate-400">Opening shift time (e.g. 06:00 AM)</div>
+                {previousClosingInfo?.closingTime ? (
+                  <div className="mt-1.5 text-[11px] text-emerald-700 font-medium">
+                    Auto-collected from recent closing: {formatTimeDisplay(previousClosingInfo.closingTime)}
+                  </div>
+                ) : (
+                  <div className="mt-1.5 text-[11px] text-slate-400">Opening shift time (e.g. 06:00 AM)</div>
+                )}
               </div>
             </div>
 
@@ -1040,32 +1099,26 @@ export const EBMonitoringPage: React.FC = () => {
           </div>
 
           {/* Modal Footer */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 border-t border-slate-100">
-            <span className="text-[11px] text-slate-400 hidden sm:inline-block">
-              Stored in Firebase Firestore
-            </span>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                disabled={formSubmitting}
-                onClick={() => setIsModalOpen(false)}
-                className="h-10 px-5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={formSubmitting}
-                className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
-              >
-                {formSubmitting
-                  ? 'Saving to Firebase...'
-                  : isEditMode
-                  ? 'Update Reading'
-                  : 'Save Reading'}
-              </button>
-            </div>
+          <div className="flex items-center justify-end gap-3 pt-5 border-t border-slate-100">
+            <button
+              type="button"
+              disabled={formSubmitting}
+              onClick={() => setIsModalOpen(false)}
+              className="h-10 px-5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={formSubmitting}
+              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {formSubmitting
+                ? 'Saving...'
+                : isEditMode
+                ? 'Update Reading'
+                : 'Save Reading'}
+            </button>
           </div>
         </form>
       </Modal>
