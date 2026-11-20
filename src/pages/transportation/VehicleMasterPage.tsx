@@ -8,6 +8,7 @@ import {
   VehicleFuelType
 } from '../../types/vehicle';
 import { VehicleService } from '../../services/vehicleService';
+import { DailyExpenseMonitorSection } from './DailyExpenseMonitorSection';
 import { Modal } from '../../components/ui/Modal';
 import {
   Truck,
@@ -65,6 +66,9 @@ type SortDirection = 'asc' | 'desc';
 
 export const VehicleMasterPage: React.FC = () => {
   const { user } = useAuth();
+
+  // Active Section Tab: 'daily_monitor' (Daily Expense & Vehicle Monitor) or 'vehicles' (Vehicle Master)
+  const [activeSection, setActiveSection] = useState<'daily_monitor' | 'vehicles'>('daily_monitor');
 
   // Data State
   const [vehicles, setVehicles] = useState<VehicleRecord[]>(() => {
@@ -442,8 +446,37 @@ export const VehicleMasterPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      {/* TABS ROW: Daily Expense & Vehicle Monitor, then Vehicle Master */}
+      <div className="flex items-center gap-8 border-b border-slate-200/90 px-1 pt-1">
+        <button
+          onClick={() => setActiveSection('daily_monitor')}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
+            activeSection === 'daily_monitor'
+              ? 'border-slate-900 text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <span>Daily Expense &amp; Vehicle Monitor</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSection('vehicles')}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
+            activeSection === 'vehicles'
+              ? 'border-slate-900 text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <span>Vehicle Master</span>
+        </button>
+      </div>
+
+      {activeSection === 'daily_monitor' ? (
+        <DailyExpenseMonitorSection vehicles={vehicles} />
+      ) : (
+        <>
+          {/* Top Header Card */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Vehicle Master</h2>
         </div>
@@ -1167,41 +1200,37 @@ export const VehicleMasterPage: React.FC = () => {
           </div>
 
           {/* Modal Footer */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 border-t border-slate-100">
-            <span className="text-[11px] text-slate-400 hidden sm:inline-flex items-center gap-1.5">
-              Stored securely in Firebase Firestore
-            </span>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                disabled={formSubmitting}
-                onClick={() => setIsModalOpen(false)}
-                className="h-10 px-5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={formSubmitting}
-                className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer disabled:opacity-50"
-              >
-                {formSubmitting ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving to Firebase...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>{isEditMode ? 'Update Vehicle' : 'Save Vehicle'}</span>
-                  </>
-                )}
-              </button>
-            </div>
+          <div className="flex items-center justify-end gap-3 pt-5 border-t border-slate-100">
+            <button
+              type="button"
+              disabled={formSubmitting}
+              onClick={() => setIsModalOpen(false)}
+              className="h-10 px-5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={formSubmitting}
+              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {formSubmitting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>{isEditMode ? 'Update Vehicle' : 'Save Vehicle'}</span>
+                </>
+              )}
+            </button>
           </div>
         </form>
       </Modal>
+        </>
+      )}
     </div>
   );
 };
