@@ -401,50 +401,48 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         </div>
       )}
 
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Invoice Generation & Billing Module</h1>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Generate and track official GST tax invoices for approved textile processing services.
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Invoice Generation</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Generate and track official GST tax invoices for approved textile processing services
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-stretch sm:self-auto">
-          <Button
-            variant="outline"
-            size="sm"
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
             onClick={() => {
               refreshEligibleItems();
               refreshInvoices();
               showToast('info', 'Refreshing invoices and statement approvals...');
             }}
-            icon={<RotateCcw className="w-4 h-4" />}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
           >
-            Refresh
-          </Button>
+            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+            <span>Refresh</span>
+          </button>
 
           {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
               onClick={() => navigate('/erp/settings?tab=tax')}
-              icon={<Settings className="w-4 h-4" />}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
             >
-              Tax &amp; Issuer Settings
-            </Button>
+              <Settings className="w-3.5 h-3.5 text-slate-500" />
+              <span>Tax Settings</span>
+            </button>
           )}
 
-          <Button
-            variant="primary"
-            size="sm"
+          <button
+            type="button"
             onClick={() => navigate('/erp/statement')}
-            icon={<ExternalLink className="w-4 h-4" />}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition cursor-pointer shadow-2xs"
           >
-            Statement Module
-          </Button>
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Go to Statement</span>
+          </button>
         </div>
       </div>
 

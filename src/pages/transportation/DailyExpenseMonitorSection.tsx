@@ -28,16 +28,23 @@ import {
   Gauge,
   Fuel,
   Zap,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
+  Filter
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 interface DailyExpenseMonitorSectionProps {
   vehicles: VehicleRecord[];
+  tabsSlot?: React.ReactNode;
 }
 
 export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProps> = ({
-  vehicles
+  vehicles,
+  tabsSlot
 }) => {
   const { user, isAdmin } = useAuth();
   const userIsAdmin = Boolean(isAdmin || isUserAdmin(user));
@@ -51,16 +58,107 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [vehicleNoFilter, setVehicleNoFilter] = useState('all');
   const [fuelTypeFilter, setFuelTypeFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [showSecondaryFilters, setShowSecondaryFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<{
+    entryId?: string;
+    date?: string;
+    vehicleNo?: string;
+    startKm?: string;
+    endKm?: string;
+    totalDistance?: string;
+    timeTaken?: string;
+    mileage?: string;
+    amountSpent?: string;
+    driverName?: string;
+  }>({});
 
   // Sorting
-  const [sortField, setSortField] = useState<
-    'date' | 'vehicleNo' | 'totalDistance' | 'amountSpent' | 'driverName'
-  >('date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortField, setSortField] = useState<string | null>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('desc');
+
+  // 3-state sorting handler
+  const handleSort = (field: string, isNumericOrDate = false) => {
+    const firstDir: 'asc' | 'desc' = isNumericOrDate ? 'desc' : 'asc';
+    const secondDir: 'asc' | 'desc' = isNumericOrDate ? 'asc' : 'desc';
+    if (sortField !== field || sortDirection === 'normal') {
+      setSortField(field);
+      setSortDirection(firstDir);
+    } else if (sortDirection === firstDir) {
+      setSortDirection(secondDir);
+    } else {
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+        }`}
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const handleColumnFilterChange = (field: keyof typeof columnFilters, val: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  const activeSecondaryFilterCount = useMemo(() => {
+    let count = 0;
+    if (vehicleNoFilter !== 'all') count++;
+    if (fuelTypeFilter !== 'all') count++;
+    if (startDate) count++;
+    if (endDate) count++;
+    return count;
+  }, [vehicleNoFilter, fuelTypeFilter, startDate, endDate]);
+
+  const hasAnyFilter = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      vehicleNoFilter !== 'all' ||
+      fuelTypeFilter !== 'all' ||
+      startDate !== '' ||
+      endDate !== '' ||
+      activeColumnFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, vehicleNoFilter, fuelTypeFilter, startDate, endDate, activeColumnFilterCount, sortField, sortDirection]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setVehicleNoFilter('all');
+    setFuelTypeFilter('all');
+    setStartDate('');
+    setEndDate('');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection('normal');
+  };
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -114,8 +212,9 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
     let result = [...entries];
 
     if (vehicleNoFilter !== 'all') {
+      const vFilter = vehicleNoFilter.toLowerCase();
       result = result.filter(
-        (e) => (e.vehicleNo || '').toLowerCase() === vehicleNoFilter.toLowerCase()
+        (e) => (e.vehicleNumber || e.vehicleNo || '').toLowerCase() === vFilter
       );
     }
 
@@ -126,45 +225,121 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
     }
 
     if (startDate) {
-      result = result.filter((e) => e.date >= startDate);
+      result = result.filter((e) => (e.tripDate || e.date || '') >= startDate);
     }
 
     if (endDate) {
-      result = result.filter((e) => e.date <= endDate);
+      result = result.filter((e) => (e.tripDate || e.date || '') <= endDate);
     }
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter((e) => {
+        const entryNum = (e.entryNumber || e.entryId || '').toLowerCase();
+        const dateStr = (e.tripDate || e.date || '');
+        const vNum = (e.vehicleNumber || e.vehicleNo || '').toLowerCase();
+        const distStr = String(e.distanceCovered ?? e.totalDistance ?? '');
+        const spentStr = String(e.amountSpent || '');
+        const driver = (e.driverName || '').toLowerCase();
+        const remarks = (e.remarks || '').toLowerCase();
+
+        if (searchColumn === 'entryId' || searchColumn === 'entryNumber') return entryNum.includes(q);
+        if (searchColumn === 'date' || searchColumn === 'tripDate') return dateStr.includes(q) || formatDate(dateStr).toLowerCase().includes(q);
+        if (searchColumn === 'vehicleNo' || searchColumn === 'vehicleNumber') return vNum.includes(q);
+        if (searchColumn === 'totalDistance' || searchColumn === 'distanceCovered') return distStr.includes(q);
+        if (searchColumn === 'amountSpent') return spentStr.includes(q);
+        if (searchColumn === 'driverName') return driver.includes(q);
+        if (searchColumn === 'remarks') return remarks.includes(q);
+        // ALL
         return (
-          (e.entryId || '').toLowerCase().includes(q) ||
-          (e.vehicleNo || '').toLowerCase().includes(q) ||
-          (e.driverName || '').toLowerCase().includes(q) ||
+          entryNum.includes(q) ||
+          vNum.includes(q) ||
+          driver.includes(q) ||
           (e.typeOfVehicle || '').toLowerCase().includes(q) ||
           (e.modelMake || '').toLowerCase().includes(q) ||
           (e.fuelType || '').toLowerCase().includes(q) ||
-          (e.date || '').includes(q) ||
-          String(e.totalDistance).includes(q) ||
-          String(e.amountSpent).includes(q) ||
-          (e.remarks || '').toLowerCase().includes(q)
+          dateStr.includes(q) ||
+          formatDate(dateStr).toLowerCase().includes(q) ||
+          distStr.includes(q) ||
+          spentStr.includes(q) ||
+          remarks.includes(q) ||
+          (e.status || '').toLowerCase().includes(q)
         );
       });
     }
 
-    result.sort((a, b) => {
-      let valA: any = a[sortField] ?? '';
-      let valB: any = b[sortField] ?? '';
+    // Column Filters
+    if (columnFilters.entryId?.trim()) {
+      const f = columnFilters.entryId.trim().toLowerCase();
+      result = result.filter((e) => (e.entryNumber || e.entryId || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.date?.trim()) {
+      const f = columnFilters.date.trim().toLowerCase();
+      result = result.filter((e) => {
+        const d = (e.tripDate || e.date || '');
+        return d.includes(f) || formatDate(d).toLowerCase().includes(f);
+      });
+    }
+    if (columnFilters.vehicleNo?.trim()) {
+      const f = columnFilters.vehicleNo.trim().toLowerCase();
+      result = result.filter((e) => (e.vehicleNumber || e.vehicleNo || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.startKm?.trim()) {
+      const f = columnFilters.startKm.trim();
+      result = result.filter((e) => String(e.startKm ?? '').includes(f));
+    }
+    if (columnFilters.endKm?.trim()) {
+      const f = columnFilters.endKm.trim();
+      result = result.filter((e) => String(e.endKm ?? '').includes(f));
+    }
+    if (columnFilters.totalDistance?.trim()) {
+      const f = columnFilters.totalDistance.trim();
+      result = result.filter((e) => String(e.distanceCovered ?? e.totalDistance ?? '').includes(f));
+    }
+    if (columnFilters.timeTaken?.trim()) {
+      const f = columnFilters.timeTaken.trim().toLowerCase();
+      result = result.filter((e) => (e.timeTaken || e.timeTakenFormatted || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.mileage?.trim()) {
+      const f = columnFilters.mileage.trim().toLowerCase();
+      result = result.filter((e) => String(e.mileage ?? '').toLowerCase().includes(f));
+    }
+    if (columnFilters.amountSpent?.trim()) {
+      const f = columnFilters.amountSpent.trim();
+      result = result.filter((e) => String(e.amountSpent ?? '').includes(f));
+    }
+    if (columnFilters.driverName?.trim()) {
+      const f = columnFilters.driverName.trim().toLowerCase();
+      result = result.filter((e) => (e.driverName || '').toLowerCase().includes(f));
+    }
 
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
+    if (sortField && sortDirection !== 'normal') {
+      result.sort((a, b) => {
+        let valA: any = (a as any)[sortField] ?? '';
+        let valB: any = (b as any)[sortField] ?? '';
 
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
+        if (sortField === 'date') {
+          valA = a.tripDate || a.date || '';
+          valB = b.tripDate || b.date || '';
+        } else if (sortField === 'vehicleNo') {
+          valA = a.vehicleNumber || a.vehicleNo || '';
+          valB = b.vehicleNumber || b.vehicleNo || '';
+        } else if (sortField === 'totalDistance') {
+          valA = a.distanceCovered ?? a.totalDistance ?? 0;
+          valB = b.distanceCovered ?? b.totalDistance ?? 0;
+        }
+
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
 
     return result;
-  }, [entries, vehicleNoFilter, fuelTypeFilter, startDate, endDate, searchQuery, sortField, sortDirection]);
+  }, [entries, vehicleNoFilter, fuelTypeFilter, startDate, endDate, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
 
   // Overall KPI Metrics (Dynamically reflects active filter)
   const metrics = useMemo(() => {
@@ -174,9 +349,9 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
     let totalFuelConsumed = 0;
 
     filteredEntries.forEach((e) => {
-      totalDistanceCovered += Number(e.totalDistance || 0);
+      totalDistanceCovered += Number(e.distanceCovered ?? e.totalDistance ?? 0);
       totalAmountSpent += Number(e.amountSpent || 0);
-      totalFuelConsumed += Number(e.fuelConsumed || 0);
+      totalFuelConsumed += Number(e.estimatedFuelConsumed ?? e.fuelConsumed ?? 0);
     });
 
     const avgCostPerKm =
@@ -192,16 +367,6 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
       avgCostPerKm
     };
   }, [filteredEntries]);
-
-  // Sort Toggle
-  const handleSort = (field: 'date' | 'vehicleNo' | 'totalDistance' | 'amountSpent' | 'driverName') => {
-    if (sortField === field) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
 
   // Live Auto Calculations in Form
   const liveTotalDistance = useMemo(() => {
@@ -253,7 +418,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
         setPrecedingInfo({
           endKm: preceding.endKm,
           endTime: preceding.endTime,
-          date: preceding.date
+          date: preceding.tripDate || preceding.date || ''
         });
       } else {
         setPrecedingInfo(null);
@@ -307,7 +472,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
         setPrecedingInfo({
           endKm: preceding.endKm,
           endTime: preceding.endTime,
-          date: preceding.date
+          date: preceding.tripDate || preceding.date || ''
         });
       } else {
         setFormStartKm('');
@@ -328,15 +493,15 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
   const handleOpenEditModal = (entry: VehicleDailyEntry) => {
     setIsEditMode(true);
     setEditingId(entry.id);
-    setFormDate(entry.date);
-    setFormVehicleNo(entry.vehicleNo);
-    setFormFuelType(entry.fuelType || 'Diesel');
-    setFormMileage(entry.mileage || 4.5);
+    setFormDate(entry.tripDate || entry.date || new Date().toISOString().split('T')[0]);
+    setFormVehicleNo(entry.vehicleNumber || entry.vehicleNo || '');
+    setFormFuelType((entry.fuelType as VehicleFuelType) || 'Diesel');
+    setFormMileage(entry.mileage || 10);
     setFormStartKm(entry.startKm);
     setFormStartTime(entry.startTime || '08:00');
     setFormEndKm(entry.endKm);
     setFormEndTime(entry.endTime || '17:00');
-    setFormFuelRate(entry.fuelRate || DEFAULT_FUEL_RATES[entry.fuelType] || 92.0);
+    setFormFuelRate(entry.fuelRate || DEFAULT_FUEL_RATES[(entry.fuelType as VehicleFuelType)] || 92.0);
     setFormDriverName(entry.driverName || '');
     setFormRemarks(entry.remarks || '');
     setPrecedingInfo(null);
@@ -385,31 +550,37 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
     const timeDiff = VehicleMonitoringService.calculateTimeDiff(formStartTime, formEndTime);
     const totalDist = Math.max(0, Math.round((end - start) * 100) / 100);
-    const m = formMileage > 0 ? formMileage : 4.5;
+    const m = formMileage > 0 ? formMileage : 10;
     const consumed = Math.round((totalDist / m) * 100) / 100;
     const spent = Math.round(consumed * formFuelRate * 100) / 100;
 
     try {
       const payload: CreateVehicleDailyEntryPayload = {
+        tripDate: formDate,
         date: formDate,
+        vehicleNumber: formVehicleNo.trim().toUpperCase(),
         vehicleNo: formVehicleNo.trim().toUpperCase(),
-        vehicleId: vehicleObj?.id,
-        typeOfVehicle: vehicleObj?.typeOfVehicle,
-        modelMake: vehicleObj?.modelMake,
+        vehicleId: vehicleObj?.id || '',
+        typeOfVehicle: vehicleObj?.typeOfVehicle || '',
+        modelMake: vehicleObj?.modelMake || '',
         fuelType: formFuelType,
         mileage: m,
         startKm: start,
         startTime: formStartTime,
         endKm: end,
         endTime: formEndTime,
+        distanceCovered: totalDist,
         totalDistance: totalDist,
-        timeTakenMinutes: timeDiff.minutes,
+        timeTaken: timeDiff.formatted,
         timeTakenFormatted: timeDiff.formatted,
-        fuelRate: formFuelRate,
+        timeTakenMinutes: timeDiff.minutes,
+        estimatedFuelConsumed: consumed,
         fuelConsumed: consumed,
+        fuelRate: formFuelRate,
         amountSpent: spent,
         driverName: formDriverName.trim(),
-        remarks: formRemarks.trim() || undefined
+        remarks: formRemarks.trim() || undefined,
+        status: 'completed'
       };
 
       if (isEditMode && editingId) {
@@ -440,8 +611,10 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
   // Delete Entry
   const handleDeleteEntry = async (entry: VehicleDailyEntry) => {
+    const entryNum = entry.entryNumber || entry.entryId || 'entry';
+    const vehNum = entry.vehicleNumber || entry.vehicleNo || 'vehicle';
     const confirm = window.confirm(
-      `Are you sure you want to delete daily entry "${entry.entryId}" for vehicle ${entry.vehicleNo}?`
+      `Are you sure you want to delete daily entry "${entryNum}" for vehicle ${vehNum}?`
     );
     if (!confirm) return;
 
@@ -461,42 +634,44 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
       worksheet.columns = [
         { header: 'S.No.', key: 'sNo', width: 8 },
-        { header: 'ENTRY ID', key: 'entryId', width: 16 },
-        { header: 'DATE', key: 'date', width: 14 },
-        { header: 'VEHICLE NO', key: 'vehicleNo', width: 16 },
+        { header: 'ENTRY NUMBER', key: 'entryNumber', width: 18 },
+        { header: 'TRIP DATE', key: 'tripDate', width: 14 },
+        { header: 'VEHICLE NUMBER', key: 'vehicleNumber', width: 16 },
         { header: 'TYPE / MAKE', key: 'vehicleType', width: 22 },
         { header: 'FUEL TYPE', key: 'fuelType', width: 12 },
         { header: 'START KM', key: 'startKm', width: 14 },
         { header: 'START TIME', key: 'startTime', width: 14 },
         { header: 'END KM', key: 'endKm', width: 14 },
         { header: 'END TIME', key: 'endTime', width: 14 },
-        { header: 'TOTAL DISTANCE (km)', key: 'totalDistance', width: 20 },
+        { header: 'DISTANCE COVERED (km)', key: 'distanceCovered', width: 22 },
         { header: 'TIME TAKEN', key: 'timeTaken', width: 14 },
         { header: 'MILEAGE', key: 'mileage', width: 14 },
         { header: 'FUEL RATE (₹)', key: 'fuelRate', width: 14 },
         { header: 'AMOUNT SPENT (₹)', key: 'amountSpent', width: 18 },
         { header: 'DRIVER NAME', key: 'driverName', width: 20 },
+        { header: 'STATUS', key: 'status', width: 14 },
         { header: 'REMARKS', key: 'remarks', width: 26 }
       ];
 
       filteredEntries.forEach((e, idx) => {
         worksheet.addRow({
           sNo: idx + 1,
-          entryId: e.entryId,
-          date: formatDate(e.date),
-          vehicleNo: e.vehicleNo,
+          entryNumber: e.entryNumber || e.entryId,
+          tripDate: formatDate(e.tripDate || e.date),
+          vehicleNumber: e.vehicleNumber || e.vehicleNo,
           vehicleType: `${e.typeOfVehicle || ''} ${e.modelMake ? `(${e.modelMake})` : ''}`.trim(),
           fuelType: e.fuelType,
           startKm: e.startKm,
           startTime: VehicleMonitoringService.format12HourTime(e.startTime),
           endKm: e.endKm,
           endTime: VehicleMonitoringService.format12HourTime(e.endTime),
-          totalDistance: e.totalDistance,
-          timeTaken: e.timeTakenFormatted,
+          distanceCovered: e.distanceCovered ?? e.totalDistance,
+          timeTaken: e.timeTaken || e.timeTakenFormatted,
           mileage: `${e.mileage} ${e.fuelType === 'Electric' ? 'km/chg' : 'km/L'}`,
-          fuelRate: e.fuelRate ?? DEFAULT_FUEL_RATES[e.fuelType],
+          fuelRate: e.fuelRate ?? DEFAULT_FUEL_RATES[e.fuelType as VehicleFuelType],
           amountSpent: e.amountSpent,
           driverName: e.driverName,
+          status: e.status || 'completed',
           remarks: e.remarks || ''
         });
       });
@@ -519,34 +694,35 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Daily Expense &amp; Vehicle Monitor</h2>
-          <div className="text-xs text-slate-500 mt-0.5">
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Daily Expense &amp; Vehicle Monitor</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
             Track daily trip kilometer readings, timings, fuel consumption, and operational expenses
-          </div>
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="h-9 px-3 bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
             title="Reload log records"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Reload</span>
           </button>
 
           <button
             type="button"
-            onClick={handleOpenAddModal}
-            className="h-9 px-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            onClick={handleExportExcel}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
+            title="Export Excel"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Daily Entry</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export Excel</span>
           </button>
         </div>
       </div>
@@ -609,39 +785,133 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
         </div>
       </div>
 
+      {/* SECTION TABS ROW: Positioned below KPI cards and above table */}
+      {tabsSlot}
+
       {/* Main Grid Table Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Filters Header */}
+        {/* Filters Header Toolbar */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search entry #, vehicle, driver, date..."
-              className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
-            />
-            {searchQuery && (
+          {/* Left: Search with Column Selector, Column Filters Toggle & Reset */}
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
+              <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
+                <select
+                  value={searchColumn}
+                  onChange={(e) => setSearchColumn(e.target.value)}
+                  className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
+                  title="Select column to search in"
+                >
+                  <option value="ALL">All Columns</option>
+                  <option value="entryNumber">Entry #</option>
+                  <option value="tripDate">Trip Date</option>
+                  <option value="vehicleNumber">Vehicle No</option>
+                  <option value="distanceCovered">Distance</option>
+                  <option value="amountSpent">Amount Spent</option>
+                  <option value="driverName">Driver</option>
+                  <option value="remarks">Remarks</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              <div className="relative flex-1 min-w-[200px] flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={searchColumn === 'ALL' ? 'Search all columns...' : `Search ${searchColumn}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showColumnFilters || activeColumnFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Toggle inline column filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeColumnFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Filter Toggle Button (Toggles Vehicles, Fuel Type, Date Range below) */}
+            <button
+              type="button"
+              onClick={() => setShowSecondaryFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showSecondaryFilters || activeSecondaryFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Toggle filters (Vehicles, Fuel Type, Date Range)"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeSecondaryFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeSecondaryFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset All Filters button */}
+            {hasAnyFilter && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                title="Reset All Filters"
               >
-                <X className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
               </button>
             )}
           </div>
 
-          {/* Dropdown Filters & Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleOpenAddModal}
+              className="h-9 px-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition ml-auto cursor-pointer shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Daily Entry</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Filters Drawer */}
+        {showSecondaryFilters && (
+          <div className="px-4 py-3 sm:px-5 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center gap-3">
             {/* Vehicle No Filter */}
             {vehicles.length > 0 && (
               <select
                 value={vehicleNoFilter}
                 onChange={(e) => setVehicleNoFilter(e.target.value)}
-                className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className="h-9 px-3 bg-white border border-slate-200 text-slate-800 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs cursor-pointer"
               >
                 <option value="all">All Vehicles</option>
                 {vehicles.map((v) => (
@@ -656,7 +926,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
             <select
               value={fuelTypeFilter}
               onChange={(e) => setFuelTypeFilter(e.target.value)}
-              className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
+              className="h-9 px-3 bg-white border border-slate-200 text-slate-800 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs cursor-pointer"
             >
               <option value="all">All Fuel Types</option>
               <option value="Diesel">Diesel</option>
@@ -665,142 +935,281 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
               <option value="CNG">CNG</option>
             </select>
 
-            {/* Date Range */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            {/* Date Range: From */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 h-9 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none"
+                className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
               />
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            {/* Date Range: To */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 h-9 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none"
+                className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
               />
             </div>
 
-            {(searchQuery || vehicleNoFilter !== 'all' || fuelTypeFilter !== 'all' || startDate || endDate) && (
+            {/* Clear filters shortcut */}
+            {activeSecondaryFilterCount > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  setSearchQuery('');
                   setVehicleNoFilter('all');
                   setFuelTypeFilter('all');
                   setStartDate('');
                   setEndDate('');
                 }}
-                className="h-8 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 transition cursor-pointer"
+                className="text-xs text-rose-600 hover:text-rose-800 font-semibold underline ml-auto cursor-pointer"
               >
-                Clear
+                Clear filters
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="h-9 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ml-auto cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export Excel</span>
-            </button>
           </div>
-        </div>
+        )}
 
-        {/* Grid Table */}
-        <div className="overflow-x-auto">
+        {/* Grid Table Container with Sticky Header */}
+        <div className="max-h-[620px] overflow-auto relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
+              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
                 {/* S.NO */}
-                <th className="py-3 px-3 border-r border-slate-200 text-center whitespace-nowrap w-12">
+                <th className="py-3 px-3 border-r border-slate-200 text-center whitespace-nowrap w-12 bg-slate-50">
                   S.NO
                 </th>
 
                 {/* DATE */}
                 <th
-                  onClick={() => handleSort('date')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  onClick={() => handleSort('date', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>DATE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('date')}
                   </div>
                 </th>
 
                 {/* VEHICLE NO & FUEL */}
                 <th
                   onClick={() => handleSort('vehicleNo')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>VEHICLE NO</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('vehicleNo')}
                   </div>
                 </th>
 
                 {/* START KM & TIME */}
-                <th className="py-3 px-3.5 border-r border-slate-200 whitespace-nowrap">
-                  START KM &amp; TIME
+                <th
+                  onClick={() => handleSort('startKm', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>START KM &amp; TIME</span>
+                    {renderSortIcon('startKm')}
+                  </div>
                 </th>
 
                 {/* END KM & TIME */}
-                <th className="py-3 px-3.5 border-r border-slate-200 whitespace-nowrap">
-                  END KM &amp; TIME
+                <th
+                  onClick={() => handleSort('endKm', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>END KM &amp; TIME</span>
+                    {renderSortIcon('endKm')}
+                  </div>
                 </th>
 
                 {/* TOTAL DISTANCE */}
                 <th
-                  onClick={() => handleSort('totalDistance')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right"
+                  onClick={() => handleSort('totalDistance', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right bg-slate-50"
                 >
                   <div className="flex items-center justify-end gap-1.5">
                     <span>DISTANCE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('totalDistance')}
                   </div>
                 </th>
 
                 {/* TIME TAKEN */}
-                <th className="py-3 px-3.5 border-r border-slate-200 text-center whitespace-nowrap">
-                  TIME TAKEN
+                <th
+                  onClick={() => handleSort('timeTaken')}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition text-center whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>TIME TAKEN</span>
+                    {renderSortIcon('timeTaken')}
+                  </div>
                 </th>
 
                 {/* MILEAGE */}
-                <th className="py-3 px-3.5 border-r border-slate-200 text-center whitespace-nowrap">
-                  MILEAGE
+                <th
+                  onClick={() => handleSort('mileage', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition text-center whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>MILEAGE</span>
+                    {renderSortIcon('mileage')}
+                  </div>
                 </th>
 
                 {/* AMOUNT SPENT */}
                 <th
-                  onClick={() => handleSort('amountSpent')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right"
+                  onClick={() => handleSort('amountSpent', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right bg-slate-50"
                 >
                   <div className="flex items-center justify-end gap-1.5">
                     <span>AMOUNT SPENT</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('amountSpent')}
                   </div>
                 </th>
 
                 {/* DRIVER NAME */}
                 <th
                   onClick={() => handleSort('driverName')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>DRIVER NAME</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('driverName')}
                   </div>
                 </th>
 
                 {/* ACTIONS */}
-                <th className="py-3 px-3.5 text-center whitespace-nowrap">ACTIONS</th>
+                <th className="py-3 px-3.5 text-center whitespace-nowrap bg-slate-50">ACTIONS</th>
               </tr>
+
+              {/* Sticky Column Filter Input Row */}
+              {showColumnFilters && (
+                <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+                  {/* S.NO */}
+                  <th className="p-1.5 border-r border-slate-200 text-center">
+                    <span className="text-[10px] text-slate-400 font-mono">#</span>
+                  </th>
+
+                  {/* DATE */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter date..."
+                      value={columnFilters.date || ''}
+                      onChange={(e) => handleColumnFilterChange('date', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* VEHICLE NO */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter vehicle..."
+                      value={columnFilters.vehicleNo || ''}
+                      onChange={(e) => handleColumnFilterChange('vehicleNo', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* START KM */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter start..."
+                      value={columnFilters.startKm || ''}
+                      onChange={(e) => handleColumnFilterChange('startKm', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* END KM */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter end..."
+                      value={columnFilters.endKm || ''}
+                      onChange={(e) => handleColumnFilterChange('endKm', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* DISTANCE */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter km..."
+                      value={columnFilters.totalDistance || ''}
+                      onChange={(e) => handleColumnFilterChange('totalDistance', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* TIME TAKEN */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter time..."
+                      value={columnFilters.timeTaken || ''}
+                      onChange={(e) => handleColumnFilterChange('timeTaken', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* MILEAGE */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter..."
+                      value={columnFilters.mileage || ''}
+                      onChange={(e) => handleColumnFilterChange('mileage', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* AMOUNT SPENT */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter amount..."
+                      value={columnFilters.amountSpent || ''}
+                      onChange={(e) => handleColumnFilterChange('amountSpent', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* DRIVER NAME */}
+                  <th className="p-1.5 border-r border-slate-200">
+                    <input
+                      type="text"
+                      placeholder="Filter driver..."
+                      value={columnFilters.driverName || ''}
+                      onChange={(e) => handleColumnFilterChange('driverName', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* ACTIONS CLEAR */}
+                  <th className="p-1.5 text-center">
+                    {activeColumnFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
@@ -812,8 +1221,23 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 </tr>
               ) : filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-xs text-slate-400 italic">
-                    No daily vehicle entries found. Click "+ Add Daily Entry" to record a new trip.
+                  <td colSpan={11} className="py-12 text-center text-xs text-slate-500">
+                    <div className="max-w-xs mx-auto space-y-2">
+                      <p className="font-semibold text-slate-700">No matching trip entries found</p>
+                      <p className="text-slate-400 text-[11px]">
+                        Try adjusting your search criteria, column filters, or date range.
+                      </p>
+                      {hasAnyFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -829,15 +1253,17 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
                     {/* DATE */}
                     <td className="py-3.5 px-3.5 border-r border-slate-200 align-middle whitespace-nowrap font-medium text-slate-800">
-                      <div>{formatDate(entry.date)}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{entry.entryId}</div>
+                      <div>{formatDate(entry.tripDate || entry.date || '')}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {entry.entryNumber || entry.entryId}
+                      </div>
                     </td>
 
                     {/* VEHICLE NO & FUEL BADGE */}
                     <td className="py-3.5 px-4 border-r border-slate-200 align-middle whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-slate-900 tracking-wide">
-                          {entry.vehicleNo}
+                          {entry.vehicleNumber || entry.vehicleNo}
                         </span>
                         <span
                           className={`inline-flex px-2 py-0.2 rounded-full text-[9px] font-bold ${
@@ -855,7 +1281,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                       </div>
                       {entry.typeOfVehicle && (
                         <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                          {entry.typeOfVehicle}
+                          {entry.typeOfVehicle} {entry.modelMake ? `• ${entry.modelMake}` : ''}
                         </div>
                       )}
                     </td>
@@ -882,13 +1308,13 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
 
                     {/* TOTAL DISTANCE */}
                     <td className="py-3.5 px-3.5 border-r border-slate-200 align-middle text-right whitespace-nowrap font-mono font-bold text-slate-900">
-                      {entry.totalDistance.toLocaleString('en-IN', { minimumFractionDigits: 1 })}{' '}
+                      {(entry.distanceCovered ?? entry.totalDistance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 1 })}{' '}
                       <span className="text-[10px] font-sans font-normal text-slate-400">km</span>
                     </td>
 
                     {/* TIME TAKEN */}
                     <td className="py-3.5 px-3.5 border-r border-slate-200 align-middle text-center whitespace-nowrap font-mono font-semibold text-slate-700">
-                      {entry.timeTakenFormatted || '—'}
+                      {entry.timeTaken || entry.timeTakenFormatted || '—'}
                     </td>
 
                     {/* MILEAGE */}
@@ -943,6 +1369,19 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Table Records Summary Footer */}
+        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+          <span>
+            Showing all <strong className="text-slate-800">{filteredEntries.length}</strong> records in one stretch
+            {filteredEntries.length !== entries.length && (
+              <span className="text-slate-400 ml-1">(filtered from {entries.length} total)</span>
+            )}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            Total Distance: {metrics.totalDistanceCovered.toLocaleString('en-IN')} km · Total Fuel: ₹{metrics.totalAmountSpent.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          </span>
         </div>
       </div>
 

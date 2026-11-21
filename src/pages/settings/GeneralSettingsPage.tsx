@@ -16,7 +16,8 @@ import {
   Receipt,
   FolderTree,
   Hash,
-  Zap
+  Zap,
+  Factory
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
@@ -36,23 +37,54 @@ import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
 import { ItemCategorySettings } from './components/ItemCategorySettings';
 import { HsnMasterSettings } from './components/HsnMasterSettings';
 import { EBSettingsPanel } from './components/EBSettingsPanel';
+import { MachineMasterSettings } from './components/MachineMasterSettings';
 
 export const GeneralSettingsPage: React.FC = () => {
   const { user } = useAuth();
   const currentUserId = user?.uid || 'user';
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Navigation tab from query param or default to 'colours'
-  const paramTab = searchParams.get('tab') as 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb' | null;
-  const validTabs: Array<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb'> = ['colours', 'processes', 'categories', 'hsn', 'tax', 'attendance', 'eb'];
-  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb'>(
-    paramTab && validTabs.includes(paramTab) ? paramTab : 'colours'
+  // Valid tabs in General Settings
+  const validTabs: Array<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb' | 'machines'> = [
+    'colours',
+    'processes',
+    'categories',
+    'hsn',
+    'tax',
+    'attendance',
+    'eb',
+    'machines'
+  ];
+
+  const resolveTab = (raw: string | null): typeof validTabs[number] => {
+    if (!raw) return 'colours';
+    const lower = raw.toLowerCase().trim();
+    if (validTabs.includes(lower as any)) return lower as any;
+    if (lower === 'electricity' || lower === 'power' || lower === 'eb-monitoring' || lower === 'eb') return 'eb';
+    if (lower === 'machine' || lower === 'mechine') return 'machines';
+    if (lower === 'color' || lower === 'colors' || lower === 'colour') return 'colours';
+    if (lower === 'process') return 'processes';
+    if (lower === 'category') return 'categories';
+    return 'colours';
+  };
+
+  const [activeTab, setActiveTab] = useState<'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb' | 'machines'>(
+    resolveTab(searchParams.get('tab'))
   );
 
-  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb') => {
+  const handleSelectTab = (tab: 'colours' | 'processes' | 'categories' | 'hsn' | 'tax' | 'attendance' | 'eb' | 'machines') => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
+
+  // Sync activeTab with URL search parameters (e.g. ?tab=eb)
+  useEffect(() => {
+    const rawTab = searchParams.get('tab');
+    const resolved = resolveTab(rawTab);
+    if (resolved !== activeTab) {
+      setActiveTab(resolved);
+    }
+  }, [searchParams]);
 
   // Wash / Process Master State
   const [processes, setProcesses] = useState<ProcessItem[]>([]);
@@ -578,7 +610,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('colours')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'colours'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -589,7 +621,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('processes')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'processes'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -600,7 +632,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('categories')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'categories'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -611,7 +643,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('hsn')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'hsn'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -622,7 +654,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('tax')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'tax'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -633,7 +665,7 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('attendance')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'attendance'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -644,12 +676,23 @@ export const GeneralSettingsPage: React.FC = () => {
               onClick={() => handleSelectTab('eb')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
                 activeTab === 'eb'
-                  ? 'bg-[#1F4E79] text-white shadow-xs'
+                  ? 'bg-black text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <Zap className="w-4 h-4 shrink-0" />
               <span>EB / Electricity Unit Price</span>
+            </button>
+            <button
+              onClick={() => handleSelectTab('machines')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition text-left cursor-pointer ${
+                activeTab === 'machines'
+                  ? 'bg-black text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Factory className="w-4 h-4 shrink-0" />
+              <span>Machine Master</span>
             </button>
           </nav>
         </aside>
@@ -1194,6 +1237,16 @@ export const GeneralSettingsPage: React.FC = () => {
       {/* ========================================================== */}
       {activeTab === 'eb' && (
         <EBSettingsPanel onNotify={showNotification} />
+      )}
+
+      {/* ========================================================== */}
+      {/* TAB 7: MACHINE MASTER */}
+      {/* ========================================================== */}
+      {activeTab === 'machines' && (
+        <MachineMasterSettings
+          currentUserId={currentUserId}
+          onNotify={showNotification}
+        />
       )}
         </div>
       </div>

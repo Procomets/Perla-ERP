@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { WarehouseItemStock, StockHealthStatus } from '../../types/warehouse';
 import {
   RawMaterialPurchase,
   PurchaseLineItem,
   PurchaseType,
-  PurchaseStatus
+  PurchaseStatus,
+  WeighbridgeDetails
 } from '../../types/purchase';
 import { Vendor } from '../../types/vendor';
 import { WarehouseService } from '../../services/warehouseService';
@@ -30,6 +32,9 @@ import {
   Trash2,
   Info,
   ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
+  SlidersHorizontal,
   Check,
   X
 } from 'lucide-react';
@@ -210,9 +215,21 @@ interface WarehousePageProps {
 
 export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'overview' }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // Active Tab: 'overview' (Stock Overview) or 'purchases' (Raw Material Purchase)
   const [activeTab, setActiveTab] = useState<'overview' | 'purchases'>(initialTab);
+  const [purchaseSubTab, setPurchaseSubTab] = useState<'general' | 'firewood'>('general');
+
+  // Purchases Ledger Filters & Sorting Controls
+  const [purchaseVendorFilter, setPurchaseVendorFilter] = useState<string>('ALL');
+  const [purchaseStartDate, setPurchaseStartDate] = useState<string>('');
+  const [purchaseEndDate, setPurchaseEndDate] = useState<string>('');
+  const [purchaseSearchColumn, setPurchaseSearchColumn] = useState<string>('ALL');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('normal');
 
   useEffect(() => {
     if (initialTab) {
@@ -246,6 +263,65 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
   const [remarks, setRemarks] = useState('');
   const [formLines, setFormLines] = useState<MaterialLineInput[]>([]);
   const [formSubmitting, setFormSubmitting] = useState(false);
+
+  // Weighbridge State (Firewood purchases)
+  const [wbSlipNo, setWbSlipNo] = useState('');
+  const [wbVehicleNo, setWbVehicleNo] = useState('');
+  const [wbName, setWbName] = useState('');
+  const [wbCharges, setWbCharges] = useState<number | ''>('');
+  const [wbGrossWeightKg, setWbGrossWeightKg] = useState<number | ''>('');
+  const [wbGrossWeightTime, setWbGrossWeightTime] = useState('');
+  const [wbTareWeightKg, setWbTareWeightKg] = useState<number | ''>('');
+  const [wbTareWeightTime, setWbTareWeightTime] = useState('');
+  const [wbMaterialVariety, setWbMaterialVariety] = useState('');
+  const [wbRemarks, setWbRemarks] = useState('');
+
+  // Weighbridge only works with Firewood purchase entry
+  const isFirewood = purchaseType === 'Firewood';
+
+  // Auto-calculated Nett Weight (kg and Tonnes)
+  const wbNettWeightKg = useMemo(() => {
+    const gross = Number(wbGrossWeightKg) || 0;
+    const tare = Number(wbTareWeightKg) || 0;
+    if (gross > 0 && tare > 0) {
+      return Math.max(0, gross - tare);
+    }
+    return gross > 0 ? gross : 0;
+  }, [wbGrossWeightKg, wbTareWeightKg]);
+
+  const wbNettWeightTonnes = useMemo(() => {
+    return Math.round((wbNettWeightKg / 1000) * 1000) / 1000;
+  }, [wbNettWeightKg]);
+
+  // Apply calculated nett weight to firewood material line item quantity
+  const handleApplyNettWeightToLine = () => {
+    if (wbNettWeightKg <= 0) {
+      showToast('error', 'Please enter Gross Weight and Tare Weight first.');
+      return;
+    }
+    setFormLines((prev) => {
+      if (prev.length === 0) return prev;
+      const fwIdx = prev.findIndex((l) => {
+        const cat = (l.categoryName || '').toLowerCase();
+        const name = (l.itemName || '').toLowerCase();
+        const code = (l.itemCode || '').toUpperCase();
+        return cat.includes('firewood') || name.includes('firewood') || code.startsWith('RWD');
+      });
+      const targetIdx = fwIdx >= 0 ? fwIdx : 0;
+      return prev.map((l, idx) => {
+        if (idx !== targetIdx) return l;
+        const isTonUnit = ['t', 'ton', 'tonnes', 'tonne'].includes((l.unit || '').trim().toLowerCase());
+        const appliedQty = isTonUnit ? wbNettWeightTonnes : wbNettWeightKg;
+        const rate = Number(l.rate) || 0;
+        return {
+          ...l,
+          quantity: appliedQty,
+          amount: Math.round(appliedQty * rate * 100) / 100
+        };
+      });
+    });
+    showToast('success', `Nett weight applied: ${wbNettWeightKg.toLocaleString('en-IN')} kg (${wbNettWeightTonnes} T)`);
+  };
 
   // View Purchase Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -441,20 +517,379 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     });
   }, [validItems, searchQuery, activeStatusFilter]);
 
-  // Filtered Purchases Ledger
+  // Helper to identify Firewood purchases
+  const isFirewoodPurchase = (p: RawMaterialPurchase): boolean => {
+    if (p.purchaseType === 'Firewood') return true;
+    return (p.lines || []).some((l) => {
+      const cat = (l.categoryName || '').toLowerCase();
+      const name = (l.itemName || '').toLowerCase();
+      const code = (l.itemCode || '').toUpperCase();
+      return cat.includes('firewood') || name.includes('firewood') || code.startsWith('RWD');
+    });
+  };
+
+  // Unique suppliers list for Purchases filter dropdown
+  const purchaseVendorsList = useMemo(() => {
+    const map = new Map<string, string>();
+    purchases.forEach((p) => {
+      if (p.vendorId && p.vendorName) {
+        map.set(p.vendorId, p.vendorName);
+      } else if (p.vendorName) {
+        map.set(p.vendorName, p.vendorName);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [purchases]);
+
+  const isAnyPurchaseFilterActive = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      purchaseSearchColumn !== 'ALL' ||
+      Object.values(columnFilters).some((v) => (v || '').trim() !== '') ||
+      purchaseVendorFilter !== 'ALL' ||
+      purchaseStartDate !== '' ||
+      purchaseEndDate !== '' ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [
+    searchQuery,
+    purchaseSearchColumn,
+    columnFilters,
+    purchaseVendorFilter,
+    purchaseStartDate,
+    purchaseEndDate,
+    sortField,
+    sortDirection
+  ]);
+
+  const handleResetPurchaseFilters = () => {
+    setSearchQuery('');
+    setPurchaseSearchColumn('ALL');
+    setColumnFilters({});
+    setPurchaseVendorFilter('ALL');
+    setPurchaseStartDate('');
+    setPurchaseEndDate('');
+    setSortField(null);
+    setSortDirection('normal');
+  };
+
+  // 3-state Column Sorting: Default Direction -> Opposite Direction -> Normal (Unsorted)
+  const handleSort = (field: string) => {
+    const isNumericOrDate = [
+      'purchaseDate',
+      'grossWeightKg',
+      'tareWeightKg',
+      'nettWeightKg',
+      'rate',
+      'grandTotal',
+      'wbCharges',
+      'quantity'
+    ].includes(field);
+
+    const firstDirection: 'asc' | 'desc' = isNumericOrDate ? 'desc' : 'asc';
+    const secondDirection: 'asc' | 'desc' = isNumericOrDate ? 'asc' : 'desc';
+
+    if (sortField !== field || sortDirection === 'normal') {
+      // Step 1: Normal -> First Direction
+      setSortField(field);
+      setSortDirection(firstDirection);
+    } else if (sortDirection === firstDirection) {
+      // Step 2: First Direction -> Second Direction
+      setSortDirection(secondDirection);
+    } else {
+      // Step 3: Second Direction -> Normal (Unsorted / Default order)
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
+        }`}
+        title={
+          sortField === field && sortDirection === 'asc'
+            ? 'Sorted ascending (click to sort descending or reset to normal)'
+            : sortField === field && sortDirection === 'desc'
+            ? 'Sorted descending (click to reset to normal)'
+            : 'Click to sort'
+        }
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const getColumnDisplayName = (col: string): string => {
+    switch (col) {
+      case 'purchaseNumber': return 'Purchase No';
+      case 'purchaseDate': return 'Date';
+      case 'vendorName': return 'Supplier';
+      case 'vehicleNo': return 'Vehicle No';
+      case 'wbSlipNo': return 'WB Slip No';
+      case 'weighbridgeName': return 'WB Center';
+      case 'materialVariety': return 'Material Variety';
+      case 'supplierInvoiceNo': return 'Invoice No';
+      case 'itemName': return 'Material / Item';
+      case 'status': return 'Status';
+      default: return 'All Columns';
+    }
+  };
+
+  // Filtered Purchases Ledger (General & Firewood with active filters & column-wise search)
   const filteredPurchases = useMemo(() => {
     return purchases.filter((p) => {
+      // 1. Search Query (respecting purchaseSearchColumn selector)
       const q = searchQuery.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        p.purchaseNumber.toLowerCase().includes(q) ||
-        p.vendorName.toLowerCase().includes(q) ||
-        p.supplierInvoiceNo.toLowerCase().includes(q) ||
-        (p.vehicleNo && p.vehicleNo.toLowerCase().includes(q)) ||
-        p.lines?.some((l) => l.itemName.toLowerCase().includes(q) || l.itemCode.toLowerCase().includes(q))
-      );
+      if (q) {
+        if (purchaseSearchColumn === 'ALL') {
+          const matchesAll =
+            (p.purchaseNumber || '').toLowerCase().includes(q) ||
+            (p.purchaseDate || '').toLowerCase().includes(q) ||
+            formatDate(p.purchaseDate).toLowerCase().includes(q) ||
+            (p.vendorName || '').toLowerCase().includes(q) ||
+            (p.supplierInvoiceNo || '').toLowerCase().includes(q) ||
+            (p.vehicleNo || '').toLowerCase().includes(q) ||
+            (p.weighbridge?.slipNo || '').toLowerCase().includes(q) ||
+            (p.weighbridge?.vehicleNo || '').toLowerCase().includes(q) ||
+            (p.weighbridge?.weighbridgeName || '').toLowerCase().includes(q) ||
+            (p.weighbridge?.materialVariety || '').toLowerCase().includes(q) ||
+            (p.status || '').toLowerCase().includes(q) ||
+            p.lines?.some((l) => (l.itemName || '').toLowerCase().includes(q) || (l.itemCode || '').toLowerCase().includes(q));
+          if (!matchesAll) return false;
+        } else if (purchaseSearchColumn === 'purchaseNumber') {
+          if (!(p.purchaseNumber || '').toLowerCase().includes(q)) return false;
+        } else if (purchaseSearchColumn === 'purchaseDate') {
+          const dStr = p.purchaseDate || '';
+          const formatted = formatDate(p.purchaseDate).toLowerCase();
+          if (!dStr.toLowerCase().includes(q) && !formatted.includes(q)) return false;
+        } else if (purchaseSearchColumn === 'vendorName') {
+          if (!(p.vendorName || '').toLowerCase().includes(q) && !(p.vendorCode || '').toLowerCase().includes(q)) return false;
+        } else if (purchaseSearchColumn === 'vehicleNo') {
+          const veh = (p.weighbridge?.vehicleNo || p.vehicleNo || '').toLowerCase();
+          if (!veh.includes(q)) return false;
+        } else if (purchaseSearchColumn === 'wbSlipNo') {
+          const slip = (p.weighbridge?.slipNo || '').toLowerCase();
+          if (!slip.includes(q)) return false;
+        } else if (purchaseSearchColumn === 'weighbridgeName') {
+          const center = (p.weighbridge?.weighbridgeName || '').toLowerCase();
+          if (!center.includes(q)) return false;
+        } else if (purchaseSearchColumn === 'materialVariety') {
+          const mat = (p.weighbridge?.materialVariety || p.lines?.[0]?.itemName || '').toLowerCase();
+          if (!mat.includes(q)) return false;
+        } else if (purchaseSearchColumn === 'supplierInvoiceNo') {
+          if (!(p.supplierInvoiceNo || '').toLowerCase().includes(q)) return false;
+        } else if (purchaseSearchColumn === 'itemName') {
+          const hasItem = p.lines?.some((l) => (l.itemName || '').toLowerCase().includes(q) || (l.itemCode || '').toLowerCase().includes(q));
+          if (!hasItem) return false;
+        } else if (purchaseSearchColumn === 'status') {
+          if (!(p.status || '').toLowerCase().includes(q)) return false;
+        }
+      }
+
+      // 2. Individual Column Filters
+      for (const [colKey, colVal] of Object.entries(columnFilters)) {
+        const val = (colVal || '').trim().toLowerCase();
+        if (!val) continue;
+
+        if (colKey === 'purchaseNumber') {
+          if (!(p.purchaseNumber || '').toLowerCase().includes(val)) return false;
+        } else if (colKey === 'purchaseDate') {
+          const dStr = p.purchaseDate || '';
+          const formatted = formatDate(p.purchaseDate).toLowerCase();
+          if (!dStr.toLowerCase().includes(val) && !formatted.includes(val)) return false;
+        } else if (colKey === 'vendorName') {
+          if (!(p.vendorName || '').toLowerCase().includes(val) && !(p.vendorCode || '').toLowerCase().includes(val)) return false;
+        } else if (colKey === 'wbSlipNo') {
+          const slip = (p.weighbridge?.slipNo || '').toLowerCase();
+          const center = (p.weighbridge?.weighbridgeName || '').toLowerCase();
+          if (!slip.includes(val) && !center.includes(val)) return false;
+        } else if (colKey === 'vehicleNo') {
+          const veh = (p.weighbridge?.vehicleNo || p.vehicleNo || '').toLowerCase();
+          if (!veh.includes(val)) return false;
+        } else if (colKey === 'materialVariety') {
+          const mat = (p.weighbridge?.materialVariety || p.lines?.[0]?.itemName || '').toLowerCase();
+          if (!mat.includes(val)) return false;
+        } else if (colKey === 'grossWeightKg') {
+          const gross = (p.weighbridge?.grossWeightKg?.toString() || '');
+          if (!gross.includes(val)) return false;
+        } else if (colKey === 'tareWeightKg') {
+          const tare = (p.weighbridge?.tareWeightKg?.toString() || '');
+          if (!tare.includes(val)) return false;
+        } else if (colKey === 'nettWeightKg') {
+          const nett = (p.weighbridge?.nettWeightKg?.toString() || p.lines?.[0]?.quantity?.toString() || '');
+          if (!nett.includes(val)) return false;
+        } else if (colKey === 'rate') {
+          const r = (p.lines?.[0]?.rate?.toString() || '');
+          if (!r.includes(val)) return false;
+        } else if (colKey === 'grandTotal') {
+          const tot = (p.grandTotal?.toString() || '');
+          if (!tot.includes(val)) return false;
+        } else if (colKey === 'wbCharges') {
+          const chg = (p.weighbridge?.weighbridgeCharges?.toString() || '');
+          if (!chg.includes(val)) return false;
+        } else if (colKey === 'status') {
+          if (!(p.status || '').toLowerCase().includes(val)) return false;
+        } else if (colKey === 'supplierInvoiceNo') {
+          const inv = (p.supplierInvoiceNo || '').toLowerCase();
+          if (!inv.includes(val)) return false;
+        } else if (colKey === 'itemName') {
+          const hasItem = p.lines?.some((l) => (l.itemName || '').toLowerCase().includes(val) || (l.itemCode || '').toLowerCase().includes(val));
+          if (!hasItem) return false;
+        } else if (colKey === 'quantity') {
+          const qty = p.lines?.map(l => l.quantity?.toString()).join(' ') || '';
+          if (!qty.includes(val)) return false;
+        }
+      }
+
+      // 3. Vendor filter
+      if (
+        purchaseVendorFilter !== 'ALL' &&
+        p.vendorId !== purchaseVendorFilter &&
+        p.vendorName !== purchaseVendorFilter
+      ) {
+        return false;
+      }
+
+      // 4. Date Range Filter
+      if (purchaseStartDate && p.purchaseDate < purchaseStartDate) {
+        return false;
+      }
+      if (purchaseEndDate && p.purchaseDate > purchaseEndDate) {
+        return false;
+      }
+
+      return true;
     });
-  }, [purchases, searchQuery]);
+  }, [
+    purchases,
+    searchQuery,
+    purchaseSearchColumn,
+    columnFilters,
+    purchaseVendorFilter,
+    purchaseStartDate,
+    purchaseEndDate
+  ]);
+
+  // Sorted Purchases Ledger (General & Firewood)
+  const sortedPurchases = useMemo(() => {
+    if (!sortField || sortDirection === 'normal') {
+      return filteredPurchases;
+    }
+    return [...filteredPurchases].sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+
+      switch (sortField) {
+        case 'purchaseNumber':
+          valA = a.purchaseNumber || '';
+          valB = b.purchaseNumber || '';
+          break;
+        case 'purchaseDate':
+          valA = a.purchaseDate || '';
+          valB = b.purchaseDate || '';
+          break;
+        case 'vendorName':
+          valA = a.vendorName || '';
+          valB = b.vendorName || '';
+          break;
+        case 'wbSlipNo':
+          valA = a.weighbridge?.slipNo || '';
+          valB = b.weighbridge?.slipNo || '';
+          const numA = Number(valA);
+          const numB = Number(valB);
+          if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+            return sortDirection === 'asc' ? numA - numB : numB - numA;
+          }
+          break;
+        case 'vehicleNo':
+          valA = a.weighbridge?.vehicleNo || a.vehicleNo || '';
+          valB = b.weighbridge?.vehicleNo || b.vehicleNo || '';
+          break;
+        case 'materialVariety':
+          valA = a.weighbridge?.materialVariety || a.lines?.[0]?.itemName || '';
+          valB = b.weighbridge?.materialVariety || b.lines?.[0]?.itemName || '';
+          break;
+        case 'grossWeightKg':
+          valA = Number(a.weighbridge?.grossWeightKg) || 0;
+          valB = Number(b.weighbridge?.grossWeightKg) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'tareWeightKg':
+          valA = Number(a.weighbridge?.tareWeightKg) || 0;
+          valB = Number(b.weighbridge?.tareWeightKg) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'nettWeightKg':
+          valA = Number(a.weighbridge?.nettWeightKg) || Number(a.lines?.[0]?.quantity) || 0;
+          valB = Number(b.weighbridge?.nettWeightKg) || Number(b.lines?.[0]?.quantity) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'rate':
+          valA = Number(a.lines?.[0]?.rate) || 0;
+          valB = Number(b.lines?.[0]?.rate) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'grandTotal':
+          valA = Number(a.grandTotal) || 0;
+          valB = Number(b.grandTotal) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'wbCharges':
+          valA = Number(a.weighbridge?.weighbridgeCharges) || 0;
+          valB = Number(b.weighbridge?.weighbridgeCharges) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        case 'status':
+          valA = a.status || '';
+          valB = b.status || '';
+          break;
+        case 'supplierInvoiceNo':
+          valA = a.supplierInvoiceNo || '';
+          valB = b.supplierInvoiceNo || '';
+          break;
+        case 'itemName':
+          valA = a.lines?.[0]?.itemName || '';
+          valB = b.lines?.[0]?.itemName || '';
+          break;
+        case 'quantity':
+          valA = Number(a.lines?.[0]?.quantity) || 0;
+          valB = Number(b.lines?.[0]?.quantity) || 0;
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        default:
+          valA = a.purchaseDate || '';
+          valB = b.purchaseDate || '';
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }, [filteredPurchases, sortField, sortDirection]);
+
+  // Separate sorted & filtered purchases for the two tables
+  const filteredGeneralPurchases = useMemo(() => {
+    return sortedPurchases.filter((p) => !isFirewoodPurchase(p));
+  }, [sortedPurchases]);
+
+  const filteredFirewoodPurchases = useMemo(() => {
+    return sortedPurchases.filter((p) => isFirewoodPurchase(p));
+  }, [sortedPurchases]);
+
+  const generalPurchasesCount = useMemo(() => {
+    return purchases.filter((p) => !isFirewoodPurchase(p)).length;
+  }, [purchases]);
+
+  const firewoodPurchasesCount = useMemo(() => {
+    return purchases.filter((p) => isFirewoodPurchase(p)).length;
+  }, [purchases]);
 
   // Export to Excel using exceljs
   const handleExportExcel = async () => {
@@ -540,10 +975,11 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
   };
 
   // Open New Purchase Entry Modal
-  const handleOpenNewPurchase = () => {
+  const handleOpenNewPurchase = (defaultType?: PurchaseType) => {
     setIsEditMode(false);
     setEditingPurchaseId(null);
-    setPurchaseType('Raw Material');
+    const typeToSet: PurchaseType = defaultType || (purchaseSubTab === 'firewood' ? 'Firewood' : 'Raw Material');
+    setPurchaseType(typeToSet);
     setPurchaseDate(new Date().toISOString().split('T')[0]);
     setVendorId('');
     setSupplierInvoiceNo('');
@@ -552,9 +988,22 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     setDriverName('');
     setDriverPhone('');
     setRemarks('');
+    setWbSlipNo('');
+    setWbVehicleNo('');
+    setWbName('');
+    setWbCharges('');
+    setWbGrossWeightKg('');
+    setWbGrossWeightTime('');
+    setWbTareWeightKg('');
+    setWbTareWeightTime('');
+    setWbMaterialVariety('');
+    setWbRemarks('');
 
     if (validItems.length > 0) {
-      const first = validItems[0];
+      const fwItem = typeToSet === 'Firewood'
+        ? validItems.find((i) => (i.categoryName || '').toLowerCase().includes('firewood') || (i.itemName || '').toLowerCase().includes('firewood') || (i.itemCode || '').toUpperCase().startsWith('RWD'))
+        : null;
+      const first = fwItem || validItems[0];
       setFormLines([
         {
           lineId: `line_1_${Date.now()}`,
@@ -563,7 +1012,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
           itemName: first.itemName,
           categoryName: first.categoryName || '',
           quantity: '',
-          unit: first.baseUnit || 'kg',
+          unit: first.baseUnit || (typeToSet === 'Firewood' ? 'T' : 'kg'),
           rate: first.averageRate && first.averageRate > 0 ? first.averageRate : '',
           amount: 0
         }
@@ -578,7 +1027,8 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
   const handleOpenEditPurchase = (p: RawMaterialPurchase) => {
     setIsEditMode(true);
     setEditingPurchaseId(p.id);
-    setPurchaseType(p.purchaseType || 'Raw Material');
+    const resolvedType: PurchaseType = (p.purchaseType === 'Firewood' || isFirewoodPurchase(p)) ? 'Firewood' : (p.purchaseType || 'Raw Material');
+    setPurchaseType(resolvedType);
     setPurchaseDate(p.purchaseDate || new Date().toISOString().split('T')[0]);
     setVendorId(p.vendorId || '');
     setSupplierInvoiceNo(p.supplierInvoiceNo || '');
@@ -587,6 +1037,16 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     setDriverName(p.driverName || '');
     setDriverPhone(p.driverPhone || '');
     setRemarks(p.remarks || '');
+    setWbSlipNo(p.weighbridge?.slipNo || '');
+    setWbVehicleNo(p.weighbridge?.vehicleNo || p.vehicleNo || '');
+    setWbName(p.weighbridge?.weighbridgeName || '');
+    setWbCharges(p.weighbridge?.weighbridgeCharges !== undefined ? p.weighbridge.weighbridgeCharges : '');
+    setWbGrossWeightKg(p.weighbridge?.grossWeightKg !== undefined ? p.weighbridge.grossWeightKg : '');
+    setWbGrossWeightTime(p.weighbridge?.grossWeightTime || '');
+    setWbTareWeightKg(p.weighbridge?.tareWeightKg !== undefined ? p.weighbridge.tareWeightKg : '');
+    setWbTareWeightTime(p.weighbridge?.tareWeightTime || '');
+    setWbMaterialVariety(p.weighbridge?.materialVariety || '');
+    setWbRemarks(p.weighbridge?.remarks || '');
     setFormLines(
       (p.lines || []).map((l, idx) => ({
         lineId: l.lineId || `line_${idx}_${Date.now()}`,
@@ -763,6 +1223,25 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
         amount: Math.round((Number(l.quantity) || 0) * (Number(l.rate) || 0) * 100) / 100
       }));
 
+      const finalVehicleNo = (vehicleNo.trim() || wbVehicleNo.trim());
+
+      const weighbridgePayload: WeighbridgeDetails | undefined = isFirewood
+        ? {
+            slipNo: wbSlipNo.trim(),
+            vehicleNo: finalVehicleNo,
+            weighbridgeName: wbName.trim(),
+            weighbridgeCharges: wbCharges === '' ? 0 : Number(wbCharges),
+            grossWeightKg: wbGrossWeightKg === '' ? 0 : Number(wbGrossWeightKg),
+            grossWeightTime: wbGrossWeightTime.trim(),
+            tareWeightKg: wbTareWeightKg === '' ? 0 : Number(wbTareWeightKg),
+            tareWeightTime: wbTareWeightTime.trim(),
+            nettWeightKg: Number(wbNettWeightKg) || 0,
+            nettWeightTonnes: Number(wbNettWeightTonnes) || 0,
+            materialVariety: wbMaterialVariety.trim(),
+            remarks: wbRemarks.trim()
+          }
+        : undefined;
+
       if (isEditMode && editingPurchaseId) {
         await RawMaterialPurchaseService.updatePurchase(
           editingPurchaseId,
@@ -774,9 +1253,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
             vendorCode: selectedVendor.vendorCode,
             supplierInvoiceNo: supplierInvoiceNo.trim(),
             supplierInvoiceDate,
-            vehicleNo: vehicleNo.trim(),
+            vehicleNo: finalVehicleNo,
             driverName: driverName.trim(),
             driverPhone: driverPhone.trim(),
+            weighbridge: weighbridgePayload,
             remarks: remarks.trim(),
             lines: linesPayload as any
           },
@@ -798,9 +1278,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
             vendorCode: selectedVendor.vendorCode,
             supplierInvoiceNo: supplierInvoiceNo.trim(),
             supplierInvoiceDate,
-            vehicleNo: vehicleNo.trim(),
+            vehicleNo: finalVehicleNo,
             driverName: driverName.trim(),
             driverPhone: driverPhone.trim(),
+            weighbridge: weighbridgePayload,
             remarks: remarks.trim(),
             status: statusToSave === 'Confirmed' ? 'Confirmed' : 'Draft',
             lines: linesPayload
@@ -850,9 +1331,13 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
       {/* HEADER SECTION: Title, Subtitle, and White Reload Button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Warehouse Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            {activeTab === 'purchases' ? 'Raw Material Purchase' : 'Warehouse Management'}
+          </h1>
           <p className="text-xs text-slate-400 font-normal mt-0.5">
-            Raw material inventory · Inward receipts · Stock monitoring
+            {activeTab === 'purchases'
+              ? 'Supplier deliveries and raw material purchases linked to warehouse inventory'
+              : 'Raw material inventory · Inward receipts · Stock monitoring'}
           </p>
         </div>
 
@@ -934,7 +1419,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
       {/* TABS ROW: Stock Overview & Raw Material Purchase */}
       <div className="flex items-center gap-8 border-b border-slate-200/90 px-1 pt-1">
         <button
-          onClick={() => setActiveTab('overview')}
+          onClick={() => {
+            setActiveTab('overview');
+            navigate('/erp/warehouse', { replace: true });
+          }}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
             activeTab === 'overview'
               ? 'border-slate-900 text-slate-900'
@@ -946,7 +1434,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
         </button>
 
         <button
-          onClick={() => setActiveTab('purchases')}
+          onClick={() => {
+            setActiveTab('purchases');
+            navigate('/erp/purchases', { replace: true });
+          }}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
             activeTab === 'purchases'
               ? 'border-slate-900 text-slate-900'
@@ -960,16 +1451,65 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
 
       {/* SUB-HEADER / CONTROLS & FILTER BAR */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        {/* Search Input */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder={activeTab === 'overview' ? 'Search materials...' : 'Search purchases, suppliers, items...'}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
+        {/* Search Input (with column-wise selector for purchases) */}
+        <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
+          {activeTab === 'purchases' && (
+            <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
+              <select
+                value={purchaseSearchColumn}
+                onChange={(e) => setPurchaseSearchColumn(e.target.value)}
+                className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
+                title="Select column to search in"
+              >
+                <option value="ALL">All Columns</option>
+                <option value="purchaseNumber">Purchase No</option>
+                <option value="purchaseDate">Date</option>
+                <option value="vendorName">Supplier / Vendor</option>
+                <option value="vehicleNo">Vehicle No</option>
+                {purchaseSubTab === 'firewood' ? (
+                  <>
+                    <option value="wbSlipNo">WB Slip No</option>
+                    <option value="weighbridgeName">WB Center</option>
+                    <option value="materialVariety">Material Variety</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="supplierInvoiceNo">Invoice No</option>
+                    <option value="itemName">Material / Item</option>
+                  </>
+                )}
+                <option value="status">Status</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          )}
+
+          <div className="relative flex-1 flex items-center min-w-[200px] sm:min-w-[260px]">
+            <Search className="w-3.5 h-3.5 absolute left-3 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder={
+                activeTab === 'overview'
+                  ? 'Search materials...'
+                  : purchaseSearchColumn === 'ALL'
+                  ? 'Search across all columns...'
+                  : `Search by ${getColumnDisplayName(purchaseSearchColumn)}...`
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-7 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none bg-transparent"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 text-slate-400 hover:text-slate-600 transition"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Health Status Filter Pills (Active only on Stock Overview tab) */}
@@ -1021,6 +1561,77 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
           </div>
         )}
 
+        {/* Purchases Ledger Filters & Controls (Active on Purchases Tab) */}
+        {activeTab === 'purchases' && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Vendor Filter Dropdown */}
+            <select
+              value={purchaseVendorFilter}
+              onChange={(e) => setPurchaseVendorFilter(e.target.value)}
+              className="h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900 max-w-[170px] truncate cursor-pointer shadow-2xs"
+            >
+              <option value="ALL">All Suppliers</option>
+              {purchaseVendorsList.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Date Range: From & To */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 h-9 shadow-2xs">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">From</span>
+              <input
+                type="date"
+                value={purchaseStartDate}
+                onChange={(e) => setPurchaseStartDate(e.target.value)}
+                className="text-xs text-slate-700 font-medium focus:outline-none bg-transparent"
+              />
+              <span className="text-slate-300">|</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase">To</span>
+              <input
+                type="date"
+                value={purchaseEndDate}
+                onChange={(e) => setPurchaseEndDate(e.target.value)}
+                className="text-xs text-slate-700 font-medium focus:outline-none bg-transparent"
+              />
+            </div>
+
+            {/* Toggle Inline Column Filters Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters(!showColumnFilters)}
+              className={`h-9 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                  ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Toggle column-wise search inputs on table header"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+                </span>
+              )}
+            </button>
+
+            {/* Clear Filters Button */}
+            {isAnyPurchaseFilterActive && (
+              <button
+                type="button"
+                onClick={handleResetPurchaseFilters}
+                className="h-9 px-3 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1"
+                title="Reset all search, column filters & date range"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Right Actions: Export Excel & Add Purchase Entry (All Black Buttons) */}
         <div className="flex items-center gap-2 ml-auto">
           {activeTab === 'overview' && (
@@ -1034,11 +1645,15 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
           )}
 
           <button
-            onClick={handleOpenNewPurchase}
+            onClick={() => handleOpenNewPurchase()}
             className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs transition shadow-2xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>New Purchase Entry</span>
+            <span>
+              {activeTab === 'purchases' && purchaseSubTab === 'firewood'
+                ? 'New Firewood Purchase'
+                : 'New Purchase Entry'}
+            </span>
           </button>
         </div>
       </div>
@@ -1178,11 +1793,62 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
       {/* TAB 2: RAW MATERIAL PURCHASES */}
       {activeTab === 'purchases' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900">Raw Material Purchases Ledger</h3>
-            <p className="text-xs text-slate-500">
-              Recorded supplier deliveries and raw material purchases linked to warehouse inventory
-            </p>
+          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {purchaseSubTab === 'firewood' ? 'Firewood Purchases Ledger' : 'Raw Material Purchases Ledger'}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {purchaseSubTab === 'firewood'
+                  ? 'Recorded firewood consignments with weighbridge slip verification and gross/tare weights'
+                  : 'Recorded supplier deliveries and raw material purchases linked to warehouse inventory'}
+              </p>
+            </div>
+
+            {/* Sub-tab Switcher: Raw Material Purchases vs Firewood (Weighbridge) */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setPurchaseSubTab('general')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  purchaseSubTab === 'general'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>Raw Material Purchases</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    purchaseSubTab === 'general'
+                      ? 'bg-slate-100 text-slate-800'
+                      : 'bg-slate-200/70 text-slate-600'
+                  }`}
+                >
+                  {generalPurchasesCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPurchaseSubTab('firewood')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  purchaseSubTab === 'firewood'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>Firewood (Weighbridge)</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    purchaseSubTab === 'firewood'
+                      ? 'bg-amber-100 text-amber-900'
+                      : 'bg-slate-200/70 text-slate-600'
+                  }`}
+                >
+                  {firewoodPurchasesCount}
+                </span>
+              </button>
+            </div>
           </div>
 
           <div className="p-4 overflow-x-auto">
@@ -1191,51 +1857,776 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 <RefreshCw className="w-6 h-6 animate-spin mx-auto text-slate-900 mb-2" />
                 Loading purchase entries...
               </div>
-            ) : filteredPurchases.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-400">
-                No raw material purchase entries recorded in Firebase yet.
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+            ) : purchaseSubTab === 'general' ? (
+              /* TABLE 1: GENERAL RAW MATERIAL & CHEMICAL PURCHASES */
+              <div className="border border-slate-200 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
                 <table className="w-full text-left border-collapse text-xs border border-slate-200">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider">
-                      <th className="p-3 border border-slate-200">Purchase No & Date</th>
-                      <th className="p-3 border border-slate-200">Supplier / Vendor</th>
-                      <th className="p-3 border border-slate-200">Invoice & Vehicle</th>
-                      <th className="p-3 border border-slate-200">Material / Item</th>
-                      <th className="p-3 border border-slate-200 text-right">Quantity</th>
-                      <th className="p-3 border border-slate-200 text-right">Amount (₹)</th>
-                      <th className="p-3 border border-slate-200 text-center">Status</th>
-                      <th className="p-3 border border-slate-200 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    {filteredPurchases.map((p) => {
-                      const lines = p.lines && p.lines.length > 0 ? p.lines : null;
-                      if (!lines) {
+                    <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+                      <tr className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b-2 border-slate-300">
+                        <th
+                          onClick={() => handleSort('purchaseNumber')}
+                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Purchase No</span>
+                            {renderSortIcon('purchaseNumber')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('purchaseDate')}
+                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Date</span>
+                            {renderSortIcon('purchaseDate')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('vendorName')}
+                          className="p-3 border border-slate-200 text-left min-w-[140px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Supplier / Vendor</span>
+                            {renderSortIcon('vendorName')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('supplierInvoiceNo')}
+                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Invoice & Vehicle</span>
+                            {renderSortIcon('supplierInvoiceNo')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('itemName')}
+                          className="p-3 border border-slate-200 text-left min-w-[140px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Material / Item</span>
+                            {renderSortIcon('itemName')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('quantity')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Quantity</span>
+                            {renderSortIcon('quantity')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('grandTotal')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[110px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Amount (₹)</span>
+                            {renderSortIcon('grandTotal')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('status')}
+                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-center">
+                            <span>Status</span>
+                            {renderSortIcon('status')}
+                          </div>
+                        </th>
+                        <th className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-slate-50">
+                          Actions
+                        </th>
+                      </tr>
+
+                      {showColumnFilters && (
+                        <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter no..."
+                              value={columnFilters.purchaseNumber || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, purchaseNumber: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter date..."
+                              value={columnFilters.purchaseDate || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, purchaseDate: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter supplier..."
+                              value={columnFilters.vendorName || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, vendorName: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter inv / veh..."
+                              value={columnFilters.supplierInvoiceNo || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, supplierInvoiceNo: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter material..."
+                              value={columnFilters.itemName || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, itemName: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter qty..."
+                              value={columnFilters.quantity || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, quantity: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter amt..."
+                              value={columnFilters.grandTotal || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, grandTotal: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                            <input
+                              type="text"
+                              placeholder="Filter status..."
+                              value={columnFilters.status || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-center"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                            {Object.values(columnFilters).some(v => (v || '').trim() !== '') && (
+                              <button
+                                type="button"
+                                onClick={() => setColumnFilters({})}
+                                className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded"
+                                title="Clear column filters"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </th>
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody className="bg-white">
+                      {filteredGeneralPurchases.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-14 text-center text-xs text-slate-400 bg-white">
+                            <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                              <Package className="w-8 h-8 text-slate-300 stroke-[1.5]" />
+                              <div className="text-sm font-bold text-slate-700">No Matching Purchase Entries</div>
+                              <p className="text-slate-400 text-xs leading-relaxed">
+                                No raw material purchases match your current search, column filters, or date range.
+                              </p>
+                              {isAnyPurchaseFilterActive && (
+                                <button
+                                  type="button"
+                                  onClick={handleResetPurchaseFilters}
+                                  className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reset All Filters</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredGeneralPurchases.map((p) => {
+                        const lines = p.lines && p.lines.length > 0 ? p.lines : null;
+                        if (!lines) {
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left">
+                                <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
+                                {p.vendorCode && (
+                                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left">
+                                <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                                {p.vehicleNo && (
+                                  <div className="mt-1">
+                                    <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
+                                      Veh: {p.vehicleNo}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left text-slate-400 italic">No items</td>
+                              <td className="p-3 border border-slate-200 align-middle text-right text-slate-400 whitespace-nowrap font-bold">—</td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
+                                {formatCurrency(p.grandTotal)}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                    p.status === 'Received'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : p.status === 'Confirmed'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : p.status === 'Draft'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  }`}
+                                >
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                <div className="inline-flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenViewPurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenEditPurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeletePurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
                         return (
-                          <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="p-3 border border-slate-200 align-middle">
-                              <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
-                              <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
+                          <React.Fragment key={p.id}>
+                            {lines.map((line, idx) => (
+                              <tr key={`${p.id}_line_${line.lineId || idx}`} className="hover:bg-slate-50/70 transition-colors">
+                                {idx === 0 && (
+                                  <>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
+                                      <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
+                                      {lines.length > 1 && (
+                                        <div className="text-[11px] font-black text-slate-900 mt-1.5 pt-1 border-t border-slate-100">
+                                          Total: {formatCurrency(p.grandTotal)}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
+                                      <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                                    </td>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
+                                      <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
+                                      {p.vendorCode && (
+                                        <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
+                                      )}
+                                    </td>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
+                                      <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                                      {p.vehicleNo && (
+                                        <div className="mt-1">
+                                          <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
+                                            Veh: {p.vehicleNo}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </>
+                                )}
+
+                                {/* Separate Item Row: Material, Quantity, and Amount */}
+                                <td className="p-3 border border-slate-200 align-middle text-left">
+                                  <div className="font-semibold text-slate-900 leading-tight">{line.itemName}</div>
+                                  {line.itemCode && (
+                                    <div className="text-[10px] font-mono text-slate-400 mt-0.5">{line.itemCode}</div>
+                                  )}
+                                </td>
+                                <td className="p-3 border border-slate-200 align-middle text-right font-bold text-slate-800 whitespace-nowrap">
+                                  {Number(line.quantity).toLocaleString('en-IN')} {line.unit}
+                                </td>
+                                <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                  <div className="font-black text-slate-900">
+                                    {formatCurrency(line.amount || (line.quantity * line.rate))}
+                                  </div>
+                                  {line.rate && Number(line.rate) > 0 ? (
+                                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">
+                                      @ ₹{Number(line.rate).toFixed(2)}/{line.unit}
+                                    </div>
+                                  ) : null}
+                                </td>
+
+                                {idx === 0 && (
+                                  <>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
+                                      <span
+                                        className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                          p.status === 'Received'
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : p.status === 'Confirmed'
+                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                            : p.status === 'Draft'
+                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                                        }`}
+                                      >
+                                        {p.status}
+                                      </span>
+                                    </td>
+                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
+                                      <div className="inline-flex items-center justify-center gap-1.5">
+                                        <button
+                                          onClick={() => handleOpenViewPurchase(p)}
+                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                        >
+                                          View
+                                        </button>
+                                        <button
+                                          onClick={() => handleOpenEditPurchase(p)}
+                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeletePurchase(p)}
+                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                    </tbody>
+                  </table>
+                </div>
+            ) : (
+              /* TABLE 2: FIREWOOD PURCHASES (WITH FULL WEIGHBRIDGE DETAILS) */
+              <div className="border border-slate-200 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
+                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                    <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+                      <tr className="bg-amber-50/95 text-slate-800 font-bold uppercase text-[10px] tracking-wider border-b-2 border-amber-300">
+                        <th
+                          onClick={() => handleSort('purchaseNumber')}
+                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Purchase No</span>
+                            {renderSortIcon('purchaseNumber')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('purchaseDate')}
+                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Date</span>
+                            {renderSortIcon('purchaseDate')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('vendorName')}
+                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Supplier / Vendor</span>
+                            {renderSortIcon('vendorName')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('wbSlipNo')}
+                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>WB Slip No & Center</span>
+                            {renderSortIcon('wbSlipNo')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('vehicleNo')}
+                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-center">
+                            <span>Vehicle No</span>
+                            {renderSortIcon('vehicleNo')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('materialVariety')}
+                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-start">
+                            <span>Material Variety</span>
+                            {renderSortIcon('materialVariety')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('grossWeightKg')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Gross Wt</span>
+                            {renderSortIcon('grossWeightKg')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('tareWeightKg')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Tare Wt</span>
+                            {renderSortIcon('tareWeightKg')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('nettWeightKg')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[115px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Nett Wt (Qty)</span>
+                            {renderSortIcon('nettWeightKg')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('rate')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Rate</span>
+                            {renderSortIcon('rate')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('grandTotal')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>Amount (₹)</span>
+                            {renderSortIcon('grandTotal')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('wbCharges')}
+                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-end">
+                            <span>WB Charges</span>
+                            {renderSortIcon('wbCharges')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleSort('status')}
+                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1 justify-center">
+                            <span>Status</span>
+                            {renderSortIcon('status')}
+                          </div>
+                        </th>
+                        <th className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-amber-50">
+                          Actions
+                        </th>
+                      </tr>
+
+                      {showColumnFilters && (
+                        <tr className="bg-amber-100/90 border-b-2 border-amber-300">
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter no..."
+                              value={columnFilters.purchaseNumber || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, purchaseNumber: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter date..."
+                              value={columnFilters.purchaseDate || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, purchaseDate: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter supplier..."
+                              value={columnFilters.vendorName || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, vendorName: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter slip/center..."
+                              value={columnFilters.wbSlipNo || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, wbSlipNo: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter vehicle..."
+                              value={columnFilters.vehicleNo || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, vehicleNo: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-center"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter variety..."
+                              value={columnFilters.materialVariety || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, materialVariety: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter gross..."
+                              value={columnFilters.grossWeightKg || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, grossWeightKg: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter tare..."
+                              value={columnFilters.tareWeightKg || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, tareWeightKg: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter nett..."
+                              value={columnFilters.nettWeightKg || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, nettWeightKg: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter rate..."
+                              value={columnFilters.rate || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, rate: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter amt..."
+                              value={columnFilters.grandTotal || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, grandTotal: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter charges..."
+                              value={columnFilters.wbCharges || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, wbCharges: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100">
+                            <input
+                              type="text"
+                              placeholder="Filter status..."
+                              value={columnFilters.status || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-center"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100 text-center">
+                            {Object.values(columnFilters).some(v => (v || '').trim() !== '') && (
+                              <button
+                                type="button"
+                                onClick={() => setColumnFilters({})}
+                                className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded"
+                                title="Clear column filters"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </th>
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody className="bg-white">
+                      {filteredFirewoodPurchases.length === 0 ? (
+                        <tr>
+                          <td colSpan={14} className="py-14 text-center text-xs text-slate-400 bg-white">
+                            <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                              <Truck className="w-8 h-8 text-slate-300 stroke-[1.5]" />
+                              <div className="text-sm font-bold text-slate-700">No Matching Firewood Deliveries</div>
+                              <p className="text-slate-400 text-xs leading-relaxed">
+                                No firewood consignments match your current search, weighbridge slip, or column filters.
+                              </p>
+                              {isAnyPurchaseFilterActive && (
+                                <button
+                                  type="button"
+                                  onClick={handleResetPurchaseFilters}
+                                  className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reset All Filters</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredFirewoodPurchases.map((p) => {
+                        const firstLine = p.lines?.[0];
+                        const wb = p.weighbridge;
+                        return (
+                          <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
+                            <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                              <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
                             </td>
-                            <td className="p-3 border border-slate-200 align-middle">
-                              <div className="font-bold text-slate-900">{p.vendorName}</div>
+                            <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                              <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-left">
+                              <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
                               {p.vendorCode && (
-                                <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>
+                                <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
                               )}
                             </td>
-                            <td className="p-3 border border-slate-200 align-middle">
-                              <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
-                              {p.vehicleNo && <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>}
+                            <td className="p-3 border border-slate-200 align-middle text-left">
+                              {wb?.slipNo ? (
+                                <div className="font-mono font-bold text-amber-950">
+                                  Slip #{wb.slipNo}
+                                </div>
+                              ) : (
+                                <div className="text-slate-400 font-medium italic text-[11px]">
+                                  No slip recorded
+                                </div>
+                              )}
+                              {wb?.weighbridgeName ? (
+                                <div className="text-[11px] text-slate-600 font-medium truncate max-w-[160px] mt-0.5">
+                                  {wb.weighbridgeName}
+                                </div>
+                              ) : p.supplierInvoiceNo ? (
+                                <div className="text-[11px] text-slate-400 mt-0.5 font-mono">Inv: {p.supplierInvoiceNo}</div>
+                              ) : null}
                             </td>
-                            <td className="p-3 border border-slate-200 align-middle text-slate-400 italic">No items</td>
-                            <td className="p-3 border border-slate-200 align-middle text-right text-slate-400">—</td>
-                            <td className="p-3 border border-slate-200 align-middle text-right font-black text-slate-900">
+                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                              <span className="font-mono font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/80 text-xs inline-block">
+                                {wb?.vehicleNo || p.vehicleNo || '—'}
+                              </span>
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-left">
+                              <div className="font-semibold text-slate-900 leading-tight">
+                                {wb?.materialVariety || firstLine?.itemName || 'Firewood'}
+                              </div>
+                              {firstLine?.itemCode && (
+                                <div className="text-[10px] font-mono text-slate-400 mt-0.5">{firstLine.itemCode}</div>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                              {wb?.grossWeightKg ? (
+                                <>
+                                  <div className="font-mono font-bold text-slate-900">
+                                    {Number(wb.grossWeightKg).toLocaleString('en-IN')} kg
+                                  </div>
+                                  {wb?.grossWeightTime && (
+                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.grossWeightTime}</div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-slate-300 font-bold">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                              {wb?.tareWeightKg ? (
+                                <>
+                                  <div className="font-mono font-bold text-slate-900">
+                                    {Number(wb.tareWeightKg).toLocaleString('en-IN')} kg
+                                  </div>
+                                  {wb?.tareWeightTime && (
+                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.tareWeightTime}</div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-slate-300 font-bold">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                              <div className="font-mono font-black text-amber-950 text-xs">
+                                {wb?.nettWeightKg
+                                  ? `${Number(wb.nettWeightKg).toLocaleString('en-IN')} kg`
+                                  : firstLine
+                                  ? `${Number(firstLine.quantity).toLocaleString('en-IN')} ${firstLine.unit}`
+                                  : '—'}
+                              </div>
+                              {wb?.nettWeightTonnes ? (
+                                <div className="text-[10px] font-mono text-slate-500 font-bold mt-0.5">
+                                  ({wb.nettWeightTonnes} T)
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap text-slate-700 font-medium">
+                              {firstLine?.rate && Number(firstLine.rate) > 0 ? (
+                                <span>₹{Number(firstLine.rate).toFixed(2)}/{firstLine.unit}</span>
+                              ) : (
+                                <span className="text-slate-300 font-bold">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
                               {formatCurrency(p.grandTotal)}
                             </td>
-                            <td className="p-3 border border-slate-200 align-middle text-center">
+                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-semibold text-slate-700">
+                              {wb?.weighbridgeCharges !== undefined && wb?.weighbridgeCharges !== 0 ? (
+                                `₹${wb.weighbridgeCharges}`
+                              ) : (
+                                <span className="text-slate-300 font-bold">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
                               <span
                                 className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
                                   p.status === 'Received'
@@ -1274,108 +2665,11 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                             </td>
                           </tr>
                         );
-                      }
-
-                      return (
-                        <React.Fragment key={p.id}>
-                          {lines.map((line, idx) => (
-                            <tr key={`${p.id}_line_${line.lineId || idx}`} className="hover:bg-slate-50/70 transition-colors">
-                              {idx === 0 && (
-                                <>
-                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
-                                    <div className="font-mono font-bold text-slate-900">{p.purchaseNumber}</div>
-                                    <div className="text-[11px] text-slate-500">{formatDate(p.purchaseDate)}</div>
-                                    {lines.length > 1 && (
-                                      <div className="text-[11px] font-black text-slate-900 mt-1.5 pt-1 border-t border-slate-100">
-                                        Total: {formatCurrency(p.grandTotal)}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
-                                    <div className="font-bold text-slate-900">{p.vendorName}</div>
-                                    {p.vendorCode && (
-                                      <div className="text-[11px] font-mono text-slate-400">{p.vendorCode}</div>
-                                    )}
-                                  </td>
-                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle bg-white">
-                                    <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
-                                    {p.vehicleNo && (
-                                      <div className="text-[11px] text-slate-500">Veh: {p.vehicleNo}</div>
-                                    )}
-                                  </td>
-                                </>
-                              )}
-
-                              {/* Separate Item Row: Material, Quantity, and Amount */}
-                              <td className="p-3 border border-slate-200 align-middle">
-                                <div className="font-semibold text-slate-900">{line.itemName}</div>
-                                {line.itemCode && (
-                                  <div className="text-[10px] font-mono text-slate-400">{line.itemCode}</div>
-                                )}
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-right font-bold text-slate-800 whitespace-nowrap">
-                                {Number(line.quantity).toLocaleString('en-IN')} {line.unit}
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
-                                <div className="font-black text-slate-900">
-                                  {formatCurrency(line.amount || (line.quantity * line.rate))}
-                                </div>
-                                {line.rate && Number(line.rate) > 0 ? (
-                                  <div className="text-[10px] text-slate-400 font-normal">
-                                    @ ₹{Number(line.rate).toFixed(2)}/{line.unit}
-                                  </div>
-                                ) : null}
-                              </td>
-
-                              {idx === 0 && (
-                                <>
-                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle bg-white">
-                                    <span
-                                      className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                                        p.status === 'Received'
-                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                          : p.status === 'Confirmed'
-                                          ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                          : p.status === 'Draft'
-                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                                      }`}
-                                    >
-                                      {p.status}
-                                    </span>
-                                  </td>
-                                  <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
-                                    <div className="inline-flex items-center justify-center gap-1.5">
-                                      <button
-                                        onClick={() => handleOpenViewPurchase(p)}
-                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
-                                      >
-                                        View
-                                      </button>
-                                      <button
-                                        onClick={() => handleOpenEditPurchase(p)}
-                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-                                      >
-                                        Edit
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeletePurchase(p)}
-                                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  </td>
-                                </>
-                              )}
-                            </tr>
-                          ))}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      })
+                    )}
+                    </tbody>
+                  </table>
+                </div>
             )}
           </div>
         </div>
@@ -1484,7 +2778,13 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 type="text"
                 placeholder="e.g. TN-22-BY-8901"
                 value={vehicleNo}
-                onChange={(e) => setVehicleNo(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setVehicleNo(val);
+                  if (!wbVehicleNo || wbVehicleNo === vehicleNo) {
+                    setWbVehicleNo(val);
+                  }
+                }}
                 className="w-full h-10 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
               />
             </div>
@@ -1500,6 +2800,197 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
               />
             </div>
           </div>
+
+          {/* WEIGHBRIDGE DETAILS SECTION (Only for Firewood purchase entry) */}
+          {isFirewood && (
+            <div className="p-4 bg-amber-50/70 border border-amber-200/90 rounded-2xl space-y-3.5 transition-all">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-amber-200/80">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 tracking-wide uppercase">
+                      Weighbridge Details
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-amber-200/80 text-amber-900 border border-amber-300">
+                      Firewood Consignment
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Record gross, tare & nett weight directly from the physical weighbridge receipt slip
+                  </p>
+                </div>
+
+                {wbNettWeightKg > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleApplyNettWeightToLine}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20 transition cursor-pointer"
+                    title="Copy calculated Nett Weight into the firewood line item quantity"
+                  >
+                    <span>Apply Nett Weight to Material Qty</span>
+                    <span className="bg-emerald-700/60 px-1.5 py-0.5 rounded text-[10px]">
+                      {wbNettWeightKg.toLocaleString('en-IN')} kg ({wbNettWeightTonnes} T)
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              {/* Row 1: Slip No, Weighbridge Center, Charges, Material Variety */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Serial / Slip No.
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2375"
+                    value={wbSlipNo}
+                    onChange={(e) => setWbSlipNo(e.target.value)}
+                    className="w-full h-9 bg-white border border-amber-200 rounded-lg px-3 text-xs text-slate-800 placeholder-slate-400 font-mono font-bold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Weighbridge Name / Center
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. JBS Electronic Weighbridge"
+                    value={wbName}
+                    onChange={(e) => setWbName(e.target.value)}
+                    className="w-full h-9 bg-white border border-amber-200 rounded-lg px-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Wt. Charges (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-semibold text-slate-400">₹</span>
+                    <input
+                      type="number"
+                      placeholder="e.g. 200"
+                      value={wbCharges}
+                      onChange={(e) => setWbCharges(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full h-9 bg-white border border-amber-200 rounded-lg pl-7 pr-3 text-xs text-slate-800 placeholder-slate-400 font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Material Variety
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Savukku Kottai"
+                    value={wbMaterialVariety}
+                    onChange={(e) => setWbMaterialVariety(e.target.value)}
+                    className="w-full h-9 bg-white border border-amber-200 rounded-lg px-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Gross Weight (kg & Time), Tare Weight (kg & Time) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Gross Wt
+                  </label>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      placeholder="e.g. 17560"
+                      value={wbGrossWeightKg}
+                      onChange={(e) => setWbGrossWeightKg(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full h-9 bg-white border border-amber-200 rounded-l-lg px-3 text-xs text-slate-800 font-mono font-bold placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    />
+                    <span className="inline-flex items-center px-2.5 text-xs font-bold text-slate-600 bg-amber-100 border border-l-0 border-amber-200 rounded-r-lg">
+                      kg
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Gross Wt Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 24/10/2026 04:46"
+                    value={wbGrossWeightTime}
+                    onChange={(e) => setWbGrossWeightTime(e.target.value)}
+                    className="w-full h-9 bg-white border border-amber-200 rounded-lg px-3 text-xs text-slate-800 placeholder-slate-400 font-medium focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Tare Wt
+                  </label>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      placeholder="e.g. 7800"
+                      value={wbTareWeightKg}
+                      onChange={(e) => setWbTareWeightKg(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full h-9 bg-white border border-amber-200 rounded-l-lg px-3 text-xs text-slate-800 font-mono font-bold placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    />
+                    <span className="inline-flex items-center px-2.5 text-xs font-bold text-slate-600 bg-amber-100 border border-l-0 border-amber-200 rounded-r-lg">
+                      kg
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Tare Wt Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 24/10/2026 07:24"
+                    value={wbTareWeightTime}
+                    onChange={(e) => setWbTareWeightTime(e.target.value)}
+                    className="w-full h-9 bg-white border border-amber-200 rounded-lg px-3 text-xs text-slate-800 placeholder-slate-400 font-medium focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Auto-Calculated Nett Weight Banner */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white/95 rounded-xl border border-amber-200 text-xs shadow-sm">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-slate-600">
+                    <span className="font-semibold text-slate-500 text-[11px]">Gross Wt:</span>{' '}
+                    <span className="font-bold text-slate-900 font-mono">
+                      {wbGrossWeightKg !== '' ? `${Number(wbGrossWeightKg).toLocaleString('en-IN')} kg` : '—'}
+                    </span>
+                  </div>
+                  <span className="text-slate-300 font-bold">−</span>
+                  <div className="text-slate-600">
+                    <span className="font-semibold text-slate-500 text-[11px]">Tare Wt:</span>{' '}
+                    <span className="font-bold text-slate-900 font-mono">
+                      {wbTareWeightKg !== '' ? `${Number(wbTareWeightKg).toLocaleString('en-IN')} kg` : '—'}
+                    </span>
+                  </div>
+                  <span className="text-slate-300 font-bold">=</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-amber-900 uppercase text-[10px]">Nett Weight:</span>
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-100/90 text-amber-950 font-black text-sm font-mono border border-amber-300">
+                      {wbNettWeightKg.toLocaleString('en-IN')} kg
+                    </span>
+                    <span className="text-xs font-bold text-slate-600 font-mono">
+                      ({wbNettWeightTonnes} Tonnes)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 italic">
+                  * Auto-calculated (Gross − Tare). Click "Apply Nett Weight" to sync with material quantity.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Section: MATERIALS & LINE ITEMS */}
           <div className="space-y-2 pt-2 border-t border-slate-200/80">
@@ -1676,6 +3167,75 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 <div className="font-bold text-slate-900">{viewingPurchase.vehicleNo || '—'}</div>
               </div>
             </div>
+
+            {/* Weighbridge Details Card (if recorded for Firewood) */}
+            {viewingPurchase.purchaseType === 'Firewood' && viewingPurchase.weighbridge && (
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/90 space-y-2.5">
+                <div className="flex items-center justify-between pb-1.5 border-b border-amber-200/80">
+                  <div className="font-bold text-amber-950 text-xs">
+                    <span>Weighbridge Receipt Slip</span>
+                  </div>
+                  {viewingPurchase.weighbridge.slipNo && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200/80 text-amber-900 border border-amber-300">
+                      Slip #{viewingPurchase.weighbridge.slipNo}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Weighbridge Center</span>
+                    <span className="font-bold text-slate-800">{viewingPurchase.weighbridge.weighbridgeName || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Vehicle No</span>
+                    <span className="font-bold text-slate-800">{viewingPurchase.weighbridge.vehicleNo || viewingPurchase.vehicleNo || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Wt. Charges</span>
+                    <span className="font-bold text-slate-800">
+                      {viewingPurchase.weighbridge.weighbridgeCharges ? `₹${viewingPurchase.weighbridge.weighbridgeCharges}` : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Material Variety</span>
+                    <span className="font-bold text-slate-800">{viewingPurchase.weighbridge.materialVariety || '—'}</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-lg border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500">Gross Wt:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      {viewingPurchase.weighbridge.grossWeightKg?.toLocaleString('en-IN') || 0} kg
+                    </span>
+                    {viewingPurchase.weighbridge.grossWeightTime && (
+                      <span className="text-[10px] text-slate-400 font-mono">({viewingPurchase.weighbridge.grossWeightTime})</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500">Tare Wt:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      {viewingPurchase.weighbridge.tareWeightKg?.toLocaleString('en-IN') || 0} kg
+                    </span>
+                    {viewingPurchase.weighbridge.tareWeightTime && (
+                      <span className="text-[10px] text-slate-400 font-mono">({viewingPurchase.weighbridge.tareWeightTime})</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-amber-200">
+                    <span className="font-bold text-amber-900 text-[11px] uppercase">Nett Wt:</span>
+                    <span className="px-2 py-0.5 rounded font-black text-xs font-mono bg-amber-100 text-amber-950 border border-amber-300">
+                      {viewingPurchase.weighbridge.nettWeightKg?.toLocaleString('en-IN') || 0} kg
+                    </span>
+                    {viewingPurchase.weighbridge.nettWeightTonnes ? (
+                      <span className="text-[11px] font-bold text-slate-600 font-mono">
+                        ({viewingPurchase.weighbridge.nettWeightTonnes} T)
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Supplier Info */}
             <div className="p-3 bg-white rounded-xl border border-slate-200">

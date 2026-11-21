@@ -13,6 +13,8 @@ export interface ChemicalEntryRecord {
   itemCode: string;
   chemicalName: string; // item display name (chemical or wood material)
   unit: string;
+  baseQuantity?: number; // Converted quantity in item's warehouse base unit (e.g. 1.5 t for 1500 kg)
+  baseUnit?: string; // Warehouse base unit (e.g. 't')
 
   // Quantity and Pricing
   quantity: number;
@@ -60,6 +62,8 @@ export interface CreateChemicalEntryPayload {
   rate?: number;
   totalAmount?: number;
   unit?: string;
+  baseQuantity?: number;
+  baseUnit?: string;
   supplierId?: string;
   supplierName?: string;
   supplierInvoiceNo?: string;

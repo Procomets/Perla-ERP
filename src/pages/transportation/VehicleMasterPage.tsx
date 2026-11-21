@@ -27,7 +27,11 @@ import {
   Filter,
   ShieldAlert,
   Fuel,
-  Zap
+  Zap,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
@@ -78,15 +82,95 @@ export const VehicleMasterPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Sorting
-  const [sortField, setSortField] = useState<SortField>('vehicleNo');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  // Sorting & Table Controls State
+  const [sortField, setSortField] = useState<string | null>('vehicleNo');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('asc');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [fuelFilter, setFuelFilter] = useState<string>('all');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<{
+    vehicleNo?: string;
+    typeOfVehicle?: string;
+    modelMake?: string;
+    fuelType?: string;
+    mileage?: string;
+    purchaseYear?: string;
+    fcDueDate?: string;
+    insuranceDueDate?: string;
+    status?: string;
+  }>({});
+
+  // 3-state sorting handler
+  const handleSort = (field: string, isNumericOrDate = false) => {
+    const firstDir: 'asc' | 'desc' = isNumericOrDate ? 'desc' : 'asc';
+    const secondDir: 'asc' | 'desc' = isNumericOrDate ? 'asc' : 'desc';
+    if (sortField !== field || sortDirection === 'normal') {
+      setSortField(field);
+      setSortDirection(firstDir);
+    } else if (sortDirection === firstDir) {
+      setSortDirection(secondDir);
+    } else {
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+        }`}
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const handleColumnFilterChange = (field: keyof typeof columnFilters, val: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  const hasAnyFilter = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      statusFilter !== 'all' ||
+      typeFilter !== 'all' ||
+      fuelFilter !== 'all' ||
+      activeColumnFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, statusFilter, typeFilter, fuelFilter, activeColumnFilterCount, sortField, sortDirection]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setFuelFilter('all');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection('normal');
+  };
 
   // Add / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -137,16 +221,6 @@ export const VehicleMasterPage: React.FC = () => {
     loadData();
   }, []);
 
-  // Handle Sort Toggle
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
   // Filtered & Sorted Vehicles
   const filteredVehicles = useMemo(() => {
     let result = [...vehicles];
@@ -170,6 +244,15 @@ export const VehicleMasterPage: React.FC = () => {
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter((v) => {
+        if (searchColumn === 'vehicleNo') return (v.vehicleNo || '').toLowerCase().includes(q);
+        if (searchColumn === 'typeOfVehicle') return (v.typeOfVehicle || '').toLowerCase().includes(q);
+        if (searchColumn === 'modelMake') return (v.modelMake || '').toLowerCase().includes(q);
+        if (searchColumn === 'fuelType') return (v.fuelType || '').toLowerCase().includes(q);
+        if (searchColumn === 'mileage') return String(v.mileage || '').toLowerCase().includes(q);
+        if (searchColumn === 'purchaseYear') return String(v.purchaseYear).includes(q);
+        if (searchColumn === 'status') return (v.status || '').toLowerCase().includes(q);
+        if (searchColumn === 'driverName') return (v.driverName || '').toLowerCase().includes(q);
+        // ALL
         return (
           (v.vehicleNo || '').toLowerCase().includes(q) ||
           (v.typeOfVehicle || '').toLowerCase().includes(q) ||
@@ -184,28 +267,68 @@ export const VehicleMasterPage: React.FC = () => {
       });
     }
 
-    result.sort((a, b) => {
-      if (sortField === 'mileage') {
-        const numA = parseFloat(String(a.mileage || 0)) || 0;
-        const numB = parseFloat(String(b.mileage || 0)) || 0;
-        if (numA < numB) return sortDirection === 'asc' ? -1 : 1;
-        if (numA > numB) return sortDirection === 'asc' ? 1 : -1;
+    // Column Filters
+    if (columnFilters.vehicleNo?.trim()) {
+      const f = columnFilters.vehicleNo.trim().toLowerCase();
+      result = result.filter((v) => (v.vehicleNo || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.typeOfVehicle?.trim()) {
+      const f = columnFilters.typeOfVehicle.trim().toLowerCase();
+      result = result.filter((v) => (v.typeOfVehicle || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.modelMake?.trim()) {
+      const f = columnFilters.modelMake.trim().toLowerCase();
+      result = result.filter((v) => (v.modelMake || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.fuelType?.trim()) {
+      const f = columnFilters.fuelType.trim().toLowerCase();
+      result = result.filter((v) => (v.fuelType || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.mileage?.trim()) {
+      const f = columnFilters.mileage.trim().toLowerCase();
+      result = result.filter((v) => String(v.mileage || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.purchaseYear?.trim()) {
+      const f = columnFilters.purchaseYear.trim();
+      result = result.filter((v) => String(v.purchaseYear).includes(f));
+    }
+    if (columnFilters.fcDueDate?.trim()) {
+      const f = columnFilters.fcDueDate.trim().toLowerCase();
+      result = result.filter((v) => (v.fcDueDate || '').toLowerCase().includes(f) || VehicleService.formatDisplayDate(v.fcDueDate).toLowerCase().includes(f));
+    }
+    if (columnFilters.insuranceDueDate?.trim()) {
+      const f = columnFilters.insuranceDueDate.trim().toLowerCase();
+      result = result.filter((v) => (v.insuranceDueDate || '').toLowerCase().includes(f) || VehicleService.formatDisplayDate(v.insuranceDueDate).toLowerCase().includes(f));
+    }
+    if (columnFilters.status?.trim()) {
+      const f = columnFilters.status.trim().toLowerCase();
+      result = result.filter((v) => (v.status || '').toLowerCase().includes(f));
+    }
+
+    if (sortField && sortDirection !== 'normal') {
+      result.sort((a, b) => {
+        if (sortField === 'mileage') {
+          const numA = parseFloat(String(a.mileage || 0)) || 0;
+          const numB = parseFloat(String(b.mileage || 0)) || 0;
+          if (numA < numB) return sortDirection === 'asc' ? -1 : 1;
+          if (numA > numB) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        }
+
+        let valA: any = (a as any)[sortField] || '';
+        let valB: any = (b as any)[sortField] || '';
+
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         return 0;
-      }
-
-      let valA: any = a[sortField] || '';
-      let valB: any = b[sortField] || '';
-
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
+      });
+    }
 
     return result;
-  }, [vehicles, statusFilter, typeFilter, fuelFilter, searchQuery, sortField, sortDirection]);
+  }, [vehicles, statusFilter, typeFilter, fuelFilter, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
 
   // Overall Fleet Metrics
   const metrics = useMemo(() => {
@@ -444,65 +567,73 @@ export const VehicleMasterPage: React.FC = () => {
     }
   };
 
+  // Render section selection tabs row (Daily Expense & Vehicle Monitor vs Vehicle Master)
+  const tabsRow = (
+    <div className="flex items-center gap-8 border-b border-slate-200/90 px-1 pt-1">
+      <button
+        onClick={() => setActiveSection('daily_monitor')}
+        className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
+          activeSection === 'daily_monitor'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+        }`}
+      >
+      
+        <span>Daily Expense &amp; Vehicle Monitor</span>
+      </button>
+
+      <button
+        onClick={() => setActiveSection('vehicles')}
+        className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
+          activeSection === 'vehicles'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+        }`}
+      >
+
+             <span>Vehicle Master</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
-      {/* TABS ROW: Daily Expense & Vehicle Monitor, then Vehicle Master */}
-      <div className="flex items-center gap-8 border-b border-slate-200/90 px-1 pt-1">
-        <button
-          onClick={() => setActiveSection('daily_monitor')}
-          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
-            activeSection === 'daily_monitor'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <span>Daily Expense &amp; Vehicle Monitor</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSection('vehicles')}
-          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
-            activeSection === 'vehicles'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <span>Vehicle Master</span>
-        </button>
-      </div>
-
       {activeSection === 'daily_monitor' ? (
-        <DailyExpenseMonitorSection vehicles={vehicles} />
+        <DailyExpenseMonitorSection vehicles={vehicles} tabsSlot={tabsRow} />
       ) : (
         <>
-          {/* Top Header Card */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Vehicle Master</h2>
-        </div>
+          {/* Top Header - Minimal & Airy */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Vehicle Master</h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Register factory transport vehicles, track mileage, purchase history, and renewal due dates
+              </p>
+            </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            className="h-9 px-3 bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-            title="Reload fleet records"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Reload</span>
-          </button>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => loadData(true)}
+                disabled={refreshing}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
+                title="Reload fleet records"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>Reload</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={handleOpenAddModal}
-            className="h-9 px-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Vehicle</span>
-          </button>
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
+                title="Export Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Export Excel</span>
+              </button>
+            </div>
+          </div>
 
       {/* Fleet KPI Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -565,27 +696,88 @@ export const VehicleMasterPage: React.FC = () => {
         </div>
       </div>
 
+      {/* SECTION TABS ROW: Positioned below KPI cards and above table */}
+      {tabsRow}
+
       {/* Main Grid Table Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Filters Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search vehicle no, model, type..."
-              className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
-            />
-            {searchQuery && (
+          {/* Left: Search with Column Selector & Column Filters Toggle */}
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
+              <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
+                <select
+                  value={searchColumn}
+                  onChange={(e) => setSearchColumn(e.target.value)}
+                  className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
+                  title="Select column to search in"
+                >
+                  <option value="ALL">All Columns</option>
+                  <option value="vehicleNo">Vehicle No</option>
+                  <option value="typeOfVehicle">Type</option>
+                  <option value="modelMake">Model / Make</option>
+                  <option value="fuelType">Fuel Type</option>
+                  <option value="mileage">Mileage</option>
+                  <option value="purchaseYear">Year</option>
+                  <option value="status">Status</option>
+                  <option value="driverName">Driver</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              <div className="relative flex-1 min-w-[200px] flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={searchColumn === 'ALL' ? 'Search all columns...' : `Search ${searchColumn}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showColumnFilters || activeColumnFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Toggle inline column filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeColumnFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset All Filters button */}
+            {hasAnyFilter && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                title="Reset All Filters"
               >
-                <X className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
               </button>
             )}
           </div>
@@ -633,135 +825,225 @@ export const VehicleMasterPage: React.FC = () => {
               <option value="Inactive">Inactive</option>
             </select>
 
-            {(searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || fuelFilter !== 'all') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setStatusFilter('all');
-                  setTypeFilter('all');
-                  setFuelFilter('all');
-                }}
-                className="h-8 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 transition cursor-pointer"
-              >
-                Clear
-              </button>
-            )}
-
             <button
               type="button"
-              onClick={handleExportExcel}
-              className="h-9 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ml-auto cursor-pointer"
+              onClick={handleOpenAddModal}
+              className="h-9 px-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition ml-auto cursor-pointer shadow-2xs"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export Excel</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Vehicle</span>
             </button>
           </div>
         </div>
 
-        {/* Grid Table matching exact user requested attributes from screenshot */}
-        <div className="overflow-x-auto">
+        {/* Grid Table with Sticky Headers & Inline Column Filters */}
+        <div className="max-h-[620px] overflow-auto relative border border-slate-200 rounded-b-2xl">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+            <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
                 {/* VEHICLE NO */}
                 <th
                   onClick={() => handleSort('vehicleNo')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>VEHICLE NO</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('vehicleNo')}
                   </div>
                 </th>
 
                 {/* TYPE OF VEHICLE */}
                 <th
                   onClick={() => handleSort('typeOfVehicle')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>TYPE OF VEHICLE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('typeOfVehicle')}
                   </div>
                 </th>
 
                 {/* MODEL / MAKE */}
                 <th
                   onClick={() => handleSort('modelMake')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>MODEL / MAKE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('modelMake')}
                   </div>
                 </th>
 
                 {/* FUEL TYPE */}
                 <th
                   onClick={() => handleSort('fuelType')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center"
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>FUEL TYPE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('fuelType')}
                   </div>
                 </th>
 
                 {/* MILEAGE */}
                 <th
-                  onClick={() => handleSort('mileage')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center"
+                  onClick={() => handleSort('mileage', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>MILEAGE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('mileage')}
                   </div>
                 </th>
 
                 {/* PURCHASE YEAR */}
                 <th
-                  onClick={() => handleSort('purchaseYear')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center"
+                  onClick={() => handleSort('purchaseYear', true)}
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>PURCHASE YEAR</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('purchaseYear')}
                   </div>
                 </th>
 
                 {/* FC DUE DATE */}
                 <th
-                  onClick={() => handleSort('fcDueDate')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  onClick={() => handleSort('fcDueDate', true)}
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>FC DUE DATE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('fcDueDate')}
                   </div>
                 </th>
 
                 {/* INS. DUE DATE */}
                 <th
-                  onClick={() => handleSort('insuranceDueDate')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap"
+                  onClick={() => handleSort('insuranceDueDate', true)}
+                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>INS. DUE DATE</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    {renderSortIcon('insuranceDueDate')}
                   </div>
                 </th>
 
                 {/* STATUS */}
-                <th className="py-3 px-3.5 border-r border-slate-200 text-center whitespace-nowrap">
-                  STATUS
+                <th
+                  onClick={() => handleSort('status')}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>STATUS</span>
+                    {renderSortIcon('status')}
+                  </div>
                 </th>
 
                 {/* ACTION */}
-                <th className="py-3 px-3.5 text-center whitespace-nowrap">
+                <th className="py-3 px-3.5 text-center whitespace-nowrap sticky top-0 z-20 bg-slate-50">
                   ACTIONS
                 </th>
               </tr>
+
+              {/* Inline Column Filter Inputs Row */}
+              {showColumnFilters && (
+                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter vehicle no..."
+                      value={columnFilters.vehicleNo || ''}
+                      onChange={(e) => handleColumnFilterChange('vehicleNo', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter type..."
+                      value={columnFilters.typeOfVehicle || ''}
+                      onChange={(e) => handleColumnFilterChange('typeOfVehicle', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter model..."
+                      value={columnFilters.modelMake || ''}
+                      onChange={(e) => handleColumnFilterChange('modelMake', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Filter fuel..."
+                      value={columnFilters.fuelType || ''}
+                      onChange={(e) => handleColumnFilterChange('fuelType', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Mileage..."
+                      value={columnFilters.mileage || ''}
+                      onChange={(e) => handleColumnFilterChange('mileage', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Year..."
+                      value={columnFilters.purchaseYear || ''}
+                      onChange={(e) => handleColumnFilterChange('purchaseYear', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="FC due..."
+                      value={columnFilters.fcDueDate || ''}
+                      onChange={(e) => handleColumnFilterChange('fcDueDate', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Ins. due..."
+                      value={columnFilters.insuranceDueDate || ''}
+                      onChange={(e) => handleColumnFilterChange('insuranceDueDate', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Status..."
+                      value={columnFilters.status || ''}
+                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center"
+                    />
+                  </th>
+                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    {activeColumnFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-white border border-rose-200 rounded cursor-pointer"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
@@ -773,8 +1055,25 @@ export const VehicleMasterPage: React.FC = () => {
                 </tr>
               ) : filteredVehicles.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-xs text-slate-400 italic">
-                    No vehicles found. Click "+ Add Vehicle" to add a new fleet vehicle.
+                  <td colSpan={10} className="py-12 text-center text-xs text-slate-400">
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <p className="font-semibold text-slate-700 text-sm">No vehicles found</p>
+                      <p className="text-slate-400 text-xs">
+                        {hasAnyFilter
+                          ? 'No vehicles match your active search or filter criteria.'
+                          : 'No fleet vehicles registered yet. Click "+ Add Vehicle" to add one.'}
+                      </p>
+                      {hasAnyFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -931,6 +1230,23 @@ export const VehicleMasterPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Informative Table Controls Footer - All data in one stretch */}
+        <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+          <span>
+            Showing all <strong>{filteredVehicles.length}</strong> vehicles in one stretch
+            {filteredVehicles.length !== vehicles.length && ` (filtered from ${vehicles.length} total)`}
+          </span>
+          {hasAnyFilter && (
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="text-xs font-semibold text-[#1F4E79] hover:underline cursor-pointer"
+            >
+              Reset All Filters
+            </button>
+          )}
         </div>
       </div>
 

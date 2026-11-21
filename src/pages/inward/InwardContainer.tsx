@@ -20,7 +20,7 @@ import { InwardPrintView } from './components/InwardPrintView';
 import { QuickInwardView } from './components/QuickInwardView';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Plus, Zap } from 'lucide-react';
 import { POLockService, POLockStatus } from '../../services/poLockService';
 
 interface InwardContainerProps {
@@ -58,7 +58,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors || []);
   const [pagination, setPagination] = useState<InwardPagination>({
     page: 1,
-    pageSize: 10,
+    pageSize: 1000,
     totalRecords: 0,
     totalPages: 1
   });
@@ -431,6 +431,16 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Top Header - Minimal & Airy */}
+      {currentView === 'list' && (
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Inward Receipts</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Record incoming customer fabric batches against open purchase orders
+          </p>
+        </div>
+      )}
+
       {/* 1. Inward Dashboard Metrics (always visible on list view) */}
       {currentView === 'list' && (
         <InwardDashboard

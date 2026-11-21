@@ -14,6 +14,30 @@ export const DEFAULT_EB_SETTINGS: EBSettings = {
   updatedByName: 'System Default'
 };
 
+function normalizeTimestamp(val: any): string {
+  if (!val) return new Date().toISOString();
+  if (typeof val === 'string') return val;
+  if (typeof val?.toDate === 'function') {
+    try {
+      return val.toDate().toISOString();
+    } catch {}
+  }
+  if (typeof val === 'object' && val !== null) {
+    const sec = typeof val.seconds === 'number'
+      ? val.seconds
+      : (typeof val._seconds === 'number'
+        ? val._seconds
+        : (val.seconds ? Number(val.seconds) : null));
+    if (sec !== null && !isNaN(sec)) {
+      return new Date(sec * 1000).toISOString();
+    }
+  }
+  if (val instanceof Date) {
+    return val.toISOString();
+  }
+  return String(val);
+}
+
 export class EBSettingsService {
   private static getDocRef() {
     return doc(db, GENERAL_SETTINGS_COLLECTION, EB_SETTINGS_DOC_ID);
@@ -31,9 +55,9 @@ export class EBSettingsService {
           if (parsed && typeof parsed.unitPrice === 'number' && !isNaN(parsed.unitPrice)) {
             return {
               unitPrice: Number(parsed.unitPrice),
-              updatedAt: parsed.updatedAt || new Date().toISOString(),
-              updatedBy: parsed.updatedBy || 'admin',
-              updatedByName: parsed.updatedByName || 'Admin'
+              updatedAt: normalizeTimestamp(parsed.updatedAt),
+              updatedBy: typeof parsed.updatedBy === 'string' ? parsed.updatedBy : 'admin',
+              updatedByName: typeof parsed.updatedByName === 'string' ? parsed.updatedByName : 'Admin'
             };
           }
         }
@@ -71,9 +95,9 @@ export class EBSettingsService {
         const data = snap.data();
         const settings: EBSettings = {
           unitPrice: Number(data.unitPrice ?? cached.unitPrice ?? 9.5),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-          updatedBy: data.updatedBy || 'admin',
-          updatedByName: data.updatedByName || 'Administrator'
+          updatedAt: normalizeTimestamp(data.updatedAt),
+          updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : 'admin',
+          updatedByName: typeof data.updatedByName === 'string' ? data.updatedByName : 'Administrator'
         };
         this.setCache(settings);
         return settings;
@@ -155,12 +179,17 @@ export class EBSettingsService {
             const data = snap.data();
             const settings: EBSettings = {
               unitPrice: Number(data.unitPrice ?? 9.5),
-              updatedAt: data.updatedAt || new Date().toISOString(),
-              updatedBy: data.updatedBy || 'admin',
-              updatedByName: data.updatedByName || 'Admin'
+              updatedAt: normalizeTimestamp(data.updatedAt),
+              updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : 'admin',
+              updatedByName: typeof data.updatedByName === 'string' ? data.updatedByName : 'Admin'
             };
             this.setCache(settings);
             callback(settings);
+          } else {
+            // Document doesn't exist yet in Firestore: serve cache/default and initialize
+            const fallback = this.getCache();
+            callback(fallback);
+            setDoc(this.getDocRef(), fallback, { merge: true }).catch(() => {});
           }
         },
         (err) => {

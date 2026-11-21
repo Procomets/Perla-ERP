@@ -8,7 +8,6 @@ import {
 import { ItemService } from '../../services/itemService';
 import { ItemCategoryMasterService } from '../../services/itemCategoryMasterService';
 import { useAuth } from '../../context/AuthContext';
-import { Table, Column } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { StatusChip } from '../../components/ui/StatusChip';
 import { ItemModal } from './components/ItemModal';
@@ -20,7 +19,14 @@ import {
   CheckCircle2,
   Package,
   Archive,
-  Layers
+  Layers,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
+  X,
+  RefreshCw
 } from 'lucide-react';
 
 export const ItemMasterPage: React.FC = () => {
@@ -41,8 +47,88 @@ export const ItemMasterPage: React.FC = () => {
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'inactive'>('active');
+
+  // Inline Column Filters
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<{
+    itemCode?: string;
+    itemName?: string;
+    categoryName?: string;
+    baseUnit?: string;
+    minStock?: string;
+    status?: string;
+  }>({});
+
+  // 3-state Column Sorting
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('normal');
+
+  const handleSort = (field: string, isNumeric = false) => {
+    const firstDir: 'asc' | 'desc' = isNumeric ? 'desc' : 'asc';
+    const secondDir: 'asc' | 'desc' = isNumeric ? 'asc' : 'desc';
+    if (sortField !== field || sortDirection === 'normal') {
+      setSortField(field);
+      setSortDirection(firstDir);
+    } else if (sortDirection === firstDir) {
+      setSortDirection(secondDir);
+    } else {
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+        }`}
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const handleColumnFilterChange = (field: keyof typeof columnFilters, val: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  const hasAnyFilter = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      categoryFilter !== 'all' ||
+      statusFilter !== 'all' ||
+      activeColumnFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, categoryFilter, statusFilter, activeColumnFilterCount, sortField, sortDirection]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection('normal');
+  };
 
   // Modals State
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -157,20 +243,73 @@ export const ItemMasterPage: React.FC = () => {
       });
     }
 
+    // Integrated Search Bar with Column Dropdown
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      list = list.filter(
-        (it) =>
-          it.itemName?.toLowerCase().includes(q) ||
-          it.itemCode?.toLowerCase().includes(q) ||
-          it.categoryName?.toLowerCase().includes(q) ||
-          it.description?.toLowerCase().includes(q) ||
-          it.baseUnit?.toLowerCase().includes(q)
+      if (searchColumn === 'ALL') {
+        list = list.filter(
+          (it) =>
+            it.itemName?.toLowerCase().includes(q) ||
+            it.itemCode?.toLowerCase().includes(q) ||
+            it.categoryName?.toLowerCase().includes(q) ||
+            it.description?.toLowerCase().includes(q) ||
+            it.baseUnit?.toLowerCase().includes(q)
+        );
+      } else {
+        list = list.filter((it) => {
+          const val = String((it as any)[searchColumn] || '').toLowerCase();
+          return val.includes(q);
+        });
+      }
+    }
+
+    // Column Filters
+    if (columnFilters.itemCode) {
+      const q = columnFilters.itemCode.toLowerCase();
+      list = list.filter((i) => (i.itemCode || '').toLowerCase().includes(q));
+    }
+    if (columnFilters.itemName) {
+      const q = columnFilters.itemName.toLowerCase();
+      list = list.filter((i) =>
+        (i.itemName || '').toLowerCase().includes(q) ||
+        (i.description || '').toLowerCase().includes(q)
       );
+    }
+    if (columnFilters.categoryName) {
+      const q = columnFilters.categoryName.toLowerCase();
+      list = list.filter((i) => (i.categoryName || '').toLowerCase().includes(q));
+    }
+    if (columnFilters.baseUnit) {
+      const q = columnFilters.baseUnit.toLowerCase();
+      list = list.filter((i) => (i.baseUnit || '').toLowerCase().includes(q));
+    }
+    if (columnFilters.minStock) {
+      const q = columnFilters.minStock.toLowerCase();
+      list = list.filter((i) => String(i.minimumStockLevel ?? '').toLowerCase().includes(q));
+    }
+    if (columnFilters.status) {
+      const q = columnFilters.status.toLowerCase();
+      list = list.filter((i) => (i.status || '').toLowerCase().includes(q));
+    }
+
+    // 3-state Sorting
+    if (sortField && sortDirection !== 'normal') {
+      list.sort((a, b) => {
+        if (sortField === 'minimumStockLevel') {
+          const numA = Number(a.minimumStockLevel ?? 0);
+          const numB = Number(b.minimumStockLevel ?? 0);
+          return sortDirection === 'asc' ? numA - numB : numB - numA;
+        }
+        const strA = String((a as any)[sortField] || '').toLowerCase();
+        const strB = String((b as any)[sortField] || '').toLowerCase();
+        if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
+        if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
     }
 
     return list;
-  }, [items, statusFilter, categoryFilter, categories, searchQuery]);
+  }, [items, statusFilter, categoryFilter, categories, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
 
   // Modal Handlers
   const handleAddNewItem = () => {
@@ -236,114 +375,6 @@ export const ItemMasterPage: React.FC = () => {
     }
   };
 
-  // Table Columns
-  const columns: Column<MasterItem>[] = [
-    {
-      header: 'Item Code',
-      accessor: (row) => (
-        <div>
-          <span className="font-bold text-[#1F4E79] font-mono text-xs">{row.itemCode}</span>
-        </div>
-      )
-    },
-    {
-      header: 'Full Item / Material Name',
-      accessor: (row) => (
-        <div>
-          <span className="font-bold text-slate-900 block text-xs">{row.itemName}</span>
-          {row.description && (
-            <span className="text-[11px] text-slate-400 line-clamp-1">{row.description}</span>
-          )}
-        </div>
-      )
-    },
-    {
-      header: 'Category',
-      accessor: (row) => (
-        <span className="text-xs text-slate-700 font-medium">
-          {row.categoryName || 'General'}
-        </span>
-      )
-    },
-    {
-      header: 'Base UOM',
-      accessor: (row) => (
-        <span className="font-mono font-bold text-slate-800 text-xs uppercase">
-          {row.baseUnit}
-        </span>
-      )
-    },
-    {
-      header: 'Min Stock',
-      accessor: (row) => (
-        <span className="text-xs text-slate-600 font-mono">
-          {row.minimumStockLevel !== undefined ? row.minimumStockLevel : 0} {row.baseUnit}
-        </span>
-      )
-    },
-    {
-      header: 'Status',
-      accessor: (row) => (
-        <StatusChip
-          status={row.status === 'active' ? 'Active' : 'Inactive'}
-          variant={row.status === 'active' ? 'green' : 'slate'}
-        />
-      )
-    },
-    {
-      header: 'Actions',
-      accessor: (row) => (
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          {/* View Details */}
-          <button
-            onClick={() => handleViewItem(row)}
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"
-            title="View Details"
-          >
-            View
-          </button>
-
-          {/* Edit */}
-          <button
-            onClick={() => handleEditItem(row)}
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs cursor-pointer"
-            title="Edit Item"
-          >
-            Edit
-          </button>
-
-          {/* Deactivate / Reactivate */}
-          {row.status === 'active' ? (
-            <button
-              onClick={() => handleDeactivate(row)}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs cursor-pointer"
-              title="Deactivate Item"
-            >
-              Deactivate
-            </button>
-          ) : (
-            <button
-              onClick={() => handleReactivate(row)}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
-              title="Reactivate Item"
-            >
-              Reactivate
-            </button>
-          )}
-
-          {/* Delete */}
-          <button
-            onClick={() => handleDeleteItem(row)}
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
-            title="Delete Item"
-          >
-            Delete
-          </button>
-        </div>
-      )
-    }
-  ];
-
   return (
     <div className="space-y-5">
       {/* Toast Notification */}
@@ -359,6 +390,16 @@ export const ItemMasterPage: React.FC = () => {
           <span>{toast.message}</span>
         </div>
       )}
+
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Chemical &amp; Item Master</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Catalog of processing chemicals, dyes, auxiliary agents, firewood, and warehouse materials
+          </p>
+        </div>
+      </div>
 
       {/* Top Banner KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -400,28 +441,79 @@ export const ItemMasterPage: React.FC = () => {
       </div>
 
       {/* Main Container: Controls & Single Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Controls Toolbar: Search, Category Filter from General Settings, Status Filter, and Add Item */}
-        <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
-          {/* Left: Search & Filters aligned horizontally */}
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-            {/* Search Input */}
-            <div className="relative w-56">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Controls Toolbar */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+          {/* Integrated Search Bar with Column Dropdown */}
+          <div className="flex items-center gap-2 flex-1 max-w-lg">
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search name, code, UOM..."
+                placeholder={
+                  searchColumn === 'ALL'
+                    ? 'Search all fields (name, code, category, UOM)...'
+                    : `Search by ${searchColumn}...`
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-9 bg-white border border-slate-300 rounded-lg pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-[#1F4E79]"
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            {/* Dynamic Category Filter Dropdown (From General Settings) */}
+            {/* Column Selector */}
+            <select
+              value={searchColumn}
+              onChange={(e) => setSearchColumn(e.target.value)}
+              className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900 shrink-0 cursor-pointer"
+              title="Target search column"
+            >
+              <option value="ALL">All Columns</option>
+              <option value="itemCode">Item Code</option>
+              <option value="itemName">Item Name</option>
+              <option value="categoryName">Category</option>
+              <option value="baseUnit">Base UOM</option>
+              <option value="description">Description</option>
+            </select>
+          </div>
+
+          {/* Secondary Controls & Dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
+                showColumnFilters || activeColumnFilterCount > 0
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Toggle inline column filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeColumnFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Dynamic Category Filter Dropdown */}
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-9 bg-white border border-slate-300 rounded-lg px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
+              className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
               <option value="all">All Categories ({items.length})</option>
               {categories.map((c) => {
@@ -441,58 +533,339 @@ export const ItemMasterPage: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="h-9 bg-white border border-slate-300 rounded-lg px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1F4E79]"
+              className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
               <option value="active">Active Only</option>
               <option value="all">All Statuses</option>
               <option value="inactive">Inactive / Retired</option>
             </select>
-          </div>
 
-          {/* Right: Add Item Button */}
-          {isAdminOrManager && (
-            <div className="flex items-center shrink-0">
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Plus className="w-4 h-4" />}
-                onClick={handleAddNewItem}
+            {/* Reset All Filters Button */}
+            {hasAnyFilter && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer flex items-center gap-1"
+                title="Reset all filters and sorting"
               >
-                Add Item
-              </Button>
-            </div>
-          )}
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+
+            {/* Right: Add Item Button */}
+            {isAdminOrManager && (
+              <button
+                type="button"
+                onClick={handleAddNewItem}
+                className="h-9 px-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition ml-auto cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Chemical Item</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Single Table View */}
-        <div className="p-4">
-          {loading ? (
-            <div className="py-16 text-center text-xs text-slate-400">Loading master catalogue items...</div>
-          ) : filteredItems.length === 0 ? (
-            <div className="py-16 text-center">
-              <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-700">No master items found</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                {searchQuery || categoryFilter !== 'all'
-                  ? 'Try clearing your search query or category filters.'
-                  : 'Get started by creating your first master catalogue item.'}
-              </p>
-              {isAdminOrManager && (
-                <div className="mt-4 flex justify-center gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<Plus className="w-4 h-4" />}
-                    onClick={handleAddNewItem}
-                  >
-                    Add Master Item
-                  </Button>
-                </div>
+        {/* Single Sticky Table View */}
+        <div className="max-h-[620px] overflow-auto relative">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
+              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                {/* Item Code */}
+                <th
+                  onClick={() => handleSort('itemCode')}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Item Code</span>
+                    {renderSortIcon('itemCode')}
+                  </div>
+                </th>
+
+                {/* Full Item / Material Name */}
+                <th
+                  onClick={() => handleSort('itemName')}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Full Item / Material Name</span>
+                    {renderSortIcon('itemName')}
+                  </div>
+                </th>
+
+                {/* Category */}
+                <th
+                  onClick={() => handleSort('categoryName')}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Category</span>
+                    {renderSortIcon('categoryName')}
+                  </div>
+                </th>
+
+                {/* Base UOM */}
+                <th
+                  onClick={() => handleSort('baseUnit')}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Base UOM</span>
+                    {renderSortIcon('baseUnit')}
+                  </div>
+                </th>
+
+                {/* Min Stock */}
+                <th
+                  onClick={() => handleSort('minimumStockLevel', true)}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Min Stock</span>
+                    {renderSortIcon('minimumStockLevel')}
+                  </div>
+                </th>
+
+                {/* Status */}
+                <th
+                  onClick={() => handleSort('status')}
+                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Status</span>
+                    {renderSortIcon('status')}
+                  </div>
+                </th>
+
+                {/* Actions */}
+                <th className="p-3.5 whitespace-nowrap text-right bg-slate-50">Actions</th>
+              </tr>
+
+              {/* Sticky Inline Column Filters Row */}
+              {showColumnFilters && (
+                <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+                  {/* Item Code */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter code..."
+                      value={columnFilters.itemCode || ''}
+                      onChange={(e) => handleColumnFilterChange('itemCode', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Item Name */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter name..."
+                      value={columnFilters.itemName || ''}
+                      onChange={(e) => handleColumnFilterChange('itemName', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Category */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter category..."
+                      value={columnFilters.categoryName || ''}
+                      onChange={(e) => handleColumnFilterChange('categoryName', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Base UOM */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter UOM..."
+                      value={columnFilters.baseUnit || ''}
+                      onChange={(e) => handleColumnFilterChange('baseUnit', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Min Stock */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter stock..."
+                      value={columnFilters.minStock || ''}
+                      onChange={(e) => handleColumnFilterChange('minStock', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Status */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter status..."
+                      value={columnFilters.status || ''}
+                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Actions Clear */}
+                  <th className="p-1.5 text-right">
+                    {activeColumnFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
               )}
-            </div>
-          ) : (
-            <Table columns={columns} data={filteredItems} keyExtractor={(row) => row.id} />
-          )}
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-xs text-slate-400">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
+                    Loading master catalogue items...
+                  </td>
+                </tr>
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-xs text-slate-500">
+                    <div className="max-w-xs mx-auto space-y-2">
+                      <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-700">No master items found</p>
+                      <p className="text-slate-400 text-[11px]">
+                        Try adjusting your search criteria, category filters, or inline column filters.
+                      </p>
+                      {hasAnyFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                    {/* Item Code */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="font-bold text-[#1F4E79] font-mono text-xs">{item.itemCode}</span>
+                    </td>
+
+                    {/* Item Name */}
+                    <td className="p-3.5">
+                      <span className="font-bold text-slate-900 block text-xs">{item.itemName}</span>
+                      {item.description && (
+                        <span className="text-[11px] text-slate-400 line-clamp-1">{item.description}</span>
+                      )}
+                    </td>
+
+                    {/* Category */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="text-xs text-slate-700 font-medium">
+                        {item.categoryName || 'General'}
+                      </span>
+                    </td>
+
+                    {/* Base UOM */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="font-mono font-bold text-slate-800 text-xs uppercase">
+                        {item.baseUnit}
+                      </span>
+                    </td>
+
+                    {/* Min Stock */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="text-xs text-slate-600 font-mono">
+                        {item.minimumStockLevel !== undefined ? item.minimumStockLevel : 0} {item.baseUnit}
+                      </span>
+                    </td>
+
+                    {/* Status */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <StatusChip
+                        status={item.status === 'active' ? 'Active' : 'Inactive'}
+                        variant={item.status === 'active' ? 'green' : 'slate'}
+                      />
+                    </td>
+
+                    {/* Actions */}
+                    <td className="p-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleViewItem(item)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"
+                          title="View Details"
+                        >
+                          View
+                        </button>
+
+                        <button
+                          onClick={() => handleEditItem(item)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs cursor-pointer"
+                          title="Edit Item"
+                        >
+                          Edit
+                        </button>
+
+                        {item.status === 'active' ? (
+                          <button
+                            onClick={() => handleDeactivate(item)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs cursor-pointer"
+                            title="Deactivate Item"
+                          >
+                            Deactivate
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleReactivate(item)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
+                            title="Reactivate Item"
+                          >
+                            Reactivate
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleDeleteItem(item)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
+                          title="Delete Item"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Table Records Summary Footer */}
+        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+          <span>
+            Showing all <strong className="text-slate-800">{filteredItems.length}</strong> records in one stretch
+            {filteredItems.length !== items.length && (
+              <span className="text-slate-400 ml-1">(filtered from {items.length} total)</span>
+            )}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            Total Active: {totalActiveCount} · Inactive: {inactiveCount} · Categories: {activeCategoriesCount}
+          </span>
         </div>
       </div>
 

@@ -7,6 +7,21 @@ export type PurchaseType =
   | 'Packaging'
   | 'General';
 
+export interface WeighbridgeDetails {
+  slipNo?: string; // Serial / Slip No e.g. "2375"
+  vehicleNo?: string; // e.g. "TN50H0722"
+  weighbridgeName?: string; // e.g. "JBS Electronic Weighbridge"
+  weighbridgeCharges?: number; // e.g. 200 (110 + 90)
+  grossWeightKg?: number; // e.g. 17560
+  grossWeightTime?: string; // e.g. "2026-10-24 04:46"
+  tareWeightKg?: number; // e.g. 7800
+  tareWeightTime?: string; // e.g. "2026-10-24 07:24"
+  nettWeightKg?: number; // e.g. 9760
+  nettWeightTonnes?: number; // e.g. 9.76
+  materialVariety?: string; // e.g. "Savukku Kottai"
+  remarks?: string;
+}
+
 export interface PurchaseLineItem {
   lineId: string;
   itemId: string;
@@ -36,6 +51,7 @@ export interface RawMaterialPurchase {
   lines: PurchaseLineItem[];
   totalQuantity: number;
   grandTotal: number;
+  weighbridge?: WeighbridgeDetails;
   status: PurchaseStatus;
   stockInwardCompleted: boolean;
   inwardTransactionIds?: string[];

@@ -625,10 +625,9 @@ export class DeliveryChallanPdfService {
     const itemCount = data.items.length;
     const noteText = (data.notes || '').trim();
 
-    // 1. Check if 3 slips can fit on A4 (Max safe slip height <= 83mm)
-    // Base fixed overhead in 3-slip mode:
-    // Header (~11.5) + Metadata (~12) + Table Header & Total row (~9) + Vehicle Box & Signatures (~13) + spacing (~4) = 49.5mm
-    const baseHeight3 = 49.5;
+    // 1. Check if 3 slips can fit on A4 (Max safe slip height <= 86mm)
+    // Base fixed overhead in 3-slip mode: ~53mm (including PO No. & Style No. row)
+    const baseHeight3 = 53;
     const noteHeight3 = noteText ? 5.0 : 2.5;
 
     const itemRowsHeight3 = data.items.reduce((sum, item) => {
@@ -639,14 +638,14 @@ export class DeliveryChallanPdfService {
 
     const estimatedHeight3 = baseHeight3 + itemRowsHeight3 + noteHeight3;
 
-    // Up to 4 compact items easily fit within 83mm for 3 slips on A4
-    if (itemCount <= 4 && estimatedHeight3 <= 83) {
+    // Up to 4 compact items easily fit within 86mm for 3 slips on A4
+    if (itemCount <= 4 && estimatedHeight3 <= 86) {
       return 'three';
     }
 
-    // 2. Check if 2 slips can fit on A4 (Max safe slip height <= 135mm)
-    // Base fixed overhead in 2-slip mode: ~54mm
-    const baseHeight2 = 54;
+    // 2. Check if 2 slips can fit on A4 (Max safe slip height <= 138mm)
+    // Base fixed overhead in 2-slip mode: ~58mm
+    const baseHeight2 = 58;
     const noteLines2 = noteText ? Math.min(2, Math.ceil(noteText.length / 65)) : 1;
     const noteHeight2 = 2.5 + (noteLines2 * 3.4);
 
@@ -658,8 +657,8 @@ export class DeliveryChallanPdfService {
 
     const estimatedHeight2 = baseHeight2 + itemRowsHeight2 + noteHeight2;
 
-    // Up to 9-10 items fit comfortably within 135mm for 2 slips on A4
-    if (itemCount <= 9 && estimatedHeight2 <= 135) {
+    // Up to 9-10 items fit comfortably within 138mm for 2 slips on A4
+    if (itemCount <= 9 && estimatedHeight2 <= 138) {
       return 'two';
     }
 
@@ -754,7 +753,20 @@ export class DeliveryChallanPdfService {
     doc.setFont('helvetica', 'normal');
     doc.text(data.partyDcDate, margin + 138, curY);
 
-    // Row 3: To (Customer Company Name & Full Address, no PO No)
+    // Row 3: Our P.O. No. (Left) & Style No. (Right)
+    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
+    doc.text('Our P.O. No. :', margin + 2.5, curY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.poNumber || '—', margin + 24, curY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Style No. :', margin + 124, curY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.styleNo || '—', margin + 142, curY);
+
+    // Row 4: To (Customer Company Name & Full Address)
     curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
@@ -862,10 +874,14 @@ export class DeliveryChallanPdfService {
     const noteHeight = Math.max(1, renderedNote.length) * noteLineHeight;
     const noteEndY = noteY + noteHeight;
 
-    // --- 4. Bottom Vehicle Box & Signatures (Dynamically positioned below Note) ---
-    const botY = noteEndY + (isThree ? 2.0 : isTwo ? 2.5 : 4.0);
+    // --- 4. Bottom Vehicle Box & Signatures (Dynamically positioned to eliminate empty space below) ---
     const vehicleBoxWidth = 64;
     const rowH = isThree ? 3.6 : (isTwo ? 4.0 : 4.8);
+    const bottomBlockHeight = rowH * 3 + (isThree ? 1.6 : isTwo ? 2.0 : 3.0);
+    const targetSlipHeight = isThree ? 90 : (isTwo ? 137 : 265);
+    const minBotY = noteEndY + (isThree ? 2.5 : isTwo ? 5.0 : 8.0);
+    const pushedBotY = startY + targetSlipHeight - bottomBlockHeight;
+    const botY = Math.max(minBotY, pushedBotY);
 
     doc.setLineWidth(0.25);
     // Vehicle box (3 rows)
@@ -906,7 +922,7 @@ export class DeliveryChallanPdfService {
     doc.text('Authorized Signature', margin + contentWidth - 28, sigTextY, { align: 'center' });
 
     // Outer border rectangle encompassing the entire challan with exact height
-    const slipActualHeight = (botY + rowH * 3 + (isThree ? 1.6 : isTwo ? 2.0 : 3.0)) - startY;
+    const slipActualHeight = (botY + bottomBlockHeight) - startY;
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.35);
     doc.rect(margin, startY, contentWidth, slipActualHeight);

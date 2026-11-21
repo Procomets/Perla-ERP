@@ -21,6 +21,7 @@ import { OutwardDetails } from './components/OutwardDetails';
 import { OutwardPrintView } from './components/OutwardPrintView';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { Plus } from 'lucide-react';
 import { POLockService, POLockStatus } from '../../services/poLockService';
 
 interface OutwardContainerProps {
@@ -62,7 +63,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors || []);
   const [pagination, setPagination] = useState<OutwardPagination>({
     page: 1,
-    pageSize: 10,
+    pageSize: 1000,
     totalCount: 0,
     totalPages: 1
   });
@@ -412,6 +413,16 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Top Header - Minimal & Airy */}
+      {currentView === 'list' && (
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Outward Dispatches</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Generate delivery challans, track completed processing batches, and dispatch goods
+          </p>
+        </div>
+      )}
+
       {/* 1. Dashboard Metrics (Visible on List view) */}
       {currentView === 'list' && (
         <OutwardDashboard

@@ -9,6 +9,15 @@ import { MasterItem } from '../../types/item';
 import { Vendor } from '../../types/vendor';
 import { PurchaseOrder } from '../../types/po';
 import { ChemicalEntryService } from '../../services/chemicalEntryService';
+import { MachineMasterService } from '../../services/machineMasterService';
+import { MachineItem } from '../../types/machineMaster';
+import {
+  convertQuantity,
+  convertRate,
+  getCompatibleUnits,
+  normalizeUnit,
+  UnitOption
+} from '../../utils/unitConversion';
 import { Modal } from '../../components/ui/Modal';
 import { formatDate, formatCurrency, formatQuantity } from '../../utils/formatters';
 import {
@@ -27,6 +36,11 @@ import {
   AlertCircle,
   Building2,
   ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
+  SlidersHorizontal,
+  RotateCcw,
+  Package,
   X,
   FileSpreadsheet,
   Check,
@@ -368,6 +382,27 @@ const SearchableWoodSelect: React.FC<SearchableWoodSelectProps> = ({
   );
 };
 
+export type ProcessEntrySortField =
+  | 'entryNumber'
+  | 'date'
+  | 'itemName'
+  | 'quantity'
+  | 'rate'
+  | 'totalAmount'
+  | 'process'
+  | 'status';
+
+export type ProcessEntrySearchColumn =
+  | 'ALL'
+  | 'entryNumber'
+  | 'date'
+  | 'itemName'
+  | 'quantity'
+  | 'rate'
+  | 'totalAmount'
+  | 'process'
+  | 'status';
+
 const ChemicalEntryContent: React.FC = () => {
   const { user } = useAuth();
 
@@ -383,10 +418,24 @@ const ChemicalEntryContent: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Filters State
+  // Filters & Table Controls State
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<ProcessEntrySearchColumn>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({
+    entryNumber: '',
+    date: '',
+    itemName: '',
+    quantity: '',
+    rate: '',
+    totalAmount: '',
+    process: '',
+    status: ''
+  });
+  const [sortField, setSortField] = useState<ProcessEntrySortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal' | null>(null);
 
   // Purchase Entry Modal State
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
@@ -434,6 +483,84 @@ const ChemicalEntryContent: React.FC = () => {
   const [woodSubmitting, setWoodSubmitting] = useState(false);
   const [woodError, setWoodError] = useState<string | null>(null);
 
+  // Machine Master State
+  const [machines, setMachines] = useState<MachineItem[]>([]);
+  const [isCustomConsumptionMachine, setIsCustomConsumptionMachine] = useState(false);
+  const [isCustomWoodBoiler, setIsCustomWoodBoiler] = useState(false);
+
+  // All active machines from Machine Master
+  const activeMachines = useMemo(() => {
+    return machines.filter((m) => m.status === 'active');
+  }, [machines]);
+
+  // Boiler machines from Machine Master
+  const boilerMachines = useMemo(() => {
+    return activeMachines.filter(
+      (m) =>
+        m.processType === 'Boiler' ||
+        (m.name || '').toLowerCase().includes('boiler') ||
+        (m.machineId || '').toLowerCase().includes('boil')
+    );
+  }, [activeMachines]);
+
+  // Other machines for Wood modal
+  const otherMachinesForWood = useMemo(() => {
+    return activeMachines.filter((m) => !boilerMachines.some((b) => b.id === m.id));
+  }, [activeMachines, boilerMachines]);
+
+  // Currently selected boiler machine from Machine Master
+  const selectedWoodBoilerMachine = useMemo(() => {
+    if (!woodBoilerNo) return null;
+    return activeMachines.find(
+      (m) =>
+        `${m.machineId} - ${m.name}` === woodBoilerNo ||
+        m.machineId === woodBoilerNo ||
+        m.name === woodBoilerNo
+    );
+  }, [activeMachines, woodBoilerNo]);
+
+  // Matching process machines for Chemical Consumption
+  const matchingProcessMachines = useMemo(() => {
+    const stage = (consumptionProcessType || '').toLowerCase();
+    return activeMachines.filter((m) => {
+      const pType = (m.processType || '').toLowerCase();
+      const mName = (m.name || '').toLowerCase();
+      if (stage.includes('dye')) return pType === 'dyeing' || mName.includes('dye');
+      if (
+        stage.includes('wash') ||
+        stage.includes('enzyme') ||
+        stage.includes('scour') ||
+        stage.includes('bleach') ||
+        stage.includes('soften')
+      ) {
+        return pType === 'washing' || mName.includes('wash') || mName.includes('hydro');
+      }
+      if (stage.includes('boiler') || stage.includes('utility')) {
+        return pType === 'boiler' || mName.includes('boiler');
+      }
+      if (stage.includes('finish')) {
+        return pType === 'finishing' || mName.includes('finish') || mName.includes('stenter');
+      }
+      return pType === stage;
+    });
+  }, [activeMachines, consumptionProcessType]);
+
+  // Other machines for Chemical Consumption
+  const otherProcessMachines = useMemo(() => {
+    return activeMachines.filter((m) => !matchingProcessMachines.some((mat) => mat.id === m.id));
+  }, [activeMachines, matchingProcessMachines]);
+
+  // Currently selected chemical consumption machine from Machine Master
+  const selectedConsumptionMachine = useMemo(() => {
+    if (!consumptionMachineNo) return null;
+    return activeMachines.find(
+      (m) =>
+        `${m.machineId} - ${m.name}` === consumptionMachineNo ||
+        m.machineId === consumptionMachineNo ||
+        m.name === consumptionMachineNo
+    );
+  }, [activeMachines, consumptionMachineNo]);
+
   // View Details Modal State
   const [viewEntry, setViewEntry] = useState<ChemicalEntryRecord | null>(null);
 
@@ -443,12 +570,13 @@ const ChemicalEntryContent: React.FC = () => {
     else setLoading(true);
 
     try {
-      const [fetchedEntries, fetchedChemicals, fetchedWood, fetchedSuppliers, fetchedPos] = await Promise.all([
+      const [fetchedEntries, fetchedChemicals, fetchedWood, fetchedSuppliers, fetchedPos, fetchedMachines] = await Promise.all([
         ChemicalEntryService.getChemicalEntries(),
         ChemicalEntryService.getChemicalItems(),
         ChemicalEntryService.getWoodItems(),
         ChemicalEntryService.getSuppliers(),
-        ChemicalEntryService.getPurchaseOrders()
+        ChemicalEntryService.getPurchaseOrders(),
+        MachineMasterService.getMachines().catch(() => [])
       ]);
 
       setEntries(fetchedEntries);
@@ -456,6 +584,7 @@ const ChemicalEntryContent: React.FC = () => {
       setWoodItems(fetchedWood);
       setSuppliers(fetchedSuppliers);
       setPurchaseOrders(fetchedPos);
+      setMachines(fetchedMachines);
     } catch (err) {
       console.error('Failed to load process entries data:', err);
     } finally {
@@ -466,45 +595,307 @@ const ChemicalEntryContent: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const unsubMachines = MachineMasterService.subscribeMachines((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setMachines(list);
+      }
+    });
+    return () => {
+      unsubMachines();
+    };
   }, []);
 
-  // Filtered entries by activeSection, search, and date range
-  const filteredEntries = useMemo(() => {
-    // Partition by section
-    let result = entries.filter((e) => {
+  // 1. Current section entries
+  const currentSectionEntries = useMemo(() => {
+    return entries.filter((e) => {
       const isWood = e.materialType === 'wood' || (e.entryNumber || '').startsWith('WD-');
       return activeSection === 'wood' ? isWood : !isWood;
     });
+  }, [entries, activeSection]);
 
-    if (startDate) {
-      result = result.filter((e) => e.date >= startDate);
-    }
+  // 2. Filtered entries (date range, integrated search by column, and inline column filters)
+  const filteredEntries = useMemo(() => {
+    return currentSectionEntries.filter((e) => {
+      const isPurchase = e.entryType === 'Purchase';
+      const statusText = isPurchase ? (e.isReceived ? 'Received' : 'Pending Receipt') : 'Deducted';
 
-    if (endDate) {
-      result = result.filter((e) => e.date <= endDate);
-    }
+      // Date Range Filter
+      if (startDate && e.date < startDate) return false;
+      if (endDate && e.date > endDate) return false;
 
-    if (searchQuery.trim()) {
+      // Integrated Search Filter
       const q = searchQuery.trim().toLowerCase();
-      result = result.filter((e) => {
-        return (
-          (e.entryNumber || '').toLowerCase().includes(q) ||
-          (e.chemicalName || '').toLowerCase().includes(q) ||
-          (e.itemCode || '').toLowerCase().includes(q) ||
-          (e.supplierName || '').toLowerCase().includes(q) ||
-          (e.processType || '').toLowerCase().includes(q) ||
-          (e.machineNo || '').toLowerCase().includes(q) ||
-          (e.boilerNo || '').toLowerCase().includes(q) ||
-          (e.startTime || '').toLowerCase().includes(q) ||
-          (e.endTime || '').toLowerCase().includes(q) ||
-          (e.operatorName || '').toLowerCase().includes(q) ||
-          (e.remarks || '').toLowerCase().includes(q)
-        );
+      if (q) {
+        if (searchColumn === 'ALL') {
+          const matchAll =
+            (e.entryNumber || '').toLowerCase().includes(q) ||
+            (e.date || '').toLowerCase().includes(q) ||
+            formatDate(e.date).toLowerCase().includes(q) ||
+            (e.chemicalName || '').toLowerCase().includes(q) ||
+            (e.itemCode || '').toLowerCase().includes(q) ||
+            String(e.quantity || '').toLowerCase().includes(q) ||
+            (e.unit || '').toLowerCase().includes(q) ||
+            String(e.rate || '').toLowerCase().includes(q) ||
+            String(e.totalAmount || '').toLowerCase().includes(q) ||
+            (e.supplierName || '').toLowerCase().includes(q) ||
+            (e.processType || '').toLowerCase().includes(q) ||
+            (e.machineNo || '').toLowerCase().includes(q) ||
+            (e.boilerNo || '').toLowerCase().includes(q) ||
+            (e.startTime || '').toLowerCase().includes(q) ||
+            (e.endTime || '').toLowerCase().includes(q) ||
+            (e.operatorName || '').toLowerCase().includes(q) ||
+            statusText.toLowerCase().includes(q) ||
+            (e.remarks || '').toLowerCase().includes(q);
+          if (!matchAll) return false;
+        } else {
+          let fieldVal = '';
+          switch (searchColumn) {
+            case 'entryNumber':
+              fieldVal = e.entryNumber || '';
+              break;
+            case 'date':
+              fieldVal = `${e.date} ${formatDate(e.date)}`;
+              break;
+            case 'itemName':
+              fieldVal = `${e.chemicalName || ''} ${e.itemCode || ''} ${e.remarks || ''}`;
+              break;
+            case 'quantity':
+              fieldVal = `${e.quantity} ${e.unit || ''}`;
+              break;
+            case 'rate':
+              fieldVal = String(e.rate || '');
+              break;
+            case 'totalAmount':
+              fieldVal = String(e.totalAmount || '');
+              break;
+            case 'process':
+              fieldVal = `${e.processType || ''} ${e.boilerNo || ''} ${e.machineNo || ''} ${e.operatorName || ''} ${e.supplierName || ''} ${e.startTime || ''} ${e.endTime || ''}`;
+              break;
+            case 'status':
+              fieldVal = statusText;
+              break;
+          }
+          if (!fieldVal.toLowerCase().includes(q)) return false;
+        }
+      }
+
+      // Inline Column Filters
+      for (const [colKey, filterVal] of Object.entries(columnFilters)) {
+        const needle = (filterVal || '').trim().toLowerCase();
+        if (!needle) continue;
+
+        let haystack = '';
+        switch (colKey) {
+          case 'entryNumber':
+            haystack = e.entryNumber || '';
+            break;
+          case 'date':
+            haystack = `${e.date} ${formatDate(e.date)}`;
+            break;
+          case 'itemName':
+            haystack = `${e.chemicalName || ''} ${e.itemCode || ''} ${e.remarks || ''}`;
+            break;
+          case 'quantity':
+            haystack = `${e.quantity} ${e.unit || ''}`;
+            break;
+          case 'rate':
+            haystack = String(e.rate || '');
+            break;
+          case 'totalAmount':
+            haystack = String(e.totalAmount || '');
+            break;
+          case 'process':
+            haystack = `${e.processType || ''} ${e.boilerNo || ''} ${e.machineNo || ''} ${e.operatorName || ''} ${e.supplierName || ''} ${e.startTime || ''} ${e.endTime || ''}`;
+            break;
+          case 'status':
+            haystack = statusText;
+            break;
+        }
+
+        if (!haystack.toLowerCase().includes(needle)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [currentSectionEntries, startDate, endDate, searchQuery, searchColumn, columnFilters]);
+
+  // 3. Sorted Entries (3-state column sorting)
+  const sortedEntries = useMemo(() => {
+    if (!sortField || sortDirection === 'normal') {
+      // Default: Most recent date and entry number first
+      return [...filteredEntries].sort((a, b) => {
+        const timeA = new Date(a.date || a.createdAt || 0).getTime();
+        const timeB = new Date(b.date || b.createdAt || 0).getTime();
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.entryNumber || '').localeCompare(a.entryNumber || '', undefined, { numeric: true });
       });
     }
 
-    return result;
-  }, [entries, activeSection, startDate, endDate, searchQuery]);
+    const mult = sortDirection === 'desc' ? -1 : 1;
+    return [...filteredEntries].sort((a, b) => {
+      switch (sortField) {
+        case 'entryNumber':
+          return (
+            (a.entryNumber || '').localeCompare(b.entryNumber || '', undefined, {
+              numeric: true,
+              sensitivity: 'base'
+            }) * mult
+          );
+        case 'date': {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return (dateA - dateB) * mult;
+        }
+        case 'itemName': {
+          const nameA = a.chemicalName || '';
+          const nameB = b.chemicalName || '';
+          return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' }) * mult;
+        }
+        case 'quantity': {
+          const qtyA = Number(a.quantity || 0);
+          const qtyB = Number(b.quantity || 0);
+          return (qtyA - qtyB) * mult;
+        }
+        case 'rate': {
+          const rateA = Number(a.rate || 0);
+          const rateB = Number(b.rate || 0);
+          return (rateA - rateB) * mult;
+        }
+        case 'totalAmount': {
+          const amtA = Number(a.totalAmount || 0);
+          const amtB = Number(b.totalAmount || 0);
+          return (amtA - amtB) * mult;
+        }
+        case 'process': {
+          const procA = `${a.processType || ''} ${a.boilerNo || a.machineNo || ''} ${a.operatorName || ''}`;
+          const procB = `${b.processType || ''} ${b.boilerNo || b.machineNo || ''} ${b.operatorName || ''}`;
+          return procA.localeCompare(procB, undefined, { sensitivity: 'base' }) * mult;
+        }
+        case 'status': {
+          const isPurchaseA = a.entryType === 'Purchase';
+          const isPurchaseB = b.entryType === 'Purchase';
+          const statA = isPurchaseA ? (a.isReceived ? 'Received' : 'Pending Receipt') : 'Deducted';
+          const statB = isPurchaseB ? (b.isReceived ? 'Received' : 'Pending Receipt') : 'Deducted';
+          return statA.localeCompare(statB) * mult;
+        }
+        default:
+          return 0;
+      }
+    });
+  }, [filteredEntries, sortField, sortDirection]);
+
+  // Active column filters count
+  const activeFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  // Check if any filter is active
+  const hasActiveFilters = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      startDate !== '' ||
+      endDate !== '' ||
+      activeFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, startDate, endDate, activeFilterCount, sortField, sortDirection]);
+
+  // Reset all filters to default
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setStartDate('');
+    setEndDate('');
+    setColumnFilters({
+      entryNumber: '',
+      date: '',
+      itemName: '',
+      quantity: '',
+      rate: '',
+      totalAmount: '',
+      process: '',
+      status: ''
+    });
+    setSortField(null);
+    setSortDirection('normal');
+  };
+
+  const handleColumnFilterChange = (colKey: string, val: string) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [colKey]: val
+    }));
+  };
+
+  // 3-state column sorting handler
+  const handleSort = (field: ProcessEntrySortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      const defaultDesc = ['date', 'quantity', 'rate', 'totalAmount'].includes(field);
+      setSortDirection(defaultDesc ? 'desc' : 'asc');
+    } else {
+      if (sortDirection === 'desc') {
+        setSortDirection('asc');
+      } else if (sortDirection === 'asc') {
+        setSortDirection('normal');
+        setSortField(null);
+      } else {
+        const defaultDesc = ['date', 'quantity', 'rate', 'totalAmount'].includes(field);
+        setSortDirection(defaultDesc ? 'desc' : 'asc');
+      }
+    }
+  };
+
+  const renderSortIcon = (field: ProcessEntrySortField) => {
+    if (sortField === field && sortDirection !== 'normal') {
+      if (sortDirection === 'asc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-100 text-[#1F4E79] shadow-2xs">
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+      if (sortDirection === 'desc') {
+        return (
+          <span className="p-0.5 rounded bg-blue-100 text-[#1F4E79] shadow-2xs">
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          </span>
+        );
+      }
+    }
+    return (
+      <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+        <ArrowUpDown className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
+      </span>
+    );
+  };
+
+  const getSortTooltip = (field: ProcessEntrySortField, label: string) => {
+    if (sortField !== field || !sortDirection || sortDirection === 'normal') {
+      return `Click to sort by ${label}`;
+    }
+    if (sortDirection === 'asc') {
+      return `Currently sorted ${label} ascending. Click for descending`;
+    }
+    return `Currently sorted ${label} descending. Click to reset (normal form)`;
+  };
+
+  const getSortColumnLabel = (field: ProcessEntrySortField) => {
+    switch (field) {
+      case 'entryNumber': return 'Entry No';
+      case 'date': return 'Date';
+      case 'itemName': return activeSection === 'wood' ? 'Raw Wood Material' : 'Chemical Name';
+      case 'quantity': return 'Quantity';
+      case 'rate': return 'Rate / Unit';
+      case 'totalAmount': return 'Total Amount';
+      case 'process': return activeSection === 'wood' ? 'Boiler & Timing' : 'Process & Timing';
+      case 'status': return 'Stock Status';
+      default: return field;
+    }
+  };
 
   // KPI Metrics calculated per section
   const metrics = useMemo(() => {
@@ -647,7 +1038,9 @@ const ChemicalEntryContent: React.FC = () => {
     setConsumptionRate(initRate > 0 ? initRate : '');
     setConsumptionQuantity('');
     setConsumptionProcessType('Dyeing');
-    setConsumptionMachineNo('');
+    const initialMach = activeMachines.find((m) => (m.processType || '').toLowerCase() === 'dyeing') || activeMachines[0];
+    setConsumptionMachineNo(initialMach ? `${initialMach.machineId} - ${initialMach.name}` : '');
+    setIsCustomConsumptionMachine(false);
     setConsumptionStartTime('');
     setConsumptionEndTime('');
     setConsumptionOperatorName('');
@@ -661,6 +1054,7 @@ const ChemicalEntryContent: React.FC = () => {
     setConsumptionUnit(item.baseUnit || 'kg');
     const r = item.defaultPurchaseRate || 0;
     setConsumptionRate(r > 0 ? r : '');
+    setConsumptionQuantity('');
   };
 
   const selectedConsumptionChemical = useMemo(() => {
@@ -668,6 +1062,69 @@ const ChemicalEntryContent: React.FC = () => {
   }, [chemicals, consumptionItemId]);
 
   const availableStockForSelected = Number(selectedConsumptionChemical?.currentStock || 0);
+
+  // Compatible units for chemical (e.g. kg, g, qtl, or l, ml)
+  const compatibleChemicalUnits = useMemo(() => {
+    return getCompatibleUnits(selectedConsumptionChemical?.baseUnit || 'kg');
+  }, [selectedConsumptionChemical?.baseUnit]);
+
+  // Warehouse stock converted to the currently selected consumptionUnit
+  const availableStockInSelectedChemUnit = useMemo(() => {
+    const baseUnit = selectedConsumptionChemical?.baseUnit || 'kg';
+    return convertQuantity(availableStockForSelected, baseUnit, consumptionUnit);
+  }, [availableStockForSelected, selectedConsumptionChemical?.baseUnit, consumptionUnit]);
+
+  // Average rate converted to the currently selected consumptionUnit
+  const avgRateInSelectedChemUnit = useMemo(() => {
+    const baseRate = Number(selectedConsumptionChemical?.defaultPurchaseRate || 0);
+    const baseUnit = selectedConsumptionChemical?.baseUnit || 'kg';
+    return convertRate(baseRate, baseUnit, consumptionUnit);
+  }, [selectedConsumptionChemical?.defaultPurchaseRate, selectedConsumptionChemical?.baseUnit, consumptionUnit]);
+
+  const handleConsumptionUnitChange = (newUnit: string) => {
+    if (newUnit === consumptionUnit) return;
+    const oldUnit = consumptionUnit;
+    setConsumptionUnit(newUnit);
+    if (consumptionQuantity !== '' && !isNaN(Number(consumptionQuantity))) {
+      const convertedQty = convertQuantity(Number(consumptionQuantity), oldUnit, newUnit);
+      setConsumptionQuantity(convertedQty > 0 ? convertedQty : '');
+    }
+    if (consumptionRate !== '' && !isNaN(Number(consumptionRate))) {
+      const convertedRate = convertRate(Number(consumptionRate), oldUnit, newUnit);
+      setConsumptionRate(convertedRate > 0 ? Math.round(convertedRate * 10000) / 10000 : '');
+    }
+  };
+
+  const handleProcessStageChange = (newStage: string) => {
+    setConsumptionProcessType(newStage);
+    if (!isCustomConsumptionMachine) {
+      const stageLower = newStage.toLowerCase();
+      const match = activeMachines.find((m) => {
+        const pType = (m.processType || '').toLowerCase();
+        const mName = (m.name || '').toLowerCase();
+        if (stageLower.includes('dye')) return pType === 'dyeing' || mName.includes('dye');
+        if (
+          stageLower.includes('wash') ||
+          stageLower.includes('enzyme') ||
+          stageLower.includes('scour') ||
+          stageLower.includes('bleach') ||
+          stageLower.includes('soften')
+        ) {
+          return pType === 'washing' || mName.includes('wash') || mName.includes('hydro');
+        }
+        if (stageLower.includes('boiler') || stageLower.includes('utility')) {
+          return pType === 'boiler' || mName.includes('boiler');
+        }
+        if (stageLower.includes('finish')) {
+          return pType === 'finishing' || mName.includes('finish') || mName.includes('stenter');
+        }
+        return pType === stageLower;
+      });
+      if (match) {
+        setConsumptionMachineNo(`${match.machineId} - ${match.name}`);
+      }
+    }
+  };
 
   const handleConsumptionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -681,17 +1138,20 @@ const ChemicalEntryContent: React.FC = () => {
       return;
     }
 
-    if (qty > availableStockForSelected) {
+    if (qty > availableStockInSelectedChemUnit) {
       setConsumptionError(
-        `Insufficient stock! Requested: ${qty} ${consumptionUnit}, but only ${availableStockForSelected} ${consumptionUnit} is available in warehouse stock.`
+        `Insufficient stock! Requested: ${qty.toLocaleString('en-IN')} ${consumptionUnit}, but only ${availableStockInSelectedChemUnit.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${consumptionUnit} is available in warehouse stock.`
       );
       return;
     }
 
+    const baseUnit = selectedConsumptionChemical?.baseUnit || 'kg';
+    const qtyInBaseUnit = convertQuantity(qty, consumptionUnit, baseUnit);
+
     const rateVal =
       parseFloat(String(consumptionRate)) > 0
         ? parseFloat(String(consumptionRate))
-        : Number(selectedConsumptionChemical?.defaultPurchaseRate || 0);
+        : avgRateInSelectedChemUnit;
     const totalAmt = Math.round(qty * rateVal * 100) / 100;
 
     setConsumptionSubmitting(true);
@@ -699,11 +1159,14 @@ const ChemicalEntryContent: React.FC = () => {
 
     try {
       const payload: CreateChemicalEntryPayload = {
+        materialType: 'chemical',
         entryType: 'Consumption',
         itemId: consumptionItemId,
         date: consumptionDate,
         quantity: qty,
         unit: consumptionUnit,
+        baseQuantity: qtyInBaseUnit,
+        baseUnit: baseUnit,
         rate: rateVal,
         totalAmount: totalAmt,
         processType: consumptionProcessType,
@@ -737,12 +1200,15 @@ const ChemicalEntryContent: React.FC = () => {
     setWoodDate(new Date().toISOString().split('T')[0]);
     const firstWood = woodItems[0];
     setWoodItemId(firstWood?.id || firstWood?.itemId || '');
-    setWoodUnit(firstWood?.baseUnit || 't');
+    const baseUnit = firstWood?.baseUnit || 't';
+    setWoodUnit(baseUnit);
     const initRate = firstWood?.defaultPurchaseRate || 0;
     setWoodRate(initRate > 0 ? initRate : '');
     setWoodQuantity('');
     setWoodBoilerStage('Steam Generation (Boiler)');
-    setWoodBoilerNo('');
+    const initialBoiler = boilerMachines[0] || activeMachines[0];
+    setWoodBoilerNo(initialBoiler ? `${initialBoiler.machineId} - ${initialBoiler.name}` : '');
+    setIsCustomWoodBoiler(false);
     setWoodStartTime('');
     setWoodEndTime('');
     setWoodOperatorName(''); // NO DEFAULT VALUE
@@ -753,9 +1219,11 @@ const ChemicalEntryContent: React.FC = () => {
 
   const handleSelectWoodItem = (item: MasterItem) => {
     setWoodItemId(item.id || item.itemId);
-    setWoodUnit(item.baseUnit || 't');
+    const baseUnit = item.baseUnit || 't';
+    setWoodUnit(baseUnit);
     const r = item.defaultPurchaseRate || 0;
     setWoodRate(r > 0 ? r : '');
+    setWoodQuantity('');
   };
 
   const selectedConsumptionWood = useMemo(() => {
@@ -763,6 +1231,42 @@ const ChemicalEntryContent: React.FC = () => {
   }, [woodItems, woodItemId]);
 
   const availableStockForSelectedWood = Number(selectedConsumptionWood?.currentStock || 0);
+
+  // Compatible units for the selected wood item (e.g. t, kg, qtl)
+  const compatibleWoodUnits = useMemo(() => {
+    return getCompatibleUnits(selectedConsumptionWood?.baseUnit || 't');
+  }, [selectedConsumptionWood?.baseUnit]);
+
+  // Warehouse stock converted to the currently selected woodUnit
+  const availableStockInSelectedWoodUnit = useMemo(() => {
+    const baseUnit = selectedConsumptionWood?.baseUnit || 't';
+    return convertQuantity(availableStockForSelectedWood, baseUnit, woodUnit);
+  }, [availableStockForSelectedWood, selectedConsumptionWood?.baseUnit, woodUnit]);
+
+  // Average rate converted to the currently selected woodUnit
+  const avgRateInSelectedWoodUnit = useMemo(() => {
+    const baseRate = Number(selectedConsumptionWood?.defaultPurchaseRate || 0);
+    const baseUnit = selectedConsumptionWood?.baseUnit || 't';
+    return convertRate(baseRate, baseUnit, woodUnit);
+  }, [selectedConsumptionWood?.defaultPurchaseRate, selectedConsumptionWood?.baseUnit, woodUnit]);
+
+  const handleWoodUnitChange = (newUnit: string) => {
+    if (newUnit === woodUnit) return;
+    const oldUnit = woodUnit;
+    setWoodUnit(newUnit);
+
+    // Smoothly convert existing entered quantity if present
+    if (woodQuantity !== '' && !isNaN(Number(woodQuantity))) {
+      const convertedQty = convertQuantity(Number(woodQuantity), oldUnit, newUnit);
+      setWoodQuantity(convertedQty > 0 ? convertedQty : '');
+    }
+
+    // Smoothly convert existing entered rate if present
+    if (woodRate !== '' && !isNaN(Number(woodRate))) {
+      const convertedRate = convertRate(Number(woodRate), oldUnit, newUnit);
+      setWoodRate(convertedRate > 0 ? Math.round(convertedRate * 10000) / 10000 : '');
+    }
+  };
 
   const handleWoodSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -776,17 +1280,20 @@ const ChemicalEntryContent: React.FC = () => {
       return;
     }
 
-    if (qty > availableStockForSelectedWood) {
+    if (qty > availableStockInSelectedWoodUnit) {
       setWoodError(
-        `Insufficient wood stock! Requested: ${qty} ${woodUnit}, but only ${availableStockForSelectedWood} ${woodUnit} is available in warehouse stock.`
+        `Insufficient wood stock! Requested: ${qty.toLocaleString('en-IN')} ${woodUnit}, but only ${availableStockInSelectedWoodUnit.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${woodUnit} is available in warehouse stock.`
       );
       return;
     }
 
+    const baseUnit = selectedConsumptionWood?.baseUnit || 't';
+    const qtyInBaseUnit = convertQuantity(qty, woodUnit, baseUnit);
+
     const rateVal =
       parseFloat(String(woodRate)) > 0
         ? parseFloat(String(woodRate))
-        : Number(selectedConsumptionWood?.defaultPurchaseRate || 0);
+        : avgRateInSelectedWoodUnit;
     const totalAmt = Math.round(qty * rateVal * 100) / 100;
 
     setWoodSubmitting(true);
@@ -800,6 +1307,8 @@ const ChemicalEntryContent: React.FC = () => {
         date: woodDate,
         quantity: qty,
         unit: woodUnit,
+        baseQuantity: qtyInBaseUnit,
+        baseUnit: baseUnit,
         rate: rateVal,
         totalAmount: totalAmt,
         processType: woodBoilerStage,
@@ -895,7 +1404,7 @@ const ChemicalEntryContent: React.FC = () => {
           { header: 'Remarks', key: 'remarks', width: 25 }
         ];
 
-        filteredEntries.forEach((e) => {
+        sortedEntries.forEach((e) => {
           worksheet.addRow({
             entryNumber: e.entryNumber,
             date: e.date,
@@ -932,7 +1441,7 @@ const ChemicalEntryContent: React.FC = () => {
           { header: 'Remarks', key: 'remarks', width: 25 }
         ];
 
-        filteredEntries.forEach((e) => {
+        sortedEntries.forEach((e) => {
           worksheet.addRow({
             entryNumber: e.entryNumber,
             date: e.date,
@@ -981,23 +1490,24 @@ const ChemicalEntryContent: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">
-            Process Entry
-          </h2>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Process Entry</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Shopfloor chemical recipe consumption, washing &amp; dyeing batches, and boiler raw wood usage
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="h-9 px-3 bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
             title="Reload data"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Reload</span>
           </button>
 
@@ -1005,7 +1515,7 @@ const ChemicalEntryContent: React.FC = () => {
             <button
               type="button"
               onClick={openConsumptionModal}
-              className="h-9 px-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition cursor-pointer shadow-2xs"
             >
               <ArrowUpRight className="w-3.5 h-3.5" />
               <span>Record Consumption</span>
@@ -1014,7 +1524,7 @@ const ChemicalEntryContent: React.FC = () => {
             <button
               type="button"
               onClick={openWoodModal}
-              className="h-9 px-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition cursor-pointer shadow-2xs"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Record Wood Usage</span>
@@ -1029,6 +1539,19 @@ const ChemicalEntryContent: React.FC = () => {
           onClick={() => {
             setActiveSection('chemical');
             setSearchQuery('');
+            setSearchColumn('ALL');
+            setColumnFilters({
+              entryNumber: '',
+              date: '',
+              itemName: '',
+              quantity: '',
+              rate: '',
+              totalAmount: '',
+              process: '',
+              status: ''
+            });
+            setSortField(null);
+            setSortDirection('normal');
           }}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
             activeSection === 'chemical'
@@ -1044,6 +1567,19 @@ const ChemicalEntryContent: React.FC = () => {
           onClick={() => {
             setActiveSection('wood');
             setSearchQuery('');
+            setSearchColumn('ALL');
+            setColumnFilters({
+              entryNumber: '',
+              date: '',
+              itemName: '',
+              quantity: '',
+              rate: '',
+              totalAmount: '',
+              process: '',
+              status: ''
+            });
+            setSortField(null);
+            setSortDirection('normal');
           }}
           className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
             activeSection === 'wood'
@@ -1106,38 +1642,92 @@ const ChemicalEntryContent: React.FC = () => {
 
       {/* Main Ledger Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Filters Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
-          {/* Left: Search Filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={
-                  activeSection === 'wood'
-                    ? 'Search entry #, wood material, boiler, operator...'
-                    : 'Search entry #, chemical, process stage, machine...'
-                }
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+        {/* Integrated Search & Filters Header */}
+        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+          {/* Left: Column Selector Dropdown + Search Input + Column Filters Toggle */}
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[300px]">
+            {/* Column Selector & Search Group */}
+            <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden shadow-2xs h-9">
+              <select
+                value={searchColumn}
+                onChange={(e) => setSearchColumn(e.target.value as ProcessEntrySearchColumn)}
+                className="h-full bg-slate-50 border-r border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus:outline-none cursor-pointer"
+                title="Select column to search"
+              >
+                <option value="ALL">All Columns</option>
+                <option value="entryNumber">Entry No</option>
+                <option value="date">Date</option>
+                <option value="itemName">{activeSection === 'wood' ? 'Raw Wood Material' : 'Chemical Name'}</option>
+                <option value="quantity">Quantity</option>
+                <option value="rate">Rate / Unit</option>
+                <option value="totalAmount">Total Amount</option>
+                <option value="process">{activeSection === 'wood' ? 'Boiler & Timing' : 'Process & Timing'}</option>
+                <option value="status">Stock Status</option>
+              </select>
+
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5" />
+                <input
+                  type="text"
+                  placeholder={
+                    searchColumn === 'ALL'
+                      ? 'Search all columns...'
+                      : `Search ${searchColumn}...`
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none w-48 sm:w-64"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showColumnFilters || activeFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Toggle column-wise search inputs on table header"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset All Filters button */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                title="Reset All Filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
           </div>
 
-          {/* Right: Date Range & Export */}
+          {/* Right: Date Range & Export Excel */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-9">
               <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
               <input
                 type="date"
@@ -1147,7 +1737,7 @@ const ChemicalEntryContent: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-9">
               <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
               <input
                 type="date"
@@ -1157,24 +1747,10 @@ const ChemicalEntryContent: React.FC = () => {
               />
             </div>
 
-            {(startDate || endDate || searchQuery) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStartDate('');
-                  setEndDate('');
-                  setSearchQuery('');
-                }}
-                className="h-8 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 transition"
-              >
-                Clear
-              </button>
-            )}
-
             <button
               type="button"
               onClick={handleExportExcel}
-              className="h-9 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ml-auto"
+              className="h-9 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
               <span>Export Excel</span>
@@ -1182,25 +1758,250 @@ const ChemicalEntryContent: React.FC = () => {
           </div>
         </div>
 
-        {/* History Table */}
-        <div className="overflow-x-auto">
+        {/* Active Sort Banner */}
+        {sortField && sortDirection && sortDirection !== 'normal' && (
+          <div className="flex items-center justify-between px-4 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">
+                Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSortField(null);
+                setSortDirection('normal');
+              }}
+              className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+              title="Reset to default order"
+            >
+              Clear / Desort
+            </button>
+          </div>
+        )}
+
+        {/* Sticky Table Container */}
+        <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-3.5 border-r border-slate-200">Entry No</th>
-                <th className="py-3 px-3.5 border-r border-slate-200">Date</th>
-                <th className="py-3 px-3.5 border-r border-slate-200">
-                  {activeSection === 'wood' ? 'Raw Wood / Material' : 'Chemical Name'}
+            <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+              <tr>
+                {/* 1. Entry No */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                    sortField === 'entryNumber' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('entryNumber')}
+                  title={getSortTooltip('entryNumber', 'Entry Number')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>Entry No</span>
+                    {renderSortIcon('entryNumber')}
+                  </div>
                 </th>
-                <th className="py-3 px-3 border-r border-slate-200 text-right">Quantity</th>
-                <th className="py-3 px-3 border-r border-slate-200 text-right">Rate / Unit</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Total Amount</th>
-                <th className="py-3 px-3.5 border-r border-slate-200">
-                  {activeSection === 'wood' ? 'Boiler & Timing' : 'Process & Timing'}
+
+                {/* 2. Date */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                    sortField === 'date' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('date')}
+                  title={getSortTooltip('date', 'Date')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Date</span>
+                    {renderSortIcon('date')}
+                  </div>
                 </th>
-                <th className="py-3 px-3 border-r border-slate-200 text-center">Stock Status</th>
-                <th className="py-3 px-3.5 text-center">Actions</th>
+
+                {/* 3. Chemical / Raw Wood */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                    sortField === 'itemName' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('itemName')}
+                  title={getSortTooltip('itemName', activeSection === 'wood' ? 'Raw Wood Material' : 'Chemical Name')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>{activeSection === 'wood' ? 'Raw Wood / Material' : 'Chemical Name'}</span>
+                    {renderSortIcon('itemName')}
+                  </div>
+                </th>
+
+                {/* 4. Quantity */}
+                <th
+                  className={`py-3 px-3 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-right ${
+                    sortField === 'quantity' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('quantity')}
+                  title={getSortTooltip('quantity', 'Quantity')}
+                >
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span>Quantity</span>
+                    {renderSortIcon('quantity')}
+                  </div>
+                </th>
+
+                {/* 5. Rate / Unit */}
+                <th
+                  className={`py-3 px-3 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-right ${
+                    sortField === 'rate' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('rate')}
+                  title={getSortTooltip('rate', 'Rate / Unit')}
+                >
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span>Rate / Unit</span>
+                    {renderSortIcon('rate')}
+                  </div>
+                </th>
+
+                {/* 6. Total Amount */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-right ${
+                    sortField === 'totalAmount' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('totalAmount')}
+                  title={getSortTooltip('totalAmount', 'Total Amount')}
+                >
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span>Total Amount</span>
+                    {renderSortIcon('totalAmount')}
+                  </div>
+                </th>
+
+                {/* 7. Process & Timing / Boiler */}
+                <th
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                    sortField === 'process' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('process')}
+                  title={getSortTooltip('process', activeSection === 'wood' ? 'Boiler & Timing' : 'Process & Timing')}
+                >
+                  <div className="flex items-center gap-1.5 justify-start">
+                    <span>{activeSection === 'wood' ? 'Boiler & Timing' : 'Process & Timing'}</span>
+                    {renderSortIcon('process')}
+                  </div>
+                </th>
+
+                {/* 8. Stock Status */}
+                <th
+                  className={`py-3 px-3 border-r border-b-2 border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-center ${
+                    sortField === 'status' && sortDirection !== 'normal' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                  }`}
+                  onClick={() => handleSort('status')}
+                  title={getSortTooltip('status', 'Stock Status')}
+                >
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <span>Stock Status</span>
+                    {renderSortIcon('status')}
+                  </div>
+                </th>
+
+                {/* 9. Actions */}
+                <th className="py-3 px-3.5 text-center w-28 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] border-b-2 border-slate-300">
+                  Actions
+                </th>
               </tr>
+
+              {/* Inline Column Filter Inputs Row */}
+              {showColumnFilters && (
+                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter entry #..."
+                      value={columnFilters.entryNumber || ''}
+                      onChange={(e) => handleColumnFilterChange('entryNumber', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Filter date..."
+                      value={columnFilters.date || ''}
+                      onChange={(e) => handleColumnFilterChange('date', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder={activeSection === 'wood' ? 'Filter wood material...' : 'Filter chemical...'}
+                      value={columnFilters.itemName || ''}
+                      onChange={(e) => handleColumnFilterChange('itemName', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter qty..."
+                      value={columnFilters.quantity || ''}
+                      onChange={(e) => handleColumnFilterChange('quantity', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter rate..."
+                      value={columnFilters.rate || ''}
+                      onChange={(e) => handleColumnFilterChange('rate', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter amount..."
+                      value={columnFilters.totalAmount || ''}
+                      onChange={(e) => handleColumnFilterChange('totalAmount', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder={activeSection === 'wood' ? 'Filter boiler, op...' : 'Filter process, op...'}
+                      value={columnFilters.process || ''}
+                      onChange={(e) => handleColumnFilterChange('process', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Filter status..."
+                      value={columnFilters.status || ''}
+                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center"
+                    />
+                  </th>
+                  <th className="p-1.5 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setColumnFilters({
+                            entryNumber: '',
+                            date: '',
+                            itemName: '',
+                            quantity: '',
+                            rate: '',
+                            totalAmount: '',
+                            process: '',
+                            status: ''
+                          })
+                        }
+                        className="px-2 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
@@ -1210,14 +2011,34 @@ const ChemicalEntryContent: React.FC = () => {
                     Loading {activeSection === 'wood' ? 'wood usage' : 'chemical process'} entries...
                   </td>
                 </tr>
-              ) : filteredEntries.length === 0 ? (
+              ) : sortedEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-xs text-slate-400 italic">
-                    No {activeSection === 'wood' ? 'raw wood usage' : 'chemical process'} entries found matching your criteria.
+                  <td colSpan={9} className="py-14 text-center text-xs text-slate-400 bg-white">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                      <div className="p-3 rounded-full bg-slate-50 text-slate-400">
+                        <Package className="w-8 h-8 stroke-[1.5]" />
+                      </div>
+                      <div className="text-sm font-bold text-slate-700">No Matching Entries</div>
+                      <p className="text-slate-400 text-xs leading-relaxed">
+                        {hasActiveFilters
+                          ? `No ${activeSection === 'wood' ? 'wood usage' : 'chemical process'} entries match your current search, column filters, or date range.`
+                          : `No ${activeSection === 'wood' ? 'raw wood usage' : 'chemical process'} entries have been recorded yet.`}
+                      </p>
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
-                filteredEntries.map((entry) => {
+                sortedEntries.map((entry) => {
                   const isPurchase = entry.entryType === 'Purchase';
                   const isWood = entry.materialType === 'wood' || (entry.entryNumber || '').startsWith('WD-');
 
@@ -1250,6 +2071,13 @@ const ChemicalEntryContent: React.FC = () => {
                       <td className="py-3 px-3 border-r border-slate-200 align-middle text-right font-mono font-bold text-slate-900">
                         {(Number(entry.quantity) || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
                         <span className="text-[10px] text-slate-500 font-normal">{entry.unit || (isWood ? 't' : 'kg')}</span>
+                        {entry.baseQuantity !== undefined &&
+                          entry.baseUnit &&
+                          normalizeUnit(entry.unit) !== normalizeUnit(entry.baseUnit) && (
+                            <div className="text-[10px] text-slate-400 font-normal">
+                              (= {entry.baseQuantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {entry.baseUnit})
+                            </div>
+                          )}
                       </td>
 
                       {/* Rate / Unit */}
@@ -1389,6 +2217,23 @@ const ChemicalEntryContent: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* All Records Summary Bar - One Stretch */}
+        <div className="px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 bg-slate-50/70">
+          <div className="flex items-center gap-2">
+            <span>
+              Showing all <strong className="text-slate-900 font-bold">{sortedEntries.length}</strong> {sortedEntries.length === 1 ? 'entry' : 'entries'} in one stretch
+            </span>
+            {sortedEntries.length !== currentSectionEntries.length && (
+              <span className="text-slate-400 font-normal">
+                (filtered from {currentSectionEntries.length} total)
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-400 font-medium">
+            Full view · Header stays at top
+          </span>
         </div>
       </div>
 
@@ -1619,7 +2464,7 @@ const ChemicalEntryContent: React.FC = () => {
               </label>
               <select
                 value={consumptionProcessType}
-                onChange={(e) => setConsumptionProcessType(e.target.value)}
+                onChange={(e) => handleProcessStageChange(e.target.value)}
                 className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none cursor-pointer"
               >
                 <option value="Dyeing">Dyeing</option>
@@ -1659,13 +2504,20 @@ const ChemicalEntryContent: React.FC = () => {
                       : 'bg-slate-50 border-slate-200 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <Factory className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Factory className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                     <span>
                       Warehouse Stock:{' '}
-                      <strong className="font-mono">
-                        {availableStockForSelected} {selectedConsumptionChemical.baseUnit}
+                      <strong className="font-mono text-slate-900 text-sm">
+                        {availableStockInSelectedChemUnit.toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
+                        {consumptionUnit}
                       </strong>
+                      {normalizeUnit(consumptionUnit) !== normalizeUnit(selectedConsumptionChemical.baseUnit || 'kg') && (
+                        <span className="text-slate-500 font-normal ml-1.5 text-[11px]">
+                          (= {availableStockForSelected.toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
+                          {selectedConsumptionChemical.baseUnit || 'kg'} in warehouse base unit)
+                        </span>
+                      )}
                     </span>
                   </div>
                   {availableStockForSelected <= 0 && (
@@ -1685,9 +2537,9 @@ const ChemicalEntryContent: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <input
                   type="number"
-                  step="0.01"
-                  min="0.01"
-                  max={availableStockForSelected > 0 ? availableStockForSelected : undefined}
+                  step={consumptionUnit === 'g' || consumptionUnit === 'ml' ? '1' : '0.01'}
+                  min="0.001"
+                  max={availableStockInSelectedChemUnit > 0 ? availableStockInSelectedChemUnit : undefined}
                   value={consumptionQuantity}
                   onChange={(e) =>
                     setConsumptionQuantity(e.target.value === '' ? '' : parseFloat(e.target.value))
@@ -1696,9 +2548,18 @@ const ChemicalEntryContent: React.FC = () => {
                   required
                   className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-bold text-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
                 />
-                <span className="w-16 h-10 flex items-center justify-center bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">
-                  {consumptionUnit}
-                </span>
+                <select
+                  value={consumptionUnit}
+                  onChange={(e) => handleConsumptionUnitChange(e.target.value)}
+                  className="h-10 w-28 sm:w-32 px-2.5 bg-slate-100 hover:bg-slate-200/80 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none cursor-pointer transition shadow-2xs shrink-0"
+                  title="Change unit"
+                >
+                  {compatibleChemicalUnits.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1708,27 +2569,27 @@ const ChemicalEntryContent: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
                   Rate / Unit (₹)
                 </label>
-                {selectedConsumptionChemical?.defaultPurchaseRate ? (
-                  <span className="text-[10px] text-slate-400">
-                    Avg: ₹{(selectedConsumptionChemical.defaultPurchaseRate).toFixed(2)}/{consumptionUnit}
+                {avgRateInSelectedChemUnit > 0 ? (
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Avg: ₹{(avgRateInSelectedChemUnit >= 1 ? avgRateInSelectedChemUnit.toFixed(2) : avgRateInSelectedChemUnit.toFixed(4))}/{consumptionUnit}
                   </span>
                 ) : null}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-10 h-10 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-500">
+                <span className="w-10 h-10 flex items-center justify-center bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 shrink-0">
                   ₹
                 </span>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   min="0"
                   value={consumptionRate}
                   onChange={(e) =>
                     setConsumptionRate(e.target.value === '' ? '' : parseFloat(e.target.value))
                   }
                   placeholder={
-                    selectedConsumptionChemical?.defaultPurchaseRate
-                      ? String(selectedConsumptionChemical.defaultPurchaseRate)
+                    avgRateInSelectedChemUnit > 0
+                      ? String(avgRateInSelectedChemUnit >= 1 ? avgRateInSelectedChemUnit.toFixed(2) : avgRateInSelectedChemUnit.toFixed(4))
                       : '0.00'
                   }
                   className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-bold font-mono text-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
@@ -1737,18 +2598,18 @@ const ChemicalEntryContent: React.FC = () => {
             </div>
 
             {/* Total Material Worth Highlight */}
-            <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
+            <div className="md:col-span-2 bg-gradient-to-r from-slate-50 to-slate-100/70 border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Total Material Worth
                 </span>
-                <span className="text-xs text-slate-500 font-medium">
+                <span className="text-xs text-slate-600 font-medium">
                   {Number(consumptionQuantity) || 0} {consumptionUnit} @ ₹
                   {(
                     Number(consumptionRate) ||
-                    Number(selectedConsumptionChemical?.defaultPurchaseRate) ||
+                    avgRateInSelectedChemUnit ||
                     0
-                  ).toFixed(2)}
+                  ).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                   /{consumptionUnit}
                 </span>
               </div>
@@ -1757,7 +2618,7 @@ const ChemicalEntryContent: React.FC = () => {
                   Math.round(
                     (Number(consumptionQuantity) || 0) *
                       (Number(consumptionRate) ||
-                        Number(selectedConsumptionChemical?.defaultPurchaseRate) ||
+                        avgRateInSelectedChemUnit ||
                         0) *
                       100
                   ) / 100
@@ -1765,48 +2626,107 @@ const ChemicalEntryContent: React.FC = () => {
               </div>
             </div>
 
-            {/* Machine / Washer No */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Machine / Washer No
-              </label>
-              <input
-                type="text"
-                value={consumptionMachineNo}
-                onChange={(e) => setConsumptionMachineNo(e.target.value)}
-                placeholder="e.g. Washer-03"
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
-            </div>
+            {/* Machine / Washer No - Fetched from Machine Master */}
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Machine / Washer No
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  General Settings &gt; Machine Master
+                </span>
+              </div>
 
-            {/* Start Time */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Start Time
-              </label>
-              <input
-                type="time"
-                value={consumptionStartTime}
-                onChange={(e) => setConsumptionStartTime(e.target.value)}
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
-            </div>
+              {isCustomConsumptionMachine ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={consumptionMachineNo}
+                      onChange={(e) => setConsumptionMachineNo(e.target.value)}
+                      placeholder="e.g. Washer-03"
+                      className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomConsumptionMachine(false);
+                        const initialMach = matchingProcessMachines[0] || activeMachines[0];
+                        setConsumptionMachineNo(initialMach ? `${initialMach.machineId} - ${initialMach.name}` : '');
+                      }}
+                      className="h-10 px-2.5 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 cursor-pointer"
+                    >
+                      Choose from Master
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <select
+                  value={consumptionMachineNo}
+                  onChange={(e) => {
+                    if (e.target.value === '__CUSTOM__') {
+                      setIsCustomConsumptionMachine(true);
+                      setConsumptionMachineNo('');
+                    } else {
+                      setConsumptionMachineNo(e.target.value);
+                    }
+                  }}
+                  className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Select Machine from Machine Master --</option>
+                  {matchingProcessMachines.length > 0 && (
+                    <optgroup label={`${consumptionProcessType} Machines (Machine Master)`}>
+                      {matchingProcessMachines.map((m) => (
+                        <option key={m.id} value={`${m.machineId} - ${m.name}`}>
+                          {m.machineId} · {m.name} {m.capacity ? `(${m.capacity})` : ''} [{m.modelYear}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {otherProcessMachines.length > 0 && (
+                    <optgroup label="Other Machines (Machine Master)">
+                      {otherProcessMachines.map((m) => (
+                        <option key={m.id} value={`${m.machineId} - ${m.name}`}>
+                          {m.machineId} · {m.name} ({m.processType}) {m.capacity ? `(${m.capacity})` : ''} [{m.modelYear}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="__CUSTOM__">+ Enter Custom Machine...</option>
+                </select>
+              )}
 
-            {/* End Time */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                End Time
-              </label>
-              <input
-                type="time"
-                value={consumptionEndTime}
-                onChange={(e) => setConsumptionEndTime(e.target.value)}
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
+              {/* Selected Machine Detail Pill */}
+              {selectedConsumptionMachine && !isCustomConsumptionMachine && (
+                <div className="mt-2 px-3 py-2 rounded-lg bg-sky-50/80 border border-sky-200/80 text-xs text-sky-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-sky-100 flex items-center justify-center text-sky-800 shrink-0">
+                      <Factory className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-900">{selectedConsumptionMachine.name}</span>
+                      <span className="font-mono text-slate-500 text-[11px] ml-1.5">({selectedConsumptionMachine.machineId})</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-sky-800 font-medium">
+                    <span className="bg-sky-100/90 px-2 py-0.5 rounded border border-sky-200/50">
+                      {selectedConsumptionMachine.processType}
+                    </span>
+                    {selectedConsumptionMachine.capacity && (
+                      <span className="font-mono bg-sky-100/90 px-2 py-0.5 rounded border border-sky-200/50">
+                        Cap: {selectedConsumptionMachine.capacity}
+                      </span>
+                    )}
+                    <span className="font-mono bg-sky-100/90 px-2 py-0.5 rounded border border-sky-200/50">
+                      Yr: {selectedConsumptionMachine.modelYear}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Operator Name */}
-            <div className="md:col-span-2">
+            <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                 Operator / Person Responsible
               </label>
@@ -1817,6 +2737,39 @@ const ChemicalEntryContent: React.FC = () => {
                 placeholder="Operator name"
                 className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none"
               />
+            </div>
+
+            {/* Operating Shift Timing: Start Time & End Time */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                Operating Shift Timing
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={consumptionStartTime}
+                    onChange={(e) => setConsumptionStartTime(e.target.value)}
+                    className="w-full h-10 bg-white border border-slate-200 rounded-lg px-2.5 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    title="Start Time"
+                  />
+                  <span className="absolute -top-1.5 left-2 bg-white px-1 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                    Start
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={consumptionEndTime}
+                    onChange={(e) => setConsumptionEndTime(e.target.value)}
+                    className="w-full h-10 bg-white border border-slate-200 rounded-lg px-2.5 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    title="End Time"
+                  />
+                  <span className="absolute -top-1.5 left-2 bg-white px-1 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                    End
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Remarks */}
@@ -1935,13 +2888,20 @@ const ChemicalEntryContent: React.FC = () => {
                       : 'bg-slate-50 border-slate-200 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <Factory className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Factory className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                     <span>
                       Warehouse Stock:{' '}
-                      <strong className="font-mono">
-                        {availableStockForSelectedWood} {selectedConsumptionWood.baseUnit}
+                      <strong className="font-mono text-slate-900 text-sm">
+                        {availableStockInSelectedWoodUnit.toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
+                        {woodUnit}
                       </strong>
+                      {normalizeUnit(woodUnit) !== normalizeUnit(selectedConsumptionWood.baseUnit || 't') && (
+                        <span className="text-slate-500 font-normal ml-1.5 text-[11px]">
+                          (= {availableStockForSelectedWood.toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
+                          {selectedConsumptionWood.baseUnit || 't'} in warehouse base unit)
+                        </span>
+                      )}
                     </span>
                   </div>
                   {availableStockForSelectedWood <= 0 && (
@@ -1961,20 +2921,29 @@ const ChemicalEntryContent: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <input
                   type="number"
-                  step="0.001"
+                  step={woodUnit === 'kg' ? '0.1' : '0.001'}
                   min="0.001"
-                  max={availableStockForSelectedWood > 0 ? availableStockForSelectedWood : undefined}
+                  max={availableStockInSelectedWoodUnit > 0 ? availableStockInSelectedWoodUnit : undefined}
                   value={woodQuantity}
                   onChange={(e) =>
                     setWoodQuantity(e.target.value === '' ? '' : parseFloat(e.target.value))
                   }
-                  placeholder="0.000"
+                  placeholder={woodUnit === 'kg' ? '0.0' : '0.000'}
                   required
                   className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-bold text-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
                 />
-                <span className="w-16 h-10 flex items-center justify-center bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">
-                  {woodUnit}
-                </span>
+                <select
+                  value={woodUnit}
+                  onChange={(e) => handleWoodUnitChange(e.target.value)}
+                  className="h-10 w-28 sm:w-32 px-2.5 bg-slate-100 hover:bg-slate-200/80 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none cursor-pointer transition shadow-2xs shrink-0"
+                  title="Change consumed unit"
+                >
+                  {compatibleWoodUnits.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1984,27 +2953,27 @@ const ChemicalEntryContent: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
                   Rate / Unit (₹)
                 </label>
-                {selectedConsumptionWood?.defaultPurchaseRate ? (
-                  <span className="text-[10px] text-slate-400">
-                    Avg: ₹{(selectedConsumptionWood.defaultPurchaseRate).toFixed(2)}/{woodUnit}
+                {avgRateInSelectedWoodUnit > 0 ? (
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Avg: ₹{(avgRateInSelectedWoodUnit >= 1 ? avgRateInSelectedWoodUnit.toFixed(2) : avgRateInSelectedWoodUnit.toFixed(4))}/{woodUnit}
                   </span>
                 ) : null}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-10 h-10 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-500">
+                <span className="w-10 h-10 flex items-center justify-center bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 shrink-0">
                   ₹
                 </span>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   min="0"
                   value={woodRate}
                   onChange={(e) =>
                     setWoodRate(e.target.value === '' ? '' : parseFloat(e.target.value))
                   }
                   placeholder={
-                    selectedConsumptionWood?.defaultPurchaseRate
-                      ? String(selectedConsumptionWood.defaultPurchaseRate)
+                    avgRateInSelectedWoodUnit > 0
+                      ? String(avgRateInSelectedWoodUnit >= 1 ? avgRateInSelectedWoodUnit.toFixed(2) : avgRateInSelectedWoodUnit.toFixed(4))
                       : '0.00'
                   }
                   className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-bold font-mono text-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
@@ -2013,18 +2982,18 @@ const ChemicalEntryContent: React.FC = () => {
             </div>
 
             {/* Total Material Worth Highlight */}
-            <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
+            <div className="md:col-span-2 bg-gradient-to-r from-slate-50 to-slate-100/70 border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Total Wood Worth
                 </span>
-                <span className="text-xs text-slate-500 font-medium">
+                <span className="text-xs text-slate-600 font-medium">
                   {Number(woodQuantity) || 0} {woodUnit} @ ₹
                   {(
                     Number(woodRate) ||
-                    Number(selectedConsumptionWood?.defaultPurchaseRate) ||
+                    avgRateInSelectedWoodUnit ||
                     0
-                  ).toFixed(2)}
+                  ).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
                   /{woodUnit}
                 </span>
               </div>
@@ -2033,7 +3002,7 @@ const ChemicalEntryContent: React.FC = () => {
                   Math.round(
                     (Number(woodQuantity) || 0) *
                       (Number(woodRate) ||
-                        Number(selectedConsumptionWood?.defaultPurchaseRate) ||
+                        avgRateInSelectedWoodUnit ||
                         0) *
                       100
                   ) / 100
@@ -2041,18 +3010,100 @@ const ChemicalEntryContent: React.FC = () => {
               </div>
             </div>
 
-            {/* Boiler / Machine No */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Boiler / Machine No
-              </label>
-              <input
-                type="text"
-                value={woodBoilerNo}
-                onChange={(e) => setWoodBoilerNo(e.target.value)}
-                placeholder="e.g. Boiler-01"
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
+            {/* Boiler / Machine No - Fetched from Machine Master */}
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Boiler / Machine No
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  General Settings &gt; Machine Master
+                </span>
+              </div>
+
+              {isCustomWoodBoiler ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={woodBoilerNo}
+                      onChange={(e) => setWoodBoilerNo(e.target.value)}
+                      placeholder="e.g. Boiler-01"
+                      className="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomWoodBoiler(false);
+                        const initialBoiler = boilerMachines[0] || activeMachines[0];
+                        setWoodBoilerNo(initialBoiler ? `${initialBoiler.machineId} - ${initialBoiler.name}` : '');
+                      }}
+                      className="h-10 px-2.5 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 cursor-pointer"
+                    >
+                      Choose from Master
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <select
+                  value={woodBoilerNo}
+                  onChange={(e) => {
+                    if (e.target.value === '__CUSTOM__') {
+                      setIsCustomWoodBoiler(true);
+                      setWoodBoilerNo('');
+                    } else {
+                      setWoodBoilerNo(e.target.value);
+                    }
+                  }}
+                  className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Select Boiler Machine from Machine Master --</option>
+                  {boilerMachines.length > 0 && (
+                    <optgroup label="Boiler Machines (Machine Master)">
+                      {boilerMachines.map((m) => (
+                        <option key={m.id} value={`${m.machineId} - ${m.name}`}>
+                          {m.machineId} · {m.name} {m.capacity ? `(${m.capacity})` : ''} [{m.modelYear}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {otherMachinesForWood.length > 0 && (
+                    <optgroup label="Other Machines (Machine Master)">
+                      {otherMachinesForWood.map((m) => (
+                        <option key={m.id} value={`${m.machineId} - ${m.name}`}>
+                          {m.machineId} · {m.name} ({m.processType}) {m.capacity ? `(${m.capacity})` : ''} [{m.modelYear}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="__CUSTOM__">+ Enter Custom Machine...</option>
+                </select>
+              )}
+
+              {/* Selected Machine Detail Pill */}
+              {selectedWoodBoilerMachine && !isCustomWoodBoiler && (
+                <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50/80 border border-amber-200/80 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center text-amber-800 shrink-0">
+                      <Factory className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-900">{selectedWoodBoilerMachine.name}</span>
+                      <span className="font-mono text-slate-500 text-[11px] ml-1.5">({selectedWoodBoilerMachine.machineId})</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-amber-900 font-medium">
+                    {selectedWoodBoilerMachine.capacity && (
+                      <span className="font-mono bg-amber-100/90 px-2 py-0.5 rounded border border-amber-200/50">
+                        Cap: {selectedWoodBoilerMachine.capacity}
+                      </span>
+                    )}
+                    <span className="font-mono bg-amber-100/90 px-2 py-0.5 rounded border border-amber-200/50">
+                      Model: {selectedWoodBoilerMachine.modelYear}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Operator Name - NO DEFAULT VALUE */}
@@ -2069,30 +3120,37 @@ const ChemicalEntryContent: React.FC = () => {
               />
             </div>
 
-            {/* Start Time */}
+            {/* Operating Shift Timing: Start Time & End Time */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Start Time
+                Operating Shift Timing
               </label>
-              <input
-                type="time"
-                value={woodStartTime}
-                onChange={(e) => setWoodStartTime(e.target.value)}
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
-            </div>
-
-            {/* End Time */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                End Time
-              </label>
-              <input
-                type="time"
-                value={woodEndTime}
-                onChange={(e) => setWoodEndTime(e.target.value)}
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={woodStartTime}
+                    onChange={(e) => setWoodStartTime(e.target.value)}
+                    className="w-full h-10 bg-white border border-slate-200 rounded-lg px-2.5 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    title="Start Time"
+                  />
+                  <span className="absolute -top-1.5 left-2 bg-white px-1 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                    Start
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={woodEndTime}
+                    onChange={(e) => setWoodEndTime(e.target.value)}
+                    className="w-full h-10 bg-white border border-slate-200 rounded-lg px-2.5 text-xs font-mono focus:ring-1 focus:ring-slate-900 focus:outline-none"
+                    title="End Time"
+                  />
+                  <span className="absolute -top-1.5 left-2 bg-white px-1 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                    End
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Remarks */}
@@ -2199,6 +3257,13 @@ const ChemicalEntryContent: React.FC = () => {
                   {(Number(viewEntry.quantity) || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })}{' '}
                   {viewEntry.unit || (viewEntry.materialType === 'wood' ? 't' : 'kg')}
                 </div>
+                {viewEntry.baseQuantity !== undefined &&
+                  viewEntry.baseUnit &&
+                  normalizeUnit(viewEntry.unit) !== normalizeUnit(viewEntry.baseUnit) && (
+                    <div className="text-[11px] text-slate-500 font-normal font-mono mt-0.5">
+                      (= {viewEntry.baseQuantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {viewEntry.baseUnit} in warehouse base unit)
+                    </div>
+                  )}
               </div>
 
               {(Number(viewEntry.rate) || 0) > 0 && (

@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Zap, ChevronRight, Package, Table } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Zap, ChevronRight, Package, Table, ChevronDown, ChevronUp, X, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
 
 export type InwardSortField =
@@ -71,6 +71,11 @@ export const InwardList: React.FC<InwardListProps> = ({
   const [showQuickInwardCards, setShowQuickInwardCards] = useState(false);
   const [deleteTargetInward, setDeleteTargetInward] = useState<InwardEntry | null>(null);
 
+  // Column search & filter state
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+
   // Floating hover popover state for Company and PO Number
   const [hoverCard, setHoverCard] = useState<{
     type: 'company' | 'po';
@@ -83,6 +88,19 @@ export const InwardList: React.FC<InwardListProps> = ({
   // 3-State Column Sorting (asc -> desc -> unsort/desort)
   const [sortField, setSortField] = useState<InwardSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const INWARD_SEARCH_COLUMNS = [
+    { value: 'ALL', label: 'All Columns' },
+    { value: 'inwardNo', label: 'Inward Number' },
+    { value: 'inwardDate', label: 'Receipt Date' },
+    { value: 'customerDcNo', label: 'Customer DC' },
+    { value: 'customerName', label: 'Customer' },
+    { value: 'poNumber', label: 'PO Number' },
+    { value: 'orderedQty', label: 'Order Qty' },
+    { value: 'receivedQty', label: 'Received Qty' },
+    { value: 'balanceQty', label: 'Balance Qty' },
+    { value: 'status', label: 'Status' }
+  ];
 
   const handleSort = (field: InwardSortField) => {
     if (sortField !== field) {
@@ -147,6 +165,10 @@ export const InwardList: React.FC<InwardListProps> = ({
   };
 
   const handleClearFilters = () => {
+    setSearchColumn('ALL');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection(null);
     onFilterChange({
       searchQuery: '',
       status: 'all',
@@ -155,6 +177,16 @@ export const InwardList: React.FC<InwardListProps> = ({
       endDate: undefined
     });
   };
+
+  const hasActiveFilters =
+    Boolean(filters.searchQuery) ||
+    (filters.status && filters.status !== 'all') ||
+    Boolean(filters.customerId) ||
+    Boolean(filters.startDate) ||
+    Boolean(filters.endDate) ||
+    searchColumn !== 'ALL' ||
+    Object.values(columnFilters).some((v) => (v || '').trim() !== '') ||
+    Boolean(sortField);
 
   // Helper to summarize quantities by unit
   const getQuantitySummaries = (row: InwardEntry) => {
@@ -220,10 +252,99 @@ export const InwardList: React.FC<InwardListProps> = ({
     );
   };
 
+  // Client-side filtering for column selector & inline column filters
+  const filteredInwards = useMemo(() => {
+    return inwards.filter((row) => {
+      const q = getQuantitySummaries(row);
+
+      // 1. Column-specific search if searchColumn !== 'ALL'
+      const query = (filters.searchQuery || '').trim().toLowerCase();
+      if (query && searchColumn !== 'ALL') {
+        let val = '';
+        switch (searchColumn) {
+          case 'inwardNo':
+            val = row.inwardNo || row.entryId || '';
+            break;
+          case 'inwardDate':
+            val = row.inwardDate || row.customerDate || '';
+            break;
+          case 'customerDcNo':
+            val = row.customerDcNo || '';
+            break;
+          case 'customerName':
+            val = row.customerCompanyNameSnapshot || row.customerName || '';
+            break;
+          case 'poNumber':
+            val = row.poNumberSnapshot || row.poNumber || '';
+            break;
+          case 'orderedQty':
+            val = `${q.ordered.piece} ${q.ordered.kg}`;
+            break;
+          case 'receivedQty':
+            val = `${q.received.piece} ${q.received.kg} ${row.totalQuantity || ''}`;
+            break;
+          case 'balanceQty':
+            val = `${q.balance.piece} ${q.balance.kg}`;
+            break;
+          case 'status':
+            val = row.status || '';
+            break;
+        }
+        if (!val.toLowerCase().includes(query)) return false;
+      }
+
+      // 2. Inline column filters
+      for (const [colKey, rawVal] of Object.entries(columnFilters)) {
+        const needle = (rawVal || '').trim().toLowerCase();
+        if (!needle) continue;
+
+        let haystack = '';
+        switch (colKey) {
+          case 'inwardNo':
+            haystack = row.inwardNo || row.entryId || '';
+            break;
+          case 'inwardDate':
+            haystack = row.inwardDate || row.customerDate || '';
+            break;
+          case 'customerDcNo':
+            haystack = row.customerDcNo || '';
+            break;
+          case 'customerName':
+            haystack = row.customerCompanyNameSnapshot || row.customerName || '';
+            break;
+          case 'poNumber':
+            haystack = row.poNumberSnapshot || row.poNumber || '';
+            break;
+          case 'orderedQty':
+            haystack = `${q.ordered.piece} ${q.ordered.kg}`;
+            break;
+          case 'previousQty':
+            haystack = `${q.prev.piece} ${q.prev.kg}`;
+            break;
+          case 'receivedQty':
+            haystack = `${q.received.piece} ${q.received.kg} ${row.totalQuantity || ''}`;
+            break;
+          case 'balanceQty':
+            haystack = `${q.balance.piece} ${q.balance.kg}`;
+            break;
+          case 'status':
+            haystack = row.status || '';
+            break;
+        }
+
+        if (!haystack.toLowerCase().includes(needle)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [inwards, filters.searchQuery, searchColumn, columnFilters]);
+
   const sortedInwards = useMemo(() => {
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first based on timestamp
-      return [...inwards].sort((a, b) => {
+      return [...filteredInwards].sort((a, b) => {
         const timeA = new Date((a as any).inwardTime || a.createdAt || a.updatedAt || a.inwardDate || 0).getTime();
         const timeB = new Date((b as any).inwardTime || b.createdAt || b.updatedAt || b.inwardDate || 0).getTime();
         return timeB - timeA;
@@ -231,7 +352,7 @@ export const InwardList: React.FC<InwardListProps> = ({
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
-    return [...inwards].sort((a, b) => {
+    return [...filteredInwards].sort((a, b) => {
       const qA = getQuantitySummaries(a);
       const qB = getQuantitySummaries(b);
 
@@ -289,21 +410,21 @@ export const InwardList: React.FC<InwardListProps> = ({
           return 0;
       }
     });
-  }, [inwards, sortField, sortDirection]);
+  }, [filteredInwards, sortField, sortDirection]);
 
   const renderSortIcon = (field: InwardSortField) => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
         return (
           <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
-            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
           </span>
         );
       }
       if (sortDirection === 'desc') {
         return (
           <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
-            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
           </span>
         );
       }
@@ -484,20 +605,71 @@ export const InwardList: React.FC<InwardListProps> = ({
       {/* Action and Search Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-          {/* Search bar */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by Inward No, DC No, PO, Style, or Customer..."
-              value={filters.searchQuery || ''}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E79] focus:border-transparent bg-slate-50"
-            />
+          {/* Search bar with Column Selector */}
+          <div className="flex items-center bg-slate-50 border border-slate-300 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
+            <div className="relative">
+              <select
+                value={searchColumn}
+                onChange={(e) => setSearchColumn(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+              >
+                {INWARD_SEARCH_COLUMNS.map((col) => (
+                  <option key={col.value} value={col.value}>
+                    {col.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder={
+                  searchColumn === 'ALL'
+                    ? 'Search across all columns...'
+                    : `Search by ${INWARD_SEARCH_COLUMNS.find((c) => c.value === searchColumn)?.label || searchColumn}...`
+                }
+                value={filters.searchQuery || ''}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+              />
+              {filters.searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => handleSearchChange('')}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
+            {/* Toggle Inline Column Filters Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters(!showColumnFilters)}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                  ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                  : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Toggle column-wise search inputs on table header"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+                </span>
+              )}
+            </button>
+
             <Button
               variant="outline"
               size="sm"
@@ -506,6 +678,17 @@ export const InwardList: React.FC<InwardListProps> = ({
             >
               Filters {showFilters ? '(Hide)' : ''}
             </Button>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Reset Filters"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
 
             {canManage && (
               <Button
@@ -727,204 +910,330 @@ export const InwardList: React.FC<InwardListProps> = ({
       ) : (
         /* Grid Table Container */
         <Card className="overflow-hidden">
-        {isLoading ? (
-          <div className="p-12 text-center text-slate-400">
-            <p className="text-xs">Loading inward receipts from Firebase...</p>
-          </div>
-        ) : inwards.length === 0 ? (
-          <div className="p-12 text-center">
-            <h4 className="text-sm font-semibold text-slate-700">No inward receipts found</h4>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-              {filters.searchQuery || filters.status !== 'all' || filters.customerId
-                ? 'Try adjusting your search or active filters.'
-                : 'Click "New Inward Receipt" to record the first customer fabric or garment delivery.'}
-            </p>
-            {canManage && (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Plus className="w-4 h-4" />}
-                onClick={onNewInward}
-                className="mt-4"
-              >
-                Create Inward Receipt
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div>
-            {/* Active Sort / Desort Banner */}
-            {sortField && sortDirection && (
-              <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">
-                    Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortField(null);
-                    setSortDirection(null);
-                  }}
-                  className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
-                  title="Reset to default order"
-                >
-                  Clear / Desort
-                </button>
+          {/* Active Sort / Desort Banner */}
+          {sortField && sortDirection && (
+            <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">
+                  Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+                </span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSortField(null);
+                  setSortDirection(null);
+                }}
+                className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                title="Reset to default order"
+              >
+                Clear / Desort
+              </button>
+            </div>
+          )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse border border-slate-300">
-                <thead className="bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
-                  <tr>
-                    {/* 1. Inward Number */}
-                    <th
-                      className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'inwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('inwardNo')}
-                      title={getSortTooltip('inwardNo', 'Inward Number')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Inward Number</span>
-                        {renderSortIcon('inwardNo')}
-                      </div>
+          <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
+            <table className="w-full text-left text-xs border-collapse border border-slate-300">
+              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                <tr>
+                  {/* 1. Inward Number */}
+                  <th
+                    className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'inwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('inwardNo')}
+                    title={getSortTooltip('inwardNo', 'Inward Number')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-start">
+                      <span>Inward Number</span>
+                      {renderSortIcon('inwardNo')}
+                    </div>
+                  </th>
+
+                  {/* 2. Receipt Date */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'inwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('inwardDate')}
+                    title={getSortTooltip('inwardDate', 'Receipt Date')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-center">
+                      <span>Receipt Date</span>
+                      {renderSortIcon('inwardDate')}
+                    </div>
+                  </th>
+
+                  {/* 3. Customer DC Number */}
+                  <th
+                    className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'customerDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('customerDcNo')}
+                    title={getSortTooltip('customerDcNo', 'Customer DC Number')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-start">
+                      <span>Customer DC Number</span>
+                      {renderSortIcon('customerDcNo')}
+                    </div>
+                  </th>
+
+                  {/* 4. Customer / Company */}
+                  <th
+                    className={`p-2.5 border border-slate-300 min-w-[260px] w-72 cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('customerName')}
+                    title={getSortTooltip('customerName', 'Customer / Company')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-start">
+                      <span>Customer / Company</span>
+                      {renderSortIcon('customerName')}
+                    </div>
+                  </th>
+
+                  {/* 5. PO Number */}
+                  <th
+                    className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('poNumber')}
+                    title={getSortTooltip('poNumber', 'PO Number')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-start">
+                      <span>PO Number</span>
+                      {renderSortIcon('poNumber')}
+                    </div>
+                  </th>
+
+                  {/* 6. PO Order Qty */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'orderedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('orderedQty')}
+                    title={getSortTooltip('orderedQty', 'PO Order Qty')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span>PO Order Qty</span>
+                      {renderSortIcon('orderedQty')}
+                    </div>
+                  </th>
+
+                  {/* 7. Previous Received Qty */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'previousQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('previousQty')}
+                    title={getSortTooltip('previousQty', 'Previous Received Qty')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span>Previous Received Qty</span>
+                      {renderSortIcon('previousQty')}
+                    </div>
+                  </th>
+
+                  {/* 8. Received Qty */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'receivedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('receivedQty')}
+                    title={getSortTooltip('receivedQty', 'Received Qty')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span>Received Qty</span>
+                      {renderSortIcon('receivedQty')}
+                    </div>
+                  </th>
+
+                  {/* 9. Balance Qty */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'balanceQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('balanceQty')}
+                    title={getSortTooltip('balanceQty', 'Balance Qty')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span>Balance Qty</span>
+                      {renderSortIcon('balanceQty')}
+                    </div>
+                  </th>
+
+                  {/* 10. Status */}
+                  <th
+                    className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
+                      sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                    }`}
+                    onClick={() => handleSort('status')}
+                    title={getSortTooltip('status', 'Status')}
+                  >
+                    <div className="flex items-center gap-1.5 justify-center">
+                      <span>Status</span>
+                      {renderSortIcon('status')}
+                    </div>
+                  </th>
+
+                  {/* 11. Actions */}
+                  <th className="p-2.5 border border-slate-300 text-center w-36 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">Actions</th>
+                </tr>
+
+                {/* Inline Column Filter Inputs Row */}
+                {showColumnFilters && (
+                  <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter inward..."
+                        value={columnFilters.inwardNo || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, inwardNo: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      />
                     </th>
-
-                    {/* 2. Receipt Date */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'inwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('inwardDate')}
-                      title={getSortTooltip('inwardDate', 'Receipt Date')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-center">
-                        <span>Receipt Date</span>
-                        {renderSortIcon('inwardDate')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter date..."
+                        value={columnFilters.inwardDate || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, inwardDate: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                      />
                     </th>
-
-                    {/* 3. Customer DC Number */}
-                    <th
-                      className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'customerDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('customerDcNo')}
-                      title={getSortTooltip('customerDcNo', 'Customer DC Number')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Customer DC Number</span>
-                        {renderSortIcon('customerDcNo')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter DC no..."
+                        value={columnFilters.customerDcNo || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, customerDcNo: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      />
                     </th>
-
-                    {/* 4. Customer / Company */}
-                    <th
-                      className={`p-2.5 border border-slate-300 min-w-[260px] w-72 cursor-pointer select-none transition-colors group ${
-                        sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('customerName')}
-                      title={getSortTooltip('customerName', 'Customer / Company')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Customer / Company</span>
-                        {renderSortIcon('customerName')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter customer..."
+                        value={columnFilters.customerName || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      />
                     </th>
-
-                    {/* 5. PO Number */}
-                    <th
-                      className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('poNumber')}
-                      title={getSortTooltip('poNumber', 'PO Number')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>PO Number</span>
-                        {renderSortIcon('poNumber')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter PO..."
+                        value={columnFilters.poNumber || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      />
                     </th>
-
-                    {/* 6. PO Order Qty */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'orderedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('orderedQty')}
-                      title={getSortTooltip('orderedQty', 'PO Order Qty')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>PO Order Qty</span>
-                        {renderSortIcon('orderedQty')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter order..."
+                        value={columnFilters.orderedQty || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, orderedQty: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                      />
                     </th>
-
-                    {/* 7. Previous Received Qty */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'previousQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('previousQty')}
-                      title={getSortTooltip('previousQty', 'Previous Received Qty')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Previous Received Qty</span>
-                        {renderSortIcon('previousQty')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter prev..."
+                        value={columnFilters.previousQty || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, previousQty: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                      />
                     </th>
-
-                    {/* 8. Received Qty */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-right bg-blue-50/50 cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'receivedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('receivedQty')}
-                      title={getSortTooltip('receivedQty', 'Received Qty')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Received Qty</span>
-                        {renderSortIcon('receivedQty')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter received..."
+                        value={columnFilters.receivedQty || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, receivedQty: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                      />
                     </th>
-
-                    {/* 9. Balance Qty */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'balanceQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('balanceQty')}
-                      title={getSortTooltip('balanceQty', 'Balance Qty')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Balance Qty</span>
-                        {renderSortIcon('balanceQty')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter bal..."
+                        value={columnFilters.balanceQty || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, balanceQty: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                      />
                     </th>
-
-                    {/* 10. Status */}
-                    <th
-                      className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
-                        sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('status')}
-                      title={getSortTooltip('status', 'Status')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-center">
-                        <span>Status</span>
-                        {renderSortIcon('status')}
-                      </div>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Filter status..."
+                        value={columnFilters.status || ''}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                      />
                     </th>
-
-                    {/* 11. Actions */}
-                    <th className="p-2.5 border border-slate-300 text-center w-36 whitespace-nowrap">Actions</th>
+                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
+                      {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                        <button
+                          type="button"
+                          onClick={() => setColumnFilters({})}
+                          className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                          title="Clear column filters"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </th>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 font-medium">
-                  {sortedInwards.map((row) => {
+                )}
+              </thead>
+              <tbody className="divide-y divide-slate-200 font-medium">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
+                      <p>Loading inward receipts from Firebase...</p>
+                    </td>
+                  </tr>
+                ) : sortedInwards.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
+                      <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                        <div className="p-3 rounded-full bg-slate-50 text-slate-400">
+                          <Package className="w-8 h-8 stroke-[1.5]" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-700">No Matching Inward Receipts</div>
+                        <p className="text-slate-400 text-xs leading-relaxed">
+                          {hasActiveFilters
+                            ? 'No inward receipts match your current search, column filters, or filters.'
+                            : 'Click "New Inward Receipt" to record the first customer fabric or garment delivery.'}
+                        </p>
+                        {hasActiveFilters && (
+                          <button
+                            type="button"
+                            onClick={handleClearFilters}
+                            className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Reset All Filters</span>
+                          </button>
+                        )}
+                        {!hasActiveFilters && canManage && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={<Plus className="w-4 h-4" />}
+                            onClick={onNewInward}
+                            className="mt-2"
+                          >
+                            Create Inward Receipt
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  sortedInwards.map((row) => {
                     const q = getQuantitySummaries(row);
 
                     return (
@@ -1080,43 +1389,23 @@ export const InwardList: React.FC<InwardListProps> = ({
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
+                  })
+                )}
+              </tbody>
               </table>
             </div>
 
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50">
+            {/* All Records Summary Bar - One Stretch */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70">
               <div>
-                Showing {(pagination.page - 1) * pagination.pageSize + 1} to{' '}
-                {Math.min(pagination.page * pagination.pageSize, pagination.totalRecords)} of{' '}
-                {pagination.totalRecords} entries
+                Showing all <strong className="text-slate-900 font-bold">{sortedInwards.length}</strong> {sortedInwards.length === 1 ? 'entry' : 'entries'} in one stretch
+                {sortedInwards.length !== inwards.length && (
+                  <span className="text-slate-400 font-normal ml-1.5">(filtered from {inwards.length} total)</span>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pagination.page <= 1}
-                  onClick={() => onPageChange(pagination.page - 1)}
-                >
-                  Previous
-                </Button>
-                <span className="px-2 font-medium text-slate-700">
-                  {pagination.page} / {pagination.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => onPageChange(pagination.page + 1)}
-                >
-                  Next
-                </Button>
-              </div>
+              <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
             </div>
-          </div>
-        )}
-      </Card>
+        </Card>
       )}
 
       {/* Admin Delete Confirmation Modal */}

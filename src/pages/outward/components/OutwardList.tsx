@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
-import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Download, FileText, Layers, Check, ChevronRight, Package } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Download, FileText, Layers, Check, ChevronRight, Package, ChevronDown, ChevronUp, X, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
 import { InwardEntry } from '../../../types/inward';
 import { DeliveryChallanPdfService } from '../../../services/deliveryChallanPdfService';
@@ -87,6 +87,26 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   // 3-State Column Sorting (asc -> desc -> unsort/desort)
   const [sortField, setSortField] = useState<OutwardSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  // Column search & filter state
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+
+  const OUTWARD_SEARCH_COLUMNS = [
+    { value: 'ALL', label: 'All Columns' },
+    { value: 'outwardNo', label: 'Outward No' },
+    { value: 'outwardDate', label: 'Dispatch Date' },
+    { value: 'ourDcNo', label: 'Our DC Number' },
+    { value: 'customerName', label: 'Customer' },
+    { value: 'poNumber', label: 'PO & Style' },
+    { value: 'poQty', label: 'PO Qty' },
+    { value: 'totalInward', label: 'Total Inward' },
+    { value: 'prevDispatched', label: 'Prev Dispatched' },
+    { value: 'thisDispatch', label: 'This DC Dispatch' },
+    { value: 'balanceAfter', label: 'Balance After' },
+    { value: 'status', label: 'Status' }
+  ];
 
   // Joined DC Selection States
   const [isJoiningMode, setIsJoiningMode] = useState(false);
@@ -191,6 +211,10 @@ export const OutwardList: React.FC<OutwardListProps> = ({
   };
 
   const handleClearFilters = () => {
+    setSearchColumn('ALL');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection(null);
     onFilterChange({
       searchQuery: '',
       status: 'all',
@@ -199,6 +223,16 @@ export const OutwardList: React.FC<OutwardListProps> = ({
       dateTo: undefined
     });
   };
+
+  const hasActiveFilters =
+    Boolean(filters.searchQuery) ||
+    (filters.status && filters.status !== 'all') ||
+    Boolean(filters.customerId) ||
+    Boolean(filters.dateFrom) ||
+    Boolean(filters.dateTo) ||
+    searchColumn !== 'ALL' ||
+    Object.values(columnFilters).some((v) => (v || '').trim() !== '') ||
+    Boolean(sortField);
 
   // Helper to summarize quantities by unit
   const getQuantitySummaries = (row: OutwardEntry) => {
@@ -274,10 +308,108 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     return <div className={`flex flex-col items-end gap-0.5 text-xs ${colorClass}`}>{parts}</div>;
   };
 
+  // Client-side filtering for column selector & inline column filters
+  const filteredOutwards = useMemo(() => {
+    return outwards.filter((row) => {
+      const q = getQuantitySummaries(row);
+
+      // 1. Column-specific search if searchColumn !== 'ALL'
+      const query = (filters.searchQuery || '').trim().toLowerCase();
+      if (query && searchColumn !== 'ALL') {
+        let val = '';
+        switch (searchColumn) {
+          case 'outwardNo':
+            val = row.outwardNo || row.entryId || '';
+            break;
+          case 'outwardDate':
+            val = row.outwardDate || '';
+            break;
+          case 'ourDcNo':
+            val = row.ourDcNo || '';
+            break;
+          case 'customerName':
+            val = row.customerCompanyNameSnapshot || row.customerName || '';
+            break;
+          case 'poNumber':
+            val = `${row.poNumberSnapshot || row.poNumber || ''} ${row.styleNoSnapshot || row.styleNo || ''}`;
+            break;
+          case 'poQty':
+            val = `${q.ordered.piece} ${q.ordered.kg}`;
+            break;
+          case 'totalInward':
+            val = `${q.inward.piece} ${q.inward.kg}`;
+            break;
+          case 'prevDispatched':
+            val = `${q.prevOutward.piece} ${q.prevOutward.kg}`;
+            break;
+          case 'thisDispatch':
+            val = `${q.dispatched.piece} ${q.dispatched.kg} ${row.totalQuantity || ''}`;
+            break;
+          case 'balanceAfter':
+            val = `${q.remaining.piece} ${q.remaining.kg}`;
+            break;
+          case 'status':
+            val = row.status || '';
+            break;
+        }
+        if (!val.toLowerCase().includes(query)) return false;
+      }
+
+      // 2. Inline column filters
+      for (const [colKey, rawVal] of Object.entries(columnFilters)) {
+        const needle = (rawVal || '').trim().toLowerCase();
+        if (!needle) continue;
+
+        let haystack = '';
+        switch (colKey) {
+          case 'outwardNo':
+            haystack = row.outwardNo || row.entryId || '';
+            break;
+          case 'outwardDate':
+            haystack = row.outwardDate || '';
+            break;
+          case 'ourDcNo':
+            haystack = row.ourDcNo || '';
+            break;
+          case 'customerName':
+            haystack = row.customerCompanyNameSnapshot || row.customerName || '';
+            break;
+          case 'poNumber':
+            haystack = `${row.poNumberSnapshot || row.poNumber || ''} ${row.styleNoSnapshot || row.styleNo || ''}`;
+            break;
+          case 'poQty':
+            haystack = `${q.ordered.piece} ${q.ordered.kg}`;
+            break;
+          case 'totalInward':
+            haystack = `${q.inward.piece} ${q.inward.kg}`;
+            break;
+          case 'prevDispatched':
+            haystack = `${q.prevOutward.piece} ${q.prevOutward.kg}`;
+            break;
+          case 'thisDispatch':
+            haystack = `${q.dispatched.piece} ${q.dispatched.kg} ${row.totalQuantity || ''}`;
+            break;
+          case 'balanceAfter':
+            haystack = `${q.remaining.piece} ${q.remaining.kg}`;
+            break;
+          case 'status':
+            haystack = row.status || '';
+            break;
+        }
+
+        if (!haystack.toLowerCase().includes(needle)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [outwards, filters.searchQuery, searchColumn, columnFilters]);
+
   const sortedOutwards = useMemo(() => {
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first based on timestamp
-      return [...outwards].sort((a, b) => {
+      return [...filteredOutwards].sort((a, b) => {
         const timeA = new Date((a as any).outwardTime || a.createdAt || a.updatedAt || a.outwardDate || 0).getTime();
         const timeB = new Date((b as any).outwardTime || b.createdAt || b.updatedAt || b.outwardDate || 0).getTime();
         return timeB - timeA;
@@ -285,7 +417,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
-    return [...outwards].sort((a, b) => {
+    return [...filteredOutwards].sort((a, b) => {
       const qA = getQuantitySummaries(a);
       const qB = getQuantitySummaries(b);
 
@@ -348,21 +480,21 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           return 0;
       }
     });
-  }, [outwards, sortField, sortDirection]);
+  }, [filteredOutwards, sortField, sortDirection]);
 
   const renderSortIcon = (field: OutwardSortField) => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
         return (
           <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
-            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
           </span>
         );
       }
       if (sortDirection === 'desc') {
         return (
           <span className="p-0.5 rounded bg-blue-200/80 text-[#1F4E79] shadow-2xs">
-            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
           </span>
         );
       }
@@ -604,17 +736,70 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     <div className="space-y-4">
       {/* Search & Actions Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-        <div className="flex items-center gap-2 flex-1 max-w-md">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by Outward No, Our DC No, PO, Style, Customer..."
-              value={filters.searchQuery || ''}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-            />
+        <div className="flex items-center gap-2 flex-1 max-w-xl">
+          {/* Search bar with Column Selector */}
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px]">
+            <div className="relative">
+              <select
+                value={searchColumn}
+                onChange={(e) => setSearchColumn(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+              >
+                {OUTWARD_SEARCH_COLUMNS.map((col) => (
+                  <option key={col.value} value={col.value}>
+                    {col.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder={
+                  searchColumn === 'ALL'
+                    ? 'Search across all columns...'
+                    : `Search by ${OUTWARD_SEARCH_COLUMNS.find((c) => c.value === searchColumn)?.label || searchColumn}...`
+                }
+                value={filters.searchQuery || ''}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+              />
+              {filters.searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => handleSearchChange('')}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Toggle Inline Column Filters Button */}
+          <button
+            type="button"
+            onClick={() => setShowColumnFilters(!showColumnFilters)}
+            className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+              showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+            title="Toggle column-wise search inputs on table header"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Column Filters</span>
+            {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+              <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+              </span>
+            )}
+          </button>
+
           <Button
             variant="outline"
             size="sm"
@@ -624,6 +809,17 @@ export const OutwardList: React.FC<OutwardListProps> = ({
             <Filter className="w-3.5 h-3.5" />
             Filters
           </Button>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Reset Filters"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -930,25 +1126,6 @@ export const OutwardList: React.FC<OutwardListProps> = ({
       ) : (
         /* Main Table Card */
         <Card className="border border-slate-200 shadow-2xs overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-xs text-slate-400">Loading Outward dispatches...</div>
-        ) : outwards.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
-            <p className="text-sm font-semibold text-slate-700">No Outward Dispatches Found</p>
-            <p className="text-xs text-slate-400">
-              No dispatches match the selected filter criteria or no outwards have been created yet.
-            </p>
-            {canManage && (
-              <Button
-                onClick={onNewOutward}
-                size="sm"
-                className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs mt-2 shadow-xs cursor-pointer"
-              >
-                Create First Outward Entry
-              </Button>
-            )}
-          </div>
-        ) : (
           <div className="flex flex-col">
             {/* Active Sort / Desort Banner */}
             {sortField && sortDirection && (
@@ -972,20 +1149,20 @@ export const OutwardList: React.FC<OutwardListProps> = ({
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
               <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
+                <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
+                  <tr>
                     {/* Checkbox Column for Joined DC */}
                     {isJoiningMode && (
-                      <th className="p-2.5 border border-slate-200 text-center w-12 bg-[#DCEBF8] whitespace-nowrap">
+                      <th className="p-2.5 border border-slate-200 text-center w-12 bg-[#DCEBF8] whitespace-nowrap sticky top-0 z-20">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#163858]">Join</span>
                       </th>
                     )}
 
                     {/* 1. Outward No */}
                     <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'outwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('outwardNo')}
@@ -999,7 +1176,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 2. Dispatch Date */}
                     <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'outwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('outwardDate')}
@@ -1013,7 +1190,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 3. Our DC Number */}
                     <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'ourDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('ourDcNo')}
@@ -1027,7 +1204,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 4. Customer / Company */}
                     <th
-                      className={`p-2.5 border border-slate-200 min-w-[240px] cursor-pointer select-none transition-colors group ${
+                      className={`p-2.5 border border-slate-200 min-w-[240px] cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('customerName')}
@@ -1041,7 +1218,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 5. PO & Style */}
                     <th
-                      className={`p-2.5 border border-slate-200 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('poNumber')}
@@ -1055,7 +1232,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 6. PO Qty */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'poQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('poQty')}
@@ -1069,7 +1246,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 7. Total Inward */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'totalInward' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('totalInward')}
@@ -1083,7 +1260,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 8. Prev Dispatched */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'prevDispatched' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('prevDispatched')}
@@ -1097,7 +1274,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 9. This DC Dispatch */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap bg-blue-50/40 text-blue-900 ${
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap bg-blue-50/40 text-blue-900 sticky top-0 z-20 ${
                         sortField === 'thisDispatch' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('thisDispatch')}
@@ -1111,7 +1288,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 10. Balance After */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'balanceAfter' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('balanceAfter')}
@@ -1125,7 +1302,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
 
                     {/* 11. Status */}
                     <th
-                      className={`p-2.5 border border-slate-200 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                      className={`p-2.5 border border-slate-200 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                         sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                       }`}
                       onClick={() => handleSort('status')}
@@ -1138,11 +1315,173 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                     </th>
 
                     {/* 12. Actions */}
-                    <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap">Actions</th>
+                    <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">Actions</th>
                   </tr>
+
+                  {/* Inline Column Filter Inputs Row */}
+                  {showColumnFilters && (
+                    <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                      {isJoiningMode && (
+                        <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100" />
+                      )}
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter outward..."
+                          value={columnFilters.outwardNo || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, outwardNo: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter date..."
+                          value={columnFilters.outwardDate || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, outwardDate: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter DC..."
+                          value={columnFilters.ourDcNo || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, ourDcNo: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter customer..."
+                          value={columnFilters.customerName || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter PO/style..."
+                          value={columnFilters.poNumber || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter PO qty..."
+                          value={columnFilters.poQty || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, poQty: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter inward..."
+                          value={columnFilters.totalInward || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, totalInward: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter prev..."
+                          value={columnFilters.prevDispatched || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, prevDispatched: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter this DC..."
+                          value={columnFilters.thisDispatch || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, thisDispatch: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter bal..."
+                          value={columnFilters.balanceAfter || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, balanceAfter: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Filter status..."
+                          value={columnFilters.status || ''}
+                          onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                        />
+                      </th>
+                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                        {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                          <button
+                            type="button"
+                            onClick={() => setColumnFilters({})}
+                            className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                            title="Clear column filters"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {sortedOutwards.map((row) => {
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
+                        <p>Loading Outward dispatches...</p>
+                      </td>
+                    </tr>
+                  ) : sortedOutwards.length === 0 ? (
+                    <tr>
+                      <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
+                        <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                          <div className="p-3 rounded-full bg-slate-50 text-slate-400">
+                            <Package className="w-8 h-8 stroke-[1.5]" />
+                          </div>
+                          <div className="text-sm font-bold text-slate-700">No Matching Outward Dispatches</div>
+                          <p className="text-slate-400 text-xs leading-relaxed">
+                            {hasActiveFilters
+                              ? 'No outward dispatches match your current search, column filters, or filters.'
+                              : 'No dispatches match the selected filter criteria or no outwards have been created yet.'}
+                          </p>
+                          {hasActiveFilters && (
+                            <button
+                              type="button"
+                              onClick={handleClearFilters}
+                              className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Reset All Filters</span>
+                            </button>
+                          )}
+                          {!hasActiveFilters && canManage && (
+                            <Button
+                              onClick={onNewOutward}
+                              size="sm"
+                              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs mt-2 shadow-xs cursor-pointer"
+                            >
+                              Create First Outward Entry
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedOutwards.map((row) => {
                     const rowId = row.outwardId || row.id;
                     const q = getQuantitySummaries(row);
                     const isSelected = selectedOutwardIds.includes(rowId);
@@ -1344,43 +1683,24 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
+                  })
+                )}
+              </tbody>
               </table>
             </div>
 
-            {/* Pagination Footer */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50">
+            {/* All Records Summary Bar - One Stretch */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70">
               <div>
-                Showing {(pagination.page - 1) * pagination.pageSize + 1} to{' '}
-                {Math.min(pagination.page * pagination.pageSize, pagination.totalCount)} of{' '}
-                {pagination.totalCount} entries
+                Showing all <strong className="text-slate-900 font-bold">{sortedOutwards.length}</strong> {sortedOutwards.length === 1 ? 'entry' : 'entries'} in one stretch
+                {sortedOutwards.length !== outwards.length && (
+                  <span className="text-slate-400 font-normal ml-1.5">(filtered from {outwards.length} total)</span>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pagination.page <= 1}
-                  onClick={() => onPageChange(pagination.page - 1)}
-                >
-                  Previous
-                </Button>
-                <span className="px-2 font-medium text-slate-700">
-                  {pagination.page} / {pagination.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => onPageChange(pagination.page + 1)}
-                >
-                  Next
-                </Button>
-              </div>
+              <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
             </div>
           </div>
-        )}
-      </Card>
+        </Card>
       )}
 
       {/* Hover Floating Details Card */}

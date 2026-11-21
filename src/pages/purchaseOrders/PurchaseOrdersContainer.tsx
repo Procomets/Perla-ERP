@@ -20,6 +20,7 @@ import { POPrintView } from './components/POPrintView';
 import { useAuth } from '../../context/AuthContext';
 import { hasInwardForPO } from '../../utils/calculations';
 import { POLockService, POLockStatus } from '../../services/poLockService';
+import { Plus } from 'lucide-react';
 
 interface PurchaseOrdersContainerProps {
   initialPOs?: PurchaseOrder[];
@@ -60,7 +61,7 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
   const [outwardsList, setOutwardsList] = useState<OutwardEntry[]>(outwards);
   const [pagination, setPagination] = useState<POPagination>({
     page: 1,
-    pageSize: 10,
+    pageSize: 1000,
     totalRecords: 0,
     totalPages: 1
   });
@@ -381,6 +382,16 @@ export const PurchaseOrdersContainer: React.FC<PurchaseOrdersContainerProps> = (
 
   return (
     <div className="space-y-6">
+      {/* Top Header - Minimal & Airy */}
+      {currentView === 'list' && (
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Purchase Orders</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Manage customer purchase orders, style master specifications, and production contracts
+          </p>
+        </div>
+      )}
+
       {/* View 1: List View */}
       {currentView === 'list' && (
         <div className="space-y-6">

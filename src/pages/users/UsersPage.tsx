@@ -39,7 +39,14 @@ import {
   Sliders,
   Layers,
   Sparkles,
-  Info
+  Info,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { UserRole, ModuleId, ModulePermissionsMap } from '../../types/user';
 import { useAuth } from '../../context/AuthContext';
@@ -68,6 +75,78 @@ export const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
+
+  // Inline Column Filters
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<{
+    displayName?: string;
+    email?: string;
+    designation?: string;
+    status?: string;
+  }>({});
+
+  // 3-state Column Sorting
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('normal');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field || sortDirection === 'normal') {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else {
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+        }`}
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const handleColumnFilterChange = (field: keyof typeof columnFilters, val: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  const hasAnyFilter = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      activeColumnFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, activeColumnFilterCount, sortField, sortDirection]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection('normal');
+  };
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -404,84 +483,334 @@ export const UsersPage: React.FC = () => {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return users;
-    const q = searchQuery.toLowerCase();
-    return users.filter(
-      (u) =>
-        u.displayName?.toLowerCase().includes(q) ||
-        u.email?.toLowerCase().includes(q) ||
-        (u.designation && u.designation.toLowerCase().includes(q)) ||
-        u.role?.toLowerCase().includes(q)
-    );
-  }, [users, searchQuery]);
+    let list = [...users];
+
+    // Search query with column dropdown selector
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      if (searchColumn === 'ALL') {
+        list = list.filter(
+          (u) =>
+            u.displayName?.toLowerCase().includes(q) ||
+            u.email?.toLowerCase().includes(q) ||
+            (u.designation && u.designation.toLowerCase().includes(q)) ||
+            u.role?.toLowerCase().includes(q)
+        );
+      } else {
+        list = list.filter((u) => {
+          if (searchColumn === 'status') {
+            const statusStr = u.isActive !== false ? 'active' : 'inactive';
+            return statusStr.includes(q);
+          }
+          const val = String((u as any)[searchColumn] || '').toLowerCase();
+          return val.includes(q);
+        });
+      }
+    }
+
+    // Column Filters
+    if (columnFilters.displayName) {
+      const q = columnFilters.displayName.toLowerCase();
+      list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q));
+    }
+    if (columnFilters.email) {
+      const q = columnFilters.email.toLowerCase();
+      list = list.filter((u) => (u.email || '').toLowerCase().includes(q));
+    }
+    if (columnFilters.designation) {
+      const q = columnFilters.designation.toLowerCase();
+      list = list.filter((u) =>
+        (u.designation || u.role || '').toLowerCase().includes(q)
+      );
+    }
+    if (columnFilters.status) {
+      const q = columnFilters.status.toLowerCase();
+      list = list.filter((u) => {
+        const statusStr = u.isActive !== false ? 'active' : 'inactive';
+        return statusStr.includes(q);
+      });
+    }
+
+    // 3-state Sorting
+    if (sortField && sortDirection !== 'normal') {
+      list.sort((a, b) => {
+        let valA = '';
+        let valB = '';
+        if (sortField === 'status') {
+          valA = a.isActive !== false ? 'active' : 'inactive';
+          valB = b.isActive !== false ? 'active' : 'inactive';
+        } else {
+          valA = String((a as any)[sortField] || '').toLowerCase();
+          valB = String((b as any)[sortField] || '').toLowerCase();
+        }
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return list;
+  }, [users, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
 
   return (
     <div className="space-y-6">
-      {/* Top Banner / Stats Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-xs border border-slate-200/80">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-xl font-bold text-slate-900">User Access & Designation Management</h2>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-              {users.length} Users
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Assign designations and customize granular access (View, Edit, Delete) for each ERP module.
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">User Management</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Assign designations and customize granular access (View, Edit, Delete) for each ERP module
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="flex items-center space-x-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl hover:bg-slate-800 transition-colors shadow-xs text-xs font-semibold shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New User</span>
-        </button>
       </div>
 
-      {/* Search and Filter */}
-      <div className="flex items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, email, or designation..."
-            className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-slate-400 transition"
-          />
-        </div>
-        <div className="text-xs text-slate-500">
-          Showing <strong>{filteredUsers.length}</strong> of <strong>{users.length}</strong> accounts
+      {/* Controls Toolbar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+          {/* Integrated Search Bar with Column Dropdown */}
+          <div className="flex items-center gap-2 flex-1 max-w-lg">
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={
+                  searchColumn === 'ALL'
+                    ? 'Search all fields (name, email, designation)...'
+                    : `Search by ${searchColumn}...`
+                }
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Column Selector */}
+            <select
+              value={searchColumn}
+              onChange={(e) => setSearchColumn(e.target.value)}
+              className="h-9 px-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900 shrink-0 cursor-pointer"
+              title="Target search column"
+            >
+              <option value="ALL">All Columns</option>
+              <option value="displayName">User Name</option>
+              <option value="email">Email</option>
+              <option value="designation">Designation</option>
+              <option value="status">Status</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
+                showColumnFilters || activeColumnFilterCount > 0
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Toggle inline column filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeColumnFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset All Filters Button */}
+            {hasAnyFilter && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer flex items-center gap-1"
+                title="Reset all filters and sorting"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="h-9 px-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add User</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-[#F8F9FA] text-slate-500 uppercase font-bold text-[11px] border-b border-slate-200/80">
-              <tr>
-                <th className="px-5 py-3.5">User</th>
-                <th className="px-5 py-3.5">Email</th>
-                <th className="px-5 py-3.5">Designation</th>
-                <th className="px-5 py-3.5">Module Accessibility</th>
-                <th className="px-5 py-3.5">Password</th>
-                <th className="px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+        <div className="max-h-[620px] overflow-auto relative">
+          <table className="w-full text-left text-xs text-slate-600 border-collapse">
+            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
+              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                {/* User */}
+                <th
+                  onClick={() => handleSort('displayName')}
+                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>User</span>
+                    {renderSortIcon('displayName')}
+                  </div>
+                </th>
+
+                {/* Email */}
+                <th
+                  onClick={() => handleSort('email')}
+                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Email</span>
+                    {renderSortIcon('email')}
+                  </div>
+                </th>
+
+                {/* Designation */}
+                <th
+                  onClick={() => handleSort('designation')}
+                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Designation</span>
+                    {renderSortIcon('designation')}
+                  </div>
+                </th>
+
+                {/* Module Accessibility */}
+                <th className="px-5 py-3.5 whitespace-nowrap bg-slate-50">Module Accessibility</th>
+
+                {/* Password */}
+                <th className="px-5 py-3.5 whitespace-nowrap bg-slate-50">Password</th>
+
+                {/* Status */}
+                <th
+                  onClick={() => handleSort('status')}
+                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span>Status</span>
+                    {renderSortIcon('status')}
+                  </div>
+                </th>
+
+                {/* Actions */}
+                <th className="px-5 py-3.5 text-right whitespace-nowrap bg-slate-50">Actions</th>
               </tr>
+
+              {/* Sticky Column Filter Input Row */}
+              {showColumnFilters && (
+                <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+                  {/* User */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter name..."
+                      value={columnFilters.displayName || ''}
+                      onChange={(e) => handleColumnFilterChange('displayName', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Email */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter email..."
+                      value={columnFilters.email || ''}
+                      onChange={(e) => handleColumnFilterChange('email', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Designation */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter designation..."
+                      value={columnFilters.designation || ''}
+                      onChange={(e) => handleColumnFilterChange('designation', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Module Accessibility */}
+                  <th className="p-1.5"></th>
+
+                  {/* Password */}
+                  <th className="p-1.5"></th>
+
+                  {/* Status */}
+                  <th className="p-1.5">
+                    <input
+                      type="text"
+                      placeholder="Filter status..."
+                      value={columnFilters.status || ''}
+                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+
+                  {/* Actions Clear */}
+                  <th className="p-1.5 text-right">
+                    {activeColumnFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200/60">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
                     Loading users...
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
-                    No users found matching your search.
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <div className="max-w-xs mx-auto space-y-2">
+                      <p className="font-semibold text-slate-700">No users found matching your criteria</p>
+                      <p className="text-slate-400 text-[11px]">
+                        Try adjusting your search query or inline column filters.
+                      </p>
+                      {hasAnyFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -669,6 +998,19 @@ export const UsersPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Table Records Summary Footer */}
+        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+          <span>
+            Showing all <strong className="text-slate-800">{filteredUsers.length}</strong> accounts in one stretch
+            {filteredUsers.length !== users.length && (
+              <span className="text-slate-400 ml-1">(filtered from {users.length} total)</span>
+            )}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            Active Accounts: {users.filter((u) => u.isActive !== false).length} · Inactive: {users.filter((u) => u.isActive === false).length}
+          </span>
         </div>
       </div>
 

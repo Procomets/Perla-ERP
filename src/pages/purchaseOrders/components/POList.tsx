@@ -12,6 +12,9 @@ import {
   Ban,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  X,
   SlidersHorizontal,
   RotateCcw,
   Sparkles,
@@ -102,6 +105,11 @@ export const POList: React.FC<POListProps> = ({
 }) => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+
+  // Column search & filter state
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   // Hovered company popup state
   const [hoveredCustomer, setHoveredCustomer] = useState<{
@@ -252,24 +260,18 @@ export const POList: React.FC<POListProps> = ({
     }));
   }, [pos]);
 
-  const handleResetFilters = () => {
-    onFilterChange({
-      searchQuery: '',
-      customerId: undefined,
-      processCategory: 'all',
-      status: 'all',
-      startDate: undefined,
-      endDate: undefined
-    });
-  };
-
-  const hasActiveFilters =
-    Boolean(filters.searchQuery) ||
-    Boolean(filters.customerId) ||
-    (filters.processCategory && filters.processCategory !== 'all') ||
-    (filters.status && filters.status !== 'all') ||
-    Boolean(filters.startDate) ||
-    Boolean(filters.endDate);
+  const PO_SEARCH_COLUMNS = [
+    { value: 'ALL', label: 'All Columns' },
+    { value: 'poNumber', label: 'PO Number' },
+    { value: 'orderDate', label: 'Order Date' },
+    { value: 'customerName', label: 'Customer' },
+    { value: 'customerPoNumber', label: 'Cust PO No' },
+    { value: 'processCategory', label: 'Process' },
+    { value: 'styleNo', label: 'Style & Item' },
+    { value: 'totalQuantity', label: 'Total Qty' },
+    { value: 'totalAmount', label: 'Value (₹)' },
+    { value: 'status', label: 'Status' }
+  ];
 
   // 3-State Column Sorting (asc -> desc -> unsort)
   const [sortField, setSortField] = useState<POSortField | null>(null);
@@ -290,10 +292,120 @@ export const POList: React.FC<POListProps> = ({
     }
   };
 
+  const handleResetFilters = () => {
+    setSearchColumn('ALL');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection(null);
+    onFilterChange({
+      searchQuery: '',
+      customerId: undefined,
+      processCategory: 'all',
+      status: 'all',
+      startDate: undefined,
+      endDate: undefined
+    });
+  };
+
+  const hasActiveFilters =
+    Boolean(filters.searchQuery) ||
+    Boolean(filters.customerId) ||
+    (filters.processCategory && filters.processCategory !== 'all') ||
+    (filters.status && filters.status !== 'all') ||
+    Boolean(filters.startDate) ||
+    Boolean(filters.endDate) ||
+    searchColumn !== 'ALL' ||
+    Object.values(columnFilters).some((v) => (v || '').trim() !== '') ||
+    Boolean(sortField);
+
+  // Client-side filtering for column selector & inline column filters
+  const filteredPOs = useMemo(() => {
+    return pos.filter((po) => {
+      // 1. Column-specific search if searchColumn !== 'ALL'
+      const query = (filters.searchQuery || '').trim().toLowerCase();
+      if (query && searchColumn !== 'ALL') {
+        let val = '';
+        switch (searchColumn) {
+          case 'poNumber':
+            val = po.poNumber || '';
+            break;
+          case 'orderDate':
+            val = po.orderDate || '';
+            break;
+          case 'customerName':
+            val = po.customerName || '';
+            break;
+          case 'customerPoNumber':
+            val = po.customerPoNumber || '';
+            break;
+          case 'processCategory':
+            val = po.processCategory || '';
+            break;
+          case 'styleNo':
+            val = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''}`;
+            break;
+          case 'totalQuantity':
+            val = String(po.totalQuantity || '');
+            break;
+          case 'totalAmount':
+            val = String(po.totalAmount || '');
+            break;
+          case 'status':
+            val = po.status || '';
+            break;
+        }
+        if (!val.toLowerCase().includes(query)) return false;
+      }
+
+      // 2. Inline column filters
+      for (const [colKey, rawVal] of Object.entries(columnFilters)) {
+        const needle = (rawVal || '').trim().toLowerCase();
+        if (!needle) continue;
+
+        let haystack = '';
+        switch (colKey) {
+          case 'poNumber':
+            haystack = po.poNumber || '';
+            break;
+          case 'orderDate':
+            haystack = po.orderDate || '';
+            break;
+          case 'customerName':
+            haystack = po.customerName || '';
+            break;
+          case 'customerPoNumber':
+            haystack = po.customerPoNumber || '';
+            break;
+          case 'processCategory':
+            haystack = po.processCategory || '';
+            break;
+          case 'styleNo':
+            haystack = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''}`;
+            break;
+          case 'totalQuantity':
+            haystack = String(po.totalQuantity || '');
+            break;
+          case 'totalAmount':
+            haystack = String(po.totalAmount || '');
+            break;
+          case 'status':
+            haystack = po.status || '';
+            break;
+        }
+
+        if (!haystack.toLowerCase().includes(needle)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [pos, filters.searchQuery, searchColumn, columnFilters]);
+
   const sortedPOs = useMemo(() => {
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first based on timestamp (createdAt / updatedAt / orderDate)
-      return [...pos].sort((a, b) => {
+      return [...filteredPOs].sort((a, b) => {
         const timeA = new Date(a.createdAt || a.updatedAt || a.orderDate || 0).getTime();
         const timeB = new Date(b.createdAt || b.updatedAt || b.orderDate || 0).getTime();
         return timeB - timeA;
@@ -301,7 +413,7 @@ export const POList: React.FC<POListProps> = ({
     }
 
     const mult = sortDirection === 'desc' ? -1 : 1;
-    return [...pos].sort((a, b) => {
+    return [...filteredPOs].sort((a, b) => {
       switch (sortField) {
         case 'poNumber':
           return (
@@ -449,21 +561,52 @@ export const POList: React.FC<POListProps> = ({
       {/* Search & Filter Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-          {/* Search Bar */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by PO Number, Customer, Style No, Item..."
-              value={filters.searchQuery || ''}
-              onChange={(e) =>
-                onFilterChange({ ...filters, searchQuery: e.target.value })
-              }
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79] transition-all"
-            />
+          {/* Search Bar with Column Selector */}
+          <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px]">
+            <div className="relative">
+              <select
+                value={searchColumn}
+                onChange={(e) => setSearchColumn(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+              >
+                {PO_SEARCH_COLUMNS.map((col) => (
+                  <option key={col.value} value={col.value}>
+                    {col.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder={
+                  searchColumn === 'ALL'
+                    ? 'Search across all columns...'
+                    : `Search by ${PO_SEARCH_COLUMNS.find((c) => c.value === searchColumn)?.label || searchColumn}...`
+                }
+                value={filters.searchQuery || ''}
+                onChange={(e) =>
+                  onFilterChange({ ...filters, searchQuery: e.target.value })
+                }
+                className="w-full pl-9 pr-8 py-2 bg-transparent text-sm text-slate-900 placeholder-slate-400 focus:outline-hidden"
+              />
+              {filters.searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, searchQuery: '' })}
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Quick Filter Selects */}
+          {/* Quick Filter Selects & Controls */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Process Category Filter */}
             <select
@@ -519,6 +662,26 @@ export const POList: React.FC<POListProps> = ({
               ))}
             </select>
 
+            {/* Toggle Inline Column Filters Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters(!showColumnFilters)}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                  ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Toggle column-wise search inputs on table header"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+                </span>
+              )}
+            </button>
+
             {/* Advanced Filters Toggle */}
             <button
               type="button"
@@ -528,9 +691,10 @@ export const POList: React.FC<POListProps> = ({
                   ? 'bg-[#EEF5FB] border-[#BDD7EE] text-[#1F4E79]'
                   : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
+              title="Date filters"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Filters</span>
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Dates</span>
             </button>
 
             {hasActiveFilters && (
@@ -621,13 +785,13 @@ export const POList: React.FC<POListProps> = ({
 
       {/* Purchase Orders Table - Actual Grid with Vertical & Horizontal Borders */}
       <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
           <table className="w-full border-collapse text-xs border border-slate-200">
-            <thead>
+            <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
               <tr className="bg-slate-100/90 text-slate-700 uppercase tracking-wider font-bold text-[11px] border-b-2 border-slate-300">
                 {/* 1. PO Number - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'poNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('poNumber')}
@@ -641,7 +805,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 2. Order Date - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'orderDate' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('orderDate')}
@@ -655,7 +819,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 3. Customer - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'customerName' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('customerName')}
@@ -669,7 +833,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 4. Cust PO - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'customerPoNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('customerPoNumber')}
@@ -683,7 +847,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 5. Process - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'processCategory' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('processCategory')}
@@ -697,7 +861,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 6. Style & Item - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'styleNo' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('styleNo')}
@@ -711,7 +875,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 6. Total Qty - Right */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'totalQuantity' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('totalQuantity')}
@@ -725,7 +889,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 7. Value - Right */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'totalAmount' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('totalAmount')}
@@ -739,7 +903,7 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 8. Status - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap ${
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
                     sortField === 'status' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
                   }`}
                   onClick={() => handleSort('status')}
@@ -752,30 +916,137 @@ export const POList: React.FC<POListProps> = ({
                 </th>
 
                 {/* 9. Actions - Left */}
-                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-left whitespace-nowrap bg-slate-100/90 text-slate-700">
+                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-left whitespace-nowrap bg-slate-100/90 text-slate-700 sticky top-0 z-20">
                   <div className="flex items-center justify-start">
                     <span>Actions</span>
                   </div>
                 </th>
               </tr>
+
+              {/* Inline Column Filter Inputs Row */}
+              {showColumnFilters && (
+                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter PO..."
+                      value={columnFilters.poNumber || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter date..."
+                      value={columnFilters.orderDate || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, orderDate: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter customer..."
+                      value={columnFilters.customerName || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter cust PO..."
+                      value={columnFilters.customerPoNumber || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, customerPoNumber: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter process..."
+                      value={columnFilters.processCategory || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, processCategory: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter style/item..."
+                      value={columnFilters.styleNo || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, styleNo: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter qty..."
+                      value={columnFilters.totalQuantity || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, totalQuantity: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter amt..."
+                      value={columnFilters.totalAmount || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, totalAmount: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                    />
+                  </th>
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter status..."
+                      value={columnFilters.status || ''}
+                      onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                      className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                    />
+                  </th>
+                  <th className="p-1.5 border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200">
               {sortedPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 border-b border-slate-200">
-                    <div className="flex flex-col items-center justify-center gap-2">
+                  <td colSpan={10} className="py-14 text-center text-xs text-slate-400 bg-white">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
                       <div className="p-3 rounded-full bg-slate-50 text-slate-400">
-                        <Layers className="w-6 h-6" />
+                        <Layers className="w-8 h-8 stroke-[1.5]" />
                       </div>
-                      <div className="font-medium text-slate-600">
-                        No purchase orders found
-                      </div>
-                      <p className="text-slate-400 max-w-sm text-xs">
+                      <div className="text-sm font-bold text-slate-700">No Matching Purchase Orders</div>
+                      <p className="text-slate-400 text-xs leading-relaxed">
                         {hasActiveFilters
-                           ? 'Try clearing active search or filters to see more orders.'
+                           ? 'No purchase orders match your current search, column filters, or filters.'
                           : 'Create your first Purchase Order to begin recording customer processing orders.'}
                       </p>
-                      {canManage && (
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                      {!hasActiveFilters && canManage && (
                         <Button
                           variant="primary"
                           size="sm"
@@ -1043,50 +1314,21 @@ export const POList: React.FC<POListProps> = ({
           </table>
         </div>
 
-        {/* Pagination Bar */}
-        <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>
-            Showing{' '}
-            <strong className="text-slate-800">
-              {pos.length > 0
-                ? (pagination.page - 1) * pagination.pageSize + 1
-                : 0}
-            </strong>{' '}
-            to{' '}
-            <strong className="text-slate-800">
-              {Math.min(
-                pagination.page * pagination.pageSize,
-                pagination.totalRecords
-              )}
-            </strong>{' '}
-            of{' '}
-            <strong className="text-slate-800">
-              {pagination.totalRecords}
-            </strong>{' '}
-            records
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={pagination.page <= 1}
-              onClick={() => onPageChange(pagination.page - 1)}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-3 py-1 font-semibold text-slate-700 bg-slate-50 rounded-md border border-slate-200">
-              {pagination.page} / {pagination.totalPages}
+        {/* All Records Summary Bar - One Stretch */}
+        <div className="px-4 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 bg-slate-50/70">
+          <div className="flex items-center gap-2">
+            <span>
+              Showing all <strong className="text-slate-900 font-bold">{sortedPOs.length}</strong> {sortedPOs.length === 1 ? 'record' : 'records'} in one stretch
             </span>
-            <button
-              type="button"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => onPageChange(pagination.page + 1)}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            {sortedPOs.length !== pos.length && (
+              <span className="text-slate-400 font-normal">
+                (filtered from {pos.length} total)
+              </span>
+            )}
           </div>
+          <span className="text-[11px] text-slate-400 font-medium">
+            Full view · Header stays at top
+          </span>
         </div>
       </div>
 

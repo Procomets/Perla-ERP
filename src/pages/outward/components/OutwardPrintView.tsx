@@ -112,7 +112,7 @@ interface ChallanSlipProps {
 
 const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) => {
   return (
-    <div className="print-slip bg-white p-3 sm:p-4 border-2 border-black rounded text-black font-sans box-border flex flex-col justify-between">
+    <div className="print-slip bg-white p-3 sm:p-4 border-2 border-black rounded text-black font-sans box-border flex flex-col justify-between min-h-[460px] sm:min-h-[500px]">
       {/* 1. Header Section */}
       <div>
         {/* Top Header Row: GSTIN (Left) & DELIVERY CHALLAN in right top corner */}
@@ -167,6 +167,22 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
               <span className="font-bold text-black">Date :</span>
               <span className="border-b border-dotted border-black px-1 text-black min-w-[70px] text-center font-semibold">
                 {challanData.partyDcDate !== '-' ? challanData.partyDcDate : isResolving ? '...' : '-'}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 3: Our P.O. No. & Style No. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-black">Our P.O. No. :</span>
+              <span className="border-b border-dotted border-black px-1 text-black font-semibold">
+                {challanData.poNumber || '—'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 justify-end">
+              <span className="font-bold text-black">Style No. :</span>
+              <span className="border-b border-dotted border-black px-1 text-black min-w-[70px] text-center font-semibold">
+                {challanData.styleNo || '—'}
               </span>
             </div>
           </div>
@@ -251,6 +267,9 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           </span>
         </div>
       </div>
+
+      {/* Spacer between Note and Signatures to eliminate bottom white space */}
+      <div className="flex-1 min-h-[35px] sm:min-h-[55px]" />
 
       {/* 4. Bottom Section: Vehicle Box & Signatures */}
       <div className="pt-1.5 grid grid-cols-12 gap-2 items-end">
@@ -598,6 +617,30 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                     value={formState.partyDcDate}
                     onChange={(e) => setFormState({ ...formState, partyDcDate: e.target.value })}
                     className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Our P.O. No.
+                  </label>
+                  <input
+                    type="text"
+                    value={formState.poNumber || ''}
+                    onChange={(e) => setFormState({ ...formState, poNumber: e.target.value })}
+                    className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
+                    placeholder="e.g. PO-2026-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Style No.
+                  </label>
+                  <input
+                    type="text"
+                    value={formState.styleNo || ''}
+                    onChange={(e) => setFormState({ ...formState, styleNo: e.target.value })}
+                    className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
+                    placeholder="e.g. ST-8802"
                   />
                 </div>
                 <div>

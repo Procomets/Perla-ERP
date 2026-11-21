@@ -22,7 +22,7 @@ export const VendorMasterContainer: React.FC = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [pagination, setPagination] = useState<VendorPagination>({
     page: 1,
-    pageSize: 10,
+    pageSize: 1000,
     totalRecords: 0,
     totalPages: 1
   });
@@ -96,6 +96,18 @@ export const VendorMasterContainer: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Top Header - Minimal & Airy */}
+      {currentView === 'list' && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Vendor Master</h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Directory of customers, fabric suppliers, chemical vendors, and contractor profiles
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main View Router */}
       {currentView === 'list' && (
         <VendorList

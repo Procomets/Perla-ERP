@@ -14,7 +14,7 @@ import { StatementLedgerTable } from './components/StatementLedgerTable';
 import { ColourReconciliationStrip } from './components/ColourReconciliationStrip';
 import { InvoiceHistoryTable } from './components/InvoiceHistoryTable';
 import { useAuth } from '../../context/AuthContext';
-import { Scale, History, Building2, AlertTriangle, ShieldCheck, CheckCircle2, ArrowRight, X } from 'lucide-react';
+import { Scale, History, Building2, AlertTriangle, ShieldCheck, CheckCircle2, ArrowRight, X, Download, FileText } from 'lucide-react';
 
 interface StatementPageProps {
   pos?: PurchaseOrder[];
@@ -308,16 +308,38 @@ export const StatementPage: React.FC<StatementPageProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      {/* Top Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black text-[#000000] tracking-tight">Statement</h1>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Complete inward and outward transaction audit ledger for customer styles and purchase orders.
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Statement</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Complete inward and outward transaction audit ledger for customer styles and purchase orders
           </p>
-        </div>       
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          {statementData && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>Print PDF</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Toast Notification Banner */}

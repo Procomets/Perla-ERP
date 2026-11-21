@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+      import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { EBReadingRecord, CreateEBReadingPayload, UpdateEBReadingPayload } from '../../types/ebMonitoring';
 import { EBMonitoringService } from '../../services/ebMonitoringService';
@@ -18,7 +18,12 @@ import {
   CheckCircle2,
   Clock,
   Zap,
-  Lock
+  Lock,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
+  SlidersHorizontal,
+  RotateCcw
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
@@ -106,10 +111,90 @@ export const EBMonitoringPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Filters State
+  // Filters & Table Controls State
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [columnFilters, setColumnFilters] = useState<{
+    date?: string;
+    openingReading?: string;
+    openingTime?: string;
+    closingReading?: string;
+    closingTime?: string;
+    totalUnits?: string;
+    spendingAmountPerUnit?: string;
+    totalCost?: string;
+    readingTakenBy?: string;
+  }>({});
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'normal'>('normal');
+
+  // 3-state sorting handler
+  const handleSort = (field: string, isNumericOrDate = false) => {
+    const firstDir: 'asc' | 'desc' = isNumericOrDate ? 'desc' : 'asc';
+    const secondDir: 'asc' | 'desc' = isNumericOrDate ? 'asc' : 'desc';
+    if (sortField !== field || sortDirection === 'normal') {
+      setSortField(field);
+      setSortDirection(firstDir);
+    } else if (sortDirection === firstDir) {
+      setSortDirection(secondDir);
+    } else {
+      setSortField(null);
+      setSortDirection('normal');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    const isCurrent = sortField === field && sortDirection !== 'normal';
+    return (
+      <span
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
+          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+        }`}
+      >
+        {isCurrent ? (
+          sortDirection === 'asc' ? (
+            <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3" />
+        )}
+      </span>
+    );
+  };
+
+  const handleColumnFilterChange = (field: keyof typeof columnFilters, val: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length;
+  }, [columnFilters]);
+
+  const hasAnyFilter = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchColumn !== 'ALL' ||
+      startDate !== '' ||
+      endDate !== '' ||
+      activeColumnFilterCount > 0 ||
+      (sortField !== null && sortDirection !== 'normal')
+    );
+  }, [searchQuery, searchColumn, startDate, endDate, activeColumnFilterCount, sortField, sortDirection]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSearchColumn('ALL');
+    setStartDate('');
+    setEndDate('');
+    setColumnFilters({});
+    setSortField(null);
+    setSortDirection('normal');
+  };
 
   // Add / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -148,7 +233,7 @@ export const EBMonitoringPage: React.FC = () => {
     loadData();
   }, []);
 
-  // Filtered readings
+  // Filtered readings with multi-column search, column filters, and 3-state sorting
   const filteredReadings = useMemo(() => {
     let result = [...readings];
 
@@ -163,20 +248,81 @@ export const EBMonitoringPage: React.FC = () => {
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter((r) => {
+        if (searchColumn === 'date') return (r.date || '').toLowerCase().includes(q) || formatDate(r.date).toLowerCase().includes(q);
+        if (searchColumn === 'openingReading') return String(r.openingReading ?? '').includes(q);
+        if (searchColumn === 'closingReading') return String(r.closingReading ?? '').includes(q);
+        if (searchColumn === 'totalUnits') return String(r.totalUnits ?? '').includes(q);
+        if (searchColumn === 'totalCost') return String(r.totalCost ?? '').includes(q);
+        if (searchColumn === 'readingTakenBy') return (r.readingTakenBy || '').toLowerCase().includes(q);
+        if (searchColumn === 'remarks') return (r.remarks || '').toLowerCase().includes(q);
+        // ALL
         return (
           (r.readingNumber || '').toLowerCase().includes(q) ||
           (r.date || '').toLowerCase().includes(q) ||
+          formatDate(r.date).toLowerCase().includes(q) ||
           (r.readingTakenBy || '').toLowerCase().includes(q) ||
           (r.remarks || '').toLowerCase().includes(q) ||
-          String(r.openingReading).includes(q) ||
-          String(r.closingReading).includes(q) ||
-          String(r.totalUnits).includes(q)
+          String(r.openingReading ?? '').includes(q) ||
+          String(r.closingReading ?? '').includes(q) ||
+          String(r.totalUnits ?? '').includes(q) ||
+          String(r.totalCost ?? '').includes(q)
         );
       });
     }
 
+    // Column Filters
+    if (columnFilters.date?.trim()) {
+      const f = columnFilters.date.trim().toLowerCase();
+      result = result.filter((r) => (r.date || '').toLowerCase().includes(f) || formatDate(r.date).toLowerCase().includes(f));
+    }
+    if (columnFilters.openingReading?.trim()) {
+      const f = columnFilters.openingReading.trim();
+      result = result.filter((r) => String(r.openingReading ?? '').includes(f));
+    }
+    if (columnFilters.openingTime?.trim()) {
+      const f = columnFilters.openingTime.trim().toLowerCase();
+      result = result.filter((r) => (r.openingTime || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.closingReading?.trim()) {
+      const f = columnFilters.closingReading.trim();
+      result = result.filter((r) => String(r.closingReading ?? '').includes(f));
+    }
+    if (columnFilters.closingTime?.trim()) {
+      const f = columnFilters.closingTime.trim().toLowerCase();
+      result = result.filter((r) => (r.closingTime || '').toLowerCase().includes(f));
+    }
+    if (columnFilters.totalUnits?.trim()) {
+      const f = columnFilters.totalUnits.trim();
+      result = result.filter((r) => String(r.totalUnits ?? '').includes(f));
+    }
+    if (columnFilters.spendingAmountPerUnit?.trim()) {
+      const f = columnFilters.spendingAmountPerUnit.trim();
+      result = result.filter((r) => String(r.spendingAmountPerUnit ?? '').includes(f));
+    }
+    if (columnFilters.totalCost?.trim()) {
+      const f = columnFilters.totalCost.trim();
+      result = result.filter((r) => String(r.totalCost ?? '').includes(f));
+    }
+    if (columnFilters.readingTakenBy?.trim()) {
+      const f = columnFilters.readingTakenBy.trim().toLowerCase();
+      result = result.filter((r) => (r.readingTakenBy || '').toLowerCase().includes(f));
+    }
+
+    // 3-State Sorting
+    if (sortField && sortDirection !== 'normal') {
+      result.sort((a, b) => {
+        let valA: any = (a as any)[sortField];
+        let valB: any = (b as any)[sortField];
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
     return result;
-  }, [readings, startDate, endDate, searchQuery]);
+  }, [readings, startDate, endDate, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
 
   // Overall KPI Metrics (Dynamically calculated based on applied filters)
   const metrics = useMemo(() => {
@@ -500,15 +646,18 @@ export const EBMonitoringPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      {/* Top Header - Minimal & Airy */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">EB Monitoring</h2>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">EB Monitoring</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Daily meter readings, unit consumption (kW), and power cost tracking
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
           {/* Current Unit Price Field (Stored in General Settings, Admin Editable Only) */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                 Unit Price:
@@ -586,17 +735,17 @@ export const EBMonitoringPage: React.FC = () => {
             type="button"
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="h-9 px-3 bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-medium hover:bg-slate-50 transition cursor-pointer"
             title="Reload data"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Reload</span>
           </button>
 
           <button
             type="button"
             onClick={handleOpenAddModal}
-            className="h-9 px-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition cursor-pointer shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add EB Reading</span>
@@ -665,27 +814,82 @@ export const EBMonitoringPage: React.FC = () => {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Filters Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
-          {/* Left: Search Filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search date, reading, person name..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 transition"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          {/* Left: Search Bar & Column Filters Toggle */}
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
+              <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
+                <select
+                  value={searchColumn}
+                  onChange={(e) => setSearchColumn(e.target.value)}
+                  className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
+                  title="Select column to search in"
                 >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+                  <option value="ALL">All Columns</option>
+                  <option value="date">Date</option>
+                  <option value="openingReading">Opening Reading</option>
+                  <option value="closingReading">Closing Reading</option>
+                  <option value="totalUnits">Total Units</option>
+                  <option value="totalCost">Total Cost</option>
+                  <option value="readingTakenBy">Reading Taken By</option>
+                  <option value="remarks">Remarks</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              <div className="relative flex-1 min-w-[200px] flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={searchColumn === 'ALL' ? 'Search all columns...' : `Search ${searchColumn}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Column Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowColumnFilters((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showColumnFilters || activeColumnFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Toggle inline column filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeColumnFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset All Filters button */}
+            {hasAnyFilter && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                title="Reset All Filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
           </div>
 
           {/* Right: Date Range & Export */}
@@ -710,20 +914,6 @@ export const EBMonitoringPage: React.FC = () => {
               />
             </div>
 
-            {(startDate || endDate || searchQuery) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStartDate('');
-                  setEndDate('');
-                  setSearchQuery('');
-                }}
-                className="h-8 px-2 text-xs font-semibold text-rose-600 hover:text-rose-700 transition cursor-pointer"
-              >
-                Clear
-              </button>
-            )}
-
             <button
               type="button"
               onClick={handleExportExcel}
@@ -735,23 +925,197 @@ export const EBMonitoringPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Grid Table matching exact user requested attributes */}
-        <div className="overflow-x-auto">
+        {/* Grid Table with Sticky Headers & Column Filter Inputs */}
+        <div className="max-h-[620px] overflow-auto relative border border-slate-200 rounded-b-2xl">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-3 border-r border-slate-200 text-center w-12">S.No.</th>
-                <th className="py-3 px-3.5 border-r border-slate-200">Date</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Opening Reading</th>
-                <th className="py-3 px-3 border-r border-slate-200 text-center">Time</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Closing Reading</th>
-                <th className="py-3 px-3 border-r border-slate-200 text-center">Time</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Total Units Per Day</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Spending Amount Per Unit</th>
-                <th className="py-3 px-3.5 border-r border-slate-200 text-right">Total Cost of the Day</th>
-                <th className="py-3 px-3.5 border-r border-slate-200">Reading Taken By</th>
-                <th className="py-3 px-3.5 text-center">Action</th>
+            <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-3 border-r border-slate-200 text-center w-12 sticky top-0 z-20 bg-slate-50">S.No.</th>
+                <th
+                  onClick={() => handleSort('date', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span>Date</span>
+                    {renderSortIcon('date')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('openingReading', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-end">
+                    <span>Opening Reading</span>
+                    {renderSortIcon('openingReading')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('openingTime')}
+                  className="py-3 px-3 border-r border-slate-200 text-center cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-center">
+                    <span>Time</span>
+                    {renderSortIcon('openingTime')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('closingReading', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-end">
+                    <span>Closing Reading</span>
+                    {renderSortIcon('closingReading')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('closingTime')}
+                  className="py-3 px-3 border-r border-slate-200 text-center cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-center">
+                    <span>Time</span>
+                    {renderSortIcon('closingTime')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('totalUnits', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-end">
+                    <span>Total Units Per Day</span>
+                    {renderSortIcon('totalUnits')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('spendingAmountPerUnit', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-end">
+                    <span>Spending Amount / Unit</span>
+                    {renderSortIcon('spendingAmountPerUnit')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('totalCost', true)}
+                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-end">
+                    <span>Total Cost of the Day</span>
+                    {renderSortIcon('totalCost')}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('readingTakenBy')}
+                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span>Reading Taken By</span>
+                    {renderSortIcon('readingTakenBy')}
+                  </div>
+                </th>
+                <th className="py-3 px-3.5 text-center sticky top-0 z-20 bg-slate-50">Action</th>
               </tr>
+
+              {/* Inline Column Filter Inputs Row */}
+              {showColumnFilters && (
+                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center font-normal text-slate-400 text-[10px]">
+                    #
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter date..."
+                      value={columnFilters.date || ''}
+                      onChange={(e) => handleColumnFilterChange('date', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter opening..."
+                      value={columnFilters.openingReading || ''}
+                      onChange={(e) => handleColumnFilterChange('openingReading', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Time..."
+                      value={columnFilters.openingTime || ''}
+                      onChange={(e) => handleColumnFilterChange('openingTime', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter closing..."
+                      value={columnFilters.closingReading || ''}
+                      onChange={(e) => handleColumnFilterChange('closingReading', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    <input
+                      type="text"
+                      placeholder="Time..."
+                      value={columnFilters.closingTime || ''}
+                      onChange={(e) => handleColumnFilterChange('closingTime', e.target.value)}
+                      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter units..."
+                      value={columnFilters.totalUnits || ''}
+                      onChange={(e) => handleColumnFilterChange('totalUnits', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter rate..."
+                      value={columnFilters.spendingAmountPerUnit || ''}
+                      onChange={(e) => handleColumnFilterChange('spendingAmountPerUnit', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-right">
+                    <input
+                      type="text"
+                      placeholder="Filter cost..."
+                      value={columnFilters.totalCost || ''}
+                      onChange={(e) => handleColumnFilterChange('totalCost', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-right font-mono"
+                    />
+                  </th>
+                  <th className="p-1 border-r border-slate-200 sticky top-[41px] z-20 bg-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Filter person..."
+                      value={columnFilters.readingTakenBy || ''}
+                      onChange={(e) => handleColumnFilterChange('readingTakenBy', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
+                    />
+                  </th>
+                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center">
+                    {activeColumnFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setColumnFilters({})}
+                        className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-white border border-rose-200 rounded cursor-pointer"
+                        title="Clear column filters"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
@@ -763,8 +1127,25 @@ export const EBMonitoringPage: React.FC = () => {
                 </tr>
               ) : filteredReadings.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-xs text-slate-400 italic">
-                    No EB readings recorded yet. Click "+ Add EB Reading" to record the first daily meter reading.
+                  <td colSpan={11} className="py-12 text-center text-xs text-slate-400">
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <p className="font-semibold text-slate-700 text-sm">No matching EB readings found</p>
+                      <p className="text-slate-400 text-xs">
+                        {hasAnyFilter
+                          ? 'No records match the active search or column filters.'
+                          : 'No EB readings recorded yet. Click "+ Add EB Reading" to record the first daily meter reading.'}
+                      </p>
+                      {hasAnyFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetAllFilters}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset All Filters</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -870,6 +1251,23 @@ export const EBMonitoringPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Informative Table Controls Footer - All data in one stretch */}
+        <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+          <span>
+            Showing all <strong>{filteredReadings.length}</strong> records in one stretch
+            {filteredReadings.length !== readings.length && ` (filtered from ${readings.length} total)`}
+          </span>
+          {hasAnyFilter && (
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="text-xs font-semibold text-[#1F4E79] hover:underline cursor-pointer"
+            >
+              Reset All Filters
+            </button>
+          )}
         </div>
       </div>
 

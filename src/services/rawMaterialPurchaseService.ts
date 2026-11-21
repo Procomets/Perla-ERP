@@ -19,7 +19,8 @@ import {
   PurchaseLineItem,
   PurchaseFilterOptions,
   PurchaseStatus,
-  PurchaseType
+  PurchaseType,
+  WeighbridgeDetails
 } from '../types/purchase';
 import { WarehouseService } from './warehouseService';
 
@@ -180,6 +181,7 @@ export class RawMaterialPurchaseService {
       vehicleNo?: string;
       driverName?: string;
       driverPhone?: string;
+      weighbridge?: WeighbridgeDetails;
       remarks?: string;
       status?: PurchaseStatus;
       lines: Array<{
@@ -264,6 +266,7 @@ export class RawMaterialPurchaseService {
       vehicleNo: payload.vehicleNo?.trim() || '',
       driverName: payload.driverName?.trim() || '',
       driverPhone: payload.driverPhone?.trim() || '',
+      weighbridge: payload.weighbridge || undefined,
       lines: processedLines,
       totalQuantity: Math.round(totalQuantity * 100) / 100,
       grandTotal: Math.round(grandTotal * 100) / 100,

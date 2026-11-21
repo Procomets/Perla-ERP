@@ -26,6 +26,7 @@ import { Vendor } from '../types/vendor';
 import { VendorService } from './vendorService';
 import { PurchaseOrder } from '../types/po';
 import { POService } from './poService';
+import { getUnitConversionFactor } from '../utils/unitConversion';
 
 const CHEMICAL_ENTRIES_CACHE_KEY = 'perla_chemical_entries_cache_v1';
 
@@ -96,6 +97,8 @@ export class ChemicalEntryService {
       itemCode,
       chemicalName,
       unit,
+      baseQuantity: data?.baseQuantity !== undefined ? Number(data.baseQuantity) : undefined,
+      baseUnit: data?.baseUnit || undefined,
       quantity,
       rate,
       totalAmount,
@@ -580,7 +583,14 @@ export class ChemicalEntryService {
         (isWood ? 'Raw Wood / Firewood' : 'Chemical Item');
       const itemCode = itemData?.itemCode || '';
       const categoryName = itemData?.categoryName || (isWood ? 'Firewood & Boiler Fuel' : 'Textile Processing Chemicals');
-      const effectiveUnit = payload.unit || itemData?.baseUnit || (isWood ? 't' : 'kg');
+      const warehouseBaseUnit = itemData?.baseUnit || stockSnap.data()?.baseUnit || (isWood ? 't' : 'kg');
+      const transactionUnit = payload.unit || warehouseBaseUnit;
+
+      // Unit conversion to warehouse base unit
+      const factorToBase = getUnitConversionFactor(transactionUnit, warehouseBaseUnit);
+      const quantityInBaseUnit = payload.baseQuantity !== undefined
+        ? Number(payload.baseQuantity)
+        : Math.round(numericQty * factorToBase * 1000000) / 1000000;
 
       // Stock balance calculation
       let previousStock = 0;
@@ -597,15 +607,15 @@ export class ChemicalEntryService {
 
       if (shouldUpdateStock) {
         if (payload.entryType === 'Consumption') {
-          if (previousStock < numericQty) {
+          if (previousStock < quantityInBaseUnit) {
             throw new Error(
-              `Insufficient stock for '${chemicalName}'. Available: ${previousStock} ${effectiveUnit}, Requested: ${numericQty} ${effectiveUnit}`
+              `Insufficient stock for '${chemicalName}'. Available: ${previousStock} ${warehouseBaseUnit}, Requested: ${numericQty} ${transactionUnit}${transactionUnit !== warehouseBaseUnit ? ` (= ${quantityInBaseUnit} ${warehouseBaseUnit})` : ''}`
             );
           }
-          newStock = Math.round((previousStock - numericQty) * 1000) / 1000;
+          newStock = Math.round((previousStock - quantityInBaseUnit) * 1000) / 1000;
         } else {
           // Purchase received
-          newStock = Math.round((previousStock + numericQty) * 1000) / 1000;
+          newStock = Math.round((previousStock + quantityInBaseUnit) * 1000) / 1000;
         }
 
         if (stockCounterSnap.exists()) {
@@ -658,7 +668,7 @@ export class ChemicalEntryService {
           itemName: itemData?.itemName || chemicalName,
           categoryId: itemData?.categoryId || '',
           categoryName,
-          baseUnit: effectiveUnit,
+          baseUnit: warehouseBaseUnit,
           availableStock: newStock,
           averageRate: warehouseAvgRate,
           totalValue: warehouseTotalVal,
@@ -688,10 +698,12 @@ export class ChemicalEntryService {
           itemCode,
           itemName: chemicalName,
           categoryName,
-          baseUnit: effectiveUnit,
+          baseUnit: warehouseBaseUnit,
           type: isPurchase ? 'INWARD' : 'OUTWARD',
           source: isPurchase ? 'PURCHASE_RECEIPT' : 'PRODUCTION_CONSUMPTION',
           quantity: numericQty,
+          unit: transactionUnit,
+          baseQuantity: quantityInBaseUnit,
           previousStock,
           newStock,
           referenceNumber: entryNumber,
@@ -723,7 +735,9 @@ export class ChemicalEntryService {
         itemId: payload.itemId,
         itemCode,
         chemicalName,
-        unit: effectiveUnit,
+        unit: transactionUnit,
+        baseQuantity: quantityInBaseUnit,
+        baseUnit: warehouseBaseUnit,
         quantity: numericQty,
         rate: effectiveRate,
         totalAmount: effectiveTotalAmount,
@@ -828,7 +842,8 @@ export class ChemicalEntryService {
       }
       if (isNaN(previousStock)) previousStock = 0;
 
-      const newStock = Math.round((previousStock + numericQty) * 1000) / 1000;
+      const qtyToAdd = Number(entryData.baseQuantity !== undefined ? entryData.baseQuantity : numericQty);
+      const newStock = Math.round((previousStock + qtyToAdd) * 1000) / 1000;
 
       // Stock transaction seq
       const stockCounterSnap = await txn.get(stockCounterDocRef);
@@ -847,7 +862,7 @@ export class ChemicalEntryService {
           itemId,
           itemCode: entryData.itemCode,
           itemName: entryData.chemicalName,
-          baseUnit: entryData.unit,
+          baseUnit: entryData.baseUnit || itemData?.baseUnit || entryData.unit || 'kg',
           availableStock: newStock,
           lastInwardDate: receivedDate,
           updatedAt: now,
@@ -972,10 +987,11 @@ export class ChemicalEntryService {
         let restoredStock = currentStock;
         let finalAvgRate = currentAvgRate;
         let finalTotalAmount = Math.round(currentStock * currentAvgRate * 100) / 100;
+        const qtyToRestore = Number(entryData.baseQuantity !== undefined ? entryData.baseQuantity : numericQty);
 
         if (entryType === 'Consumption') {
-          // Revert consumption: ADD the consumed quantity back into warehouse stock
-          restoredStock = Math.round((currentStock + numericQty) * 1000) / 1000;
+          // Revert consumption: ADD the consumed quantity (in warehouse base unit) back into warehouse stock
+          restoredStock = Math.round((currentStock + qtyToRestore) * 1000) / 1000;
 
           // Alter warehouse amount and calculate weighted average rate
           const entryRate = parseFloat(String(entryData.rate || 0)) || currentAvgRate;
@@ -988,8 +1004,8 @@ export class ChemicalEntryService {
             ? Math.round((finalTotalAmount / restoredStock) * 100) / 100
             : currentAvgRate;
         } else if (entryType === 'Purchase') {
-          // Revert purchase addition: deduct quantity from warehouse stock
-          restoredStock = Math.max(0, Math.round((currentStock - numericQty) * 1000) / 1000);
+          // Revert purchase addition: deduct quantity (in warehouse base unit) from warehouse stock
+          restoredStock = Math.max(0, Math.round((currentStock - qtyToRestore) * 1000) / 1000);
 
           const purchaseAmount = (Number(entryData.totalAmount) > 0)
             ? Number(entryData.totalAmount)
