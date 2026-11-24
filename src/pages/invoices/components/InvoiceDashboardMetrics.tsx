@@ -29,10 +29,10 @@ export const InvoiceDashboardMetrics: React.FC<InvoiceDashboardMetricsProps> = (
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search by Invoice No, Customer, PO, Style..."
+              placeholder="Search across all sections (PO #, Style, Customer, Colour, Process, Invoice #)..."
               value={filters.searchQuery || ''}
               onChange={(e) => onFilterChange({ searchQuery: e.target.value })}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E79]/20 focus:border-[#1F4E79]"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 text-slate-900"
             />
           </div>
 
@@ -41,7 +41,7 @@ export const InvoiceDashboardMetrics: React.FC<InvoiceDashboardMetricsProps> = (
             <select
               value={filters.companyId || ''}
               onChange={(e) => onFilterChange({ companyId: e.target.value || undefined })}
-              className="py-2 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E79]/20 bg-white text-slate-700"
+              className="py-2 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 bg-white text-slate-900 font-medium cursor-pointer"
             >
               <option value="">All Companies / Customers</option>
               {companies.map((c) => (
@@ -51,30 +51,12 @@ export const InvoiceDashboardMetrics: React.FC<InvoiceDashboardMetricsProps> = (
               ))}
             </select>
 
-            {/* Status Tabs */}
-            <div className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5 text-xs font-medium">
-              {(['all', 'finalized', 'draft', 'cancelled'] as const).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => onFilterChange({ status: st })}
-                  className={`px-3 py-1.5 rounded-md capitalize transition-colors ${
-                    (filters.status || 'all') === st
-                      ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
-
             {/* Reset Button */}
             <button
               type="button"
               onClick={onResetFilters}
               title="Reset Filters"
-              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-300 transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-300 transition-colors cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
             </button>

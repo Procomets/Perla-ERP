@@ -20,6 +20,7 @@ interface InwardDetailsProps {
   inward: InwardEntry;
   auditLogs?: InwardAuditLog[];
   customerVendor?: Vendor | null;
+  subcontractorVendor?: Vendor | null;
   onBack: () => void;
   onPrint: () => void;
   onEditDraft?: () => void;
@@ -34,6 +35,7 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
   inward,
   auditLogs,
   customerVendor,
+  subcontractorVendor,
   onBack,
   onPrint,
   onEditDraft,
@@ -80,6 +82,21 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
 
   const formattedAddress = [addressLine1, addressLine2].filter(Boolean).join(', ');
   const cityState = [city, state].filter(Boolean).join(', ') + (pinCode ? ` - ${pinCode}` : '');
+
+  // Subcontractor / Contractor details
+  const subName = inward.subcontractorNameSnapshot || inward.subContractorName || subcontractorVendor?.companyName;
+  const subCode = subcontractorVendor?.vendorCode || (subcontractorVendor as any)?.code || (subcontractorVendor as any)?.companyCode || inward.subcontractorVendorId || inward.subContractorId;
+  const subGstin = subcontractorVendor?.taxDetails?.gstin || (subcontractorVendor as any)?.gstin || (subcontractorVendor?.taxDetails?.gstRegistrationStatus === 'unregistered' ? 'Unregistered' : '');
+
+  const subAddress = subcontractorVendor?.address;
+  const subAddressLine1 = typeof subAddress === 'object' ? subAddress?.addressLine1 : (typeof subAddress === 'string' ? subAddress : '');
+  const subAddressLine2 = typeof subAddress === 'object' ? subAddress?.addressLine2 : '';
+  const subCity = (typeof subAddress === 'object' ? subAddress?.city : '') || subcontractorVendor?.city || '';
+  const subState = (typeof subAddress === 'object' ? subAddress?.state : '') || subcontractorVendor?.state || '';
+  const subPinCode = (typeof subAddress === 'object' ? subAddress?.pinCode : '') || subcontractorVendor?.pinCode || '';
+
+  const formattedSubAddress = [subAddressLine1, subAddressLine2].filter(Boolean).join(', ');
+  const subCityState = [subCity, subState].filter(Boolean).join(', ') + (subPinCode ? ` - ${subPinCode}` : '');
 
   return (
     <div className="space-y-5">
@@ -245,10 +262,43 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
               </span>
             </div>
 
-            {inward.subcontractorNameSnapshot && (
-              <div className="pt-2 border-t border-slate-100">
-                <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Subcontractor Unit</span>
-                <span className="font-medium text-slate-700">{inward.subcontractorNameSnapshot}</span>
+            {subName && (
+              <div className="pt-3 border-t border-slate-100 space-y-3">
+                <div>
+                  <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Subcontractor Unit</span>
+                  <span className="font-semibold text-slate-800 text-sm block">
+                    {subName}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Company Code</span>
+                    <span className="font-mono font-semibold text-slate-700">
+                      {subCode || '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">GST NO</span>
+                    <span className="font-mono font-semibold text-slate-700">
+                      {subGstin || '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">Address</span>
+                  <span className="text-slate-700 leading-snug block">
+                    {formattedSubAddress || '—'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-medium text-slate-400 block uppercase tracking-wider mb-0.5">City & State</span>
+                  <span className="font-medium text-slate-700">
+                    {subCityState || '—'}
+                  </span>
+                </div>
               </div>
             )}
           </div>

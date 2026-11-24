@@ -3,13 +3,14 @@ import { ModuleId, ModulePermission, ModulePermissionsMap, UserProfile } from '.
 export interface ModuleConfig {
   id: ModuleId;
   label: string;
-  category: 'Overview' | 'Operations' | 'Production' | 'Human Resources' | 'Expenses' | 'Masters & Settings';
+  category: 'Overview' | 'Operations' | 'Sample Process' | 'Production' | 'Human Resources' | 'Expenses' | 'Masters & Settings';
   description: string;
 }
 
 export const ERP_MODULES: ModuleConfig[] = [
   { id: 'dashboard', label: 'Dashboard', category: 'Overview', description: 'Executive dashboard, KPI cards, and operational charts' },
   { id: 'po', label: 'Purchase Orders', category: 'Operations', description: 'PO creation, styles, colour lines, and customer orders' },
+  { id: 'sample-po', label: 'Sample PO', category: 'Sample Process', description: 'Sample PO inward work orders, styles, wash types, and dispatch tracking' },
   { id: 'inward', label: 'Inward Receipts', category: 'Operations', description: 'Incoming customer grey fabric batch tracking' },
   { id: 'outward', label: 'Outward Dispatches', category: 'Operations', description: 'Finished processed goods dispatch & delivery challans' },
   { id: 'statement', label: 'Statement & Approval', category: 'Operations', description: 'Inward vs outward fabric reconciliation ledger' },

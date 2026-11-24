@@ -45,6 +45,8 @@ export interface OutwardEntry {
   poId: string;
   poNumberSnapshot: string;
   poNumber?: string; // alias
+  customerPoNumberSnapshot?: string | null;
+  customerPoNumber?: string | null;
 
   customerVendorId: string;
   customerId?: string; // alias

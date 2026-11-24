@@ -7,7 +7,6 @@ import { Modal } from '../../../components/ui/Modal';
 import {
   ArrowLeft,
   Download,
-  Edit3,
   Calendar,
   Clock,
   Plus,
@@ -110,7 +109,7 @@ interface ChallanSlipProps {
   isResolving: boolean;
 }
 
-const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) => {
+const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData }) => {
   return (
     <div className="print-slip bg-white p-3 sm:p-4 border-2 border-black rounded text-black font-sans box-border flex flex-col justify-between min-h-[460px] sm:min-h-[500px]">
       {/* 1. Header Section */}
@@ -139,55 +138,41 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           </p>
         </div>
 
-        {/* 2. Metadata Section */}
-        <div className="py-1.5 border-b border-black text-xs sm:text-[13px] font-semibold space-y-1">
+        {/* 2. Metadata Section (Well-spaced lines, Party D.C. No. removed from top-right) */}
+        <div className="py-2.5 sm:py-3.5 border-b border-black text-xs sm:text-[13px] font-semibold space-y-2">
+          {/* Row 1: DC No (Left) & Date (Right) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-black">No.</span>
+              <span className="font-bold text-black">No. :</span>
               <span className="font-black text-sm text-black px-1.5 border-b border-dotted border-black">
                 {challanData.dcNumber}
               </span>
             </div>
             <div className="flex items-center gap-1.5 justify-end">
-              <span className="font-bold text-black">Party D.C. No. :</span>
-              <span className="font-black text-black border-b border-dotted border-black px-1.5 min-w-[70px] text-center">
-                {challanData.partyDcNumber !== '-' ? challanData.partyDcNumber : isResolving ? '...' : '-'}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-1.5">
               <span className="font-bold text-black">Date :</span>
-              <span className="border-b border-dotted border-black px-1 text-black font-semibold">
+              <span className="border-b border-dotted border-black px-1.5 text-black font-semibold">
                 {challanData.dcDate}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 justify-end">
-              <span className="font-bold text-black">Date :</span>
-              <span className="border-b border-dotted border-black px-1 text-black min-w-[70px] text-center font-semibold">
-                {challanData.partyDcDate !== '-' ? challanData.partyDcDate : isResolving ? '...' : '-'}
-              </span>
-            </div>
           </div>
 
-          {/* Row 3: Our P.O. No. & Style No. */}
+          {/* Row 2: Customer P.O. No. (Left) & Style No. (Right) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-black">Our P.O. No. :</span>
-              <span className="border-b border-dotted border-black px-1 text-black font-semibold">
-                {challanData.poNumber || '—'}
+              <span className="font-bold text-black">Customer P.O. No. :</span>
+              <span className="border-b border-dotted border-black px-1.5 text-black font-semibold">
+                {challanData.customerPoNumber || challanData.poNumber || '—'}
               </span>
             </div>
             <div className="flex items-center gap-1.5 justify-end">
               <span className="font-bold text-black">Style No. :</span>
-              <span className="border-b border-dotted border-black px-1 text-black min-w-[70px] text-center font-semibold">
+              <span className="border-b border-dotted border-black px-1.5 text-black min-w-[70px] text-center font-semibold">
                 {challanData.styleNo || '—'}
               </span>
             </div>
           </div>
 
-          {/* Customer Company Name and Full Address */}
+          {/* Row 3: Customer Company Name and Full Address */}
           <div className="flex items-start gap-1 pt-0.5">
             <span className="font-bold text-black shrink-0">To :</span>
             <div className="border-b border-dotted border-black flex-1 font-bold text-black pb-0.5 leading-tight text-xs sm:text-[13px]">
@@ -201,36 +186,41 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
           </div>
         </div>
 
-        {/* 3. Dispatched Lines Table (Separate Columns for Particulars, Colour, Process, Qty) */}
-        <div className="my-1.5">
+        {/* 3. Dispatched Lines Table (Party D.C. No. is the 2nd column, generous line/row spacing) */}
+        <div className="my-2.5">
           <table className="w-full text-left text-xs border border-black border-collapse">
             <thead>
               <tr className="bg-slate-100 border-b border-black text-black font-black uppercase text-[11px]">
-                <th className="py-1 px-1.5 border-r border-black text-center w-10">S.No.</th>
-                <th className="py-1 px-2 border-r border-black">Particulars</th>
-                <th className="py-1 px-2 border-r border-black w-32">Colour</th>
-                <th className="py-1 px-2 border-r border-black w-32">Process</th>
-                <th className="py-1 px-2 text-right w-24">Qty.</th>
+                <th className="py-2.5 px-1.5 border-r border-black text-center w-10">S.No.</th>
+                <th className="py-2.5 px-2 border-r border-black text-center w-28">Party D.C. No.</th>
+                <th className="py-2.5 px-2 border-r border-black">Particulars</th>
+                <th className="py-2.5 px-2 border-r border-black w-28">Colour</th>
+                <th className="py-2.5 px-2 border-r border-black w-28">Process</th>
+                <th className="py-2.5 px-2 text-right w-24">Qty.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black">
               {challanData.items.map((item, idx) => {
                 const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+                const itemPartyDc = item.partyDcNo && item.partyDcNo !== '-' ? item.partyDcNo : (challanData.partyDcNumber !== '-' ? challanData.partyDcNumber : '—');
                 return (
                   <tr key={idx} className="hover:bg-slate-50">
-                    <td className="py-1 px-1.5 border-r border-black text-center font-bold text-black align-top">
+                    <td className="py-2.5 px-1.5 border-r border-black text-center font-bold text-black align-middle">
                       {String(item.sNo || idx + 1).padStart(2, '0')}
                     </td>
-                    <td className="py-1 px-2 border-r border-black font-bold text-black">
+                    <td className="py-2.5 px-2 border-r border-black text-center font-bold text-black align-middle">
+                      {itemPartyDc}
+                    </td>
+                    <td className="py-2.5 px-2 border-r border-black font-bold text-black align-middle">
                       {parsed.itemName}
                     </td>
-                    <td className="py-1 px-2 border-r border-black font-semibold text-black">
+                    <td className="py-2.5 px-2 border-r border-black font-semibold text-black align-middle">
                       {parsed.colour}
                     </td>
-                    <td className="py-1 px-2 border-r border-black font-semibold text-black">
+                    <td className="py-2.5 px-2 border-r border-black font-semibold text-black align-middle">
                       {parsed.process}
                     </td>
-                    <td className="py-1 px-2 text-right font-black text-black whitespace-nowrap align-top">
+                    <td className="py-2.5 px-2 text-right font-black text-black whitespace-nowrap align-middle">
                       {item.quantity}
                     </td>
                   </tr>
@@ -238,17 +228,18 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
               })}
               {Array.from({ length: Math.max(0, 2 - challanData.items.length) }).map((_, idx) => (
                 <tr key={`empty-${idx}`}>
-                  <td className="py-1 border-r border-black">&nbsp;</td>
-                  <td className="py-1 border-r border-black">&nbsp;</td>
-                  <td className="py-1 border-r border-black">&nbsp;</td>
-                  <td className="py-1 border-r border-black">&nbsp;</td>
-                  <td className="py-1">&nbsp;</td>
+                  <td className="py-2.5 border-r border-black">&nbsp;</td>
+                  <td className="py-2.5 border-r border-black">&nbsp;</td>
+                  <td className="py-2.5 border-r border-black">&nbsp;</td>
+                  <td className="py-2.5 border-r border-black">&nbsp;</td>
+                  <td className="py-2.5 border-r border-black">&nbsp;</td>
+                  <td className="py-2.5">&nbsp;</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-black bg-slate-100 font-black">
-                <td colSpan={4} className="py-1 px-2 border-r border-black text-right uppercase text-[11px] tracking-wider text-black">
+                <td colSpan={5} className="py-1 px-2 border-r border-black text-right uppercase text-[11px] tracking-wider text-black">
                   TOTAL QUANTITY:
                 </td>
                 <td className="py-1 px-2 text-right text-black font-black text-xs sm:text-sm">
@@ -260,7 +251,7 @@ const ChallanSlip: React.FC<ChallanSlipProps> = ({ challanData, isResolving }) =
         </div>
 
         {/* 3.5. Note Section (Fetched from database remarks/notes) */}
-        <div className="my-1.5 px-2.5 py-1 bg-slate-50 border border-slate-300 rounded text-xs text-black flex items-start gap-2">
+        <div className="mt-3.5 mb-2 px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs text-black flex items-start gap-2">
           <span className="font-extrabold text-black uppercase tracking-wider shrink-0 text-[11px]">Note :</span>
           <span className="font-semibold text-black leading-tight break-words">
             {challanData.notes && challanData.notes.trim() ? challanData.notes.trim() : '—'}
@@ -449,16 +440,6 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
           </Button>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenEditModal}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 border-slate-300 hover:bg-slate-50"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-              Edit All DC Details
-            </Button>
-
             {/* Download Button */}
             <button
               onClick={handleDownloadPdf}
@@ -621,14 +602,14 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Our P.O. No.
+                    Customer P.O. No.
                   </label>
                   <input
                     type="text"
-                    value={formState.poNumber || ''}
-                    onChange={(e) => setFormState({ ...formState, poNumber: e.target.value })}
+                    value={formState.customerPoNumber !== undefined ? formState.customerPoNumber : (formState.poNumber || '')}
+                    onChange={(e) => setFormState({ ...formState, customerPoNumber: e.target.value })}
                     className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
-                    placeholder="e.g. PO-2026-001"
+                    placeholder="e.g. CUST-PO-2026-001"
                   />
                 </div>
                 <div>
@@ -763,6 +744,7 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                         itemName: 'Fabric / Garments',
                         colour: '-',
                         process: '-',
+                        partyDcNo: formState.partyDcNumber && formState.partyDcNumber !== '-' ? formState.partyDcNumber : '—',
                         description: 'Fabric / Garments',
                         quantity: '01 ps'
                       }
@@ -782,6 +764,20 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
                   return (
                     <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-2 border border-slate-200 rounded">
                       <span className="w-6 text-center font-bold text-slate-700">{idx + 1}</span>
+                      <input
+                        type="text"
+                        value={item.partyDcNo !== undefined ? item.partyDcNo : ''}
+                        onChange={(e) => {
+                          const nextItems = [...formState.items];
+                          nextItems[idx] = {
+                            ...nextItems[idx],
+                            partyDcNo: e.target.value
+                          };
+                          setFormState({ ...formState, items: nextItems });
+                        }}
+                        className="w-24 bg-white border border-slate-300 rounded px-2 py-1 text-xs font-semibold"
+                        placeholder="Party D.C. No."
+                      />
                       <input
                         type="text"
                         value={item.itemName !== undefined ? item.itemName : parsed.itemName}

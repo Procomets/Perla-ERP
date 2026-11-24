@@ -168,6 +168,7 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
       itemName: string;
       colour: string;
       process: string;
+      partyDcNo: string;
       description: string;
       quantity: string;
       sourceDc: string;
@@ -190,11 +191,15 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
         const qty = Number(l.dispatchQty) || 0;
         const unit = l.unit || 'ps';
 
+        const lineDc = DeliveryChallanPdfService.resolvePartyDcForLine(outward, l, inwards);
+        const rowPartyDc = lineDc.partyDcNumber !== '-' ? lineDc.partyDcNumber : (partyDcNumber !== '-' ? partyDcNumber : '—');
+
         items.push({
           sNo: counter++,
           itemName: itemDesc,
           colour: col,
           process: proc,
+          partyDcNo: rowPartyDc,
           description: desc,
           quantity: `${qty.toLocaleString('en-IN')} ${unit}`,
           sourceDc
@@ -203,7 +208,7 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
     });
 
     return items;
-  }, [selectedOutwards, styleNo]);
+  }, [selectedOutwards, styleNo, inwards, partyDcNumber]);
 
   // Calculate total combined quantity string
   const totalQuantityStr = useMemo(() => {
@@ -227,9 +232,14 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
         itemName: item.itemName,
         colour: item.colour,
         process: item.process,
+        partyDcNo: item.partyDcNo,
         description: item.description,
         quantity: item.quantity
       }));
+
+      const resolvedCustPo = primaryOutward
+        ? DeliveryChallanPdfService.resolveCustomerPoNumber(primaryOutward)
+        : poNumber;
 
       const finalChallanData: DeliveryChallanData = {
         dcNumber: joinedDcNumber.trim() || 'DC-PERLA-JOINED',
@@ -243,6 +253,7 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
         driverName: driverName.trim() || '—',
         timeOut: formatTimeDisplay(timeOut),
         poNumber,
+        customerPoNumber: resolvedCustPo,
         styleNo,
         companyGstin,
         companyPhone,
@@ -457,27 +468,31 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider sticky top-0">
                 <tr>
-                  <th className="py-2 px-3 text-center w-12">S.No</th>
-                  <th className="py-2 px-3">Particulars &amp; Description</th>
-                  <th className="py-2 px-3 text-center w-36">Source DC</th>
-                  <th className="py-2 px-3 text-right w-28">Quantity</th>
+                  <th className="py-2.5 px-3 text-center w-12">S.No</th>
+                  <th className="py-2.5 px-3 text-center w-28">Party DC</th>
+                  <th className="py-2.5 px-3">Particulars &amp; Description</th>
+                  <th className="py-2.5 px-3 text-center w-28">Source DC</th>
+                  <th className="py-2.5 px-3 text-right w-28">Quantity</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {combinedItems.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50/70">
-                    <td className="py-2 px-3 text-center text-slate-500 font-mono text-[11px]">
+                    <td className="py-2.5 px-3 text-center text-slate-500 font-mono text-[11px]">
                       {String(item.sNo).padStart(2, '0')}
                     </td>
-                    <td className="py-2 px-3 font-semibold text-slate-900">
+                    <td className="py-2.5 px-3 text-center font-bold text-slate-800 text-[11px]">
+                      {item.partyDcNo || '—'}
+                    </td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-900">
                       {item.description}
                     </td>
-                    <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-600">
+                    <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-600">
                       <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                         {item.sourceDc}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-right font-bold text-emerald-800">
+                    <td className="py-2.5 px-3 text-right font-bold text-emerald-800">
                       {item.quantity}
                     </td>
                   </tr>
@@ -485,7 +500,7 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
               </tbody>
               <tfoot className="bg-slate-50 font-bold border-t border-slate-300">
                 <tr>
-                  <td colSpan={3} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider text-slate-700">
+                  <td colSpan={4} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider text-slate-700">
                     Total Quantity:
                   </td>
                   <td className="py-2 px-3 text-right font-black text-slate-900 text-xs">
@@ -506,11 +521,12 @@ export const JoinedDcModal: React.FC<JoinedDcModalProps> = ({
           <Button
             variant="primary"
             onClick={handleDownloadJoinedPdf}
-            disabled={isDownloading}
-            className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] flex items-center gap-1.5 shadow-xs cursor-pointer"
+            icon={<Download className="w-4 h-4" />}
+            loading={isDownloading}
+            loadingText="Generating Joined DC..."
+            className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] shadow-xs cursor-pointer"
           >
-            <Download className="w-4 h-4" />
-            <span>{isDownloading ? 'Generating Joined DC...' : 'Download Joined DC (PDF)'}</span>
+            Download Joined DC (PDF)
           </Button>
         </div>
       </div>

@@ -276,27 +276,16 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </Button>
 
             {canManage && !isCancelled && (
-              lockStatus ? (
+              lockStatus?.isFullyLocked ? (
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled
                   icon={<Lock className="w-4 h-4 text-slate-400" />}
-                  title={lockStatus.reason}
+                  title={lockStatus.reason || 'All colour lines have been invoiced completely. PO cannot be edited.'}
                   className="opacity-60 cursor-not-allowed text-slate-400 border-slate-200"
                 >
-                  Edit PO (Locked)
-                </Button>
-              ) : hasInwardTaken && !isAdmin ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled
-                  icon={<Lock className="w-4 h-4 text-slate-400" />}
-                  title="Inward has been entered for this PO. Only Admin can edit."
-                  className="opacity-60 cursor-not-allowed text-slate-400 border-slate-200"
-                >
-                  Edit PO (Admin Only)
+                  Edit PO (Invoiced)
                 </Button>
               ) : (
                 <Button
@@ -1000,7 +989,6 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </p>
             <textarea
               rows={3}
-              placeholder="e.g. Rate revision required, color availability mismatch..."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 focus:outline-hidden focus:border-rose-500"
@@ -1041,7 +1029,6 @@ export const PODetails: React.FC<PODetailsProps> = ({
             </div>
             <textarea
               rows={3}
-              placeholder="Reason for cancellation..."
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 focus:outline-hidden"

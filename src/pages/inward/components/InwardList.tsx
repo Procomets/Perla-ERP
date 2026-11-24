@@ -992,16 +992,16 @@ export const InwardList: React.FC<InwardListProps> = ({
                     </div>
                   </th>
 
-                  {/* 5. PO Number */}
+                  {/* 5. Style No / PO No */}
                   <th
                     className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
                       sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
                     }`}
                     onClick={() => handleSort('poNumber')}
-                    title={getSortTooltip('poNumber', 'PO Number')}
+                    title={getSortTooltip('poNumber', 'Style No / PO No')}
                   >
                     <div className="flex items-center gap-1.5 justify-start">
-                      <span>PO Number</span>
+                      <span>Style No / PO No</span>
                       {renderSortIcon('poNumber')}
                     </div>
                   </th>
@@ -1280,18 +1280,18 @@ export const InwardList: React.FC<InwardListProps> = ({
                           </div>
                         </td>
 
-                        {/* 5. PO Number & Style (Hover Details) */}
+                        {/* 5. Style No & PO Number (Hover Details) */}
                         <td className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">
                           <div
                             onMouseEnter={(e) => handleMouseEnter(e, 'po', row)}
                             onMouseLeave={handleMouseLeave}
                             className="cursor-pointer group/po inline-block"
                           >
-                            <div className="font-bold text-[#1F4E79] group-hover/po:underline transition-colors">
-                              {row.poNumberSnapshot || row.poNumber}
+                            <div className="font-bold text-slate-900 group-hover/po:text-[#1F4E79] group-hover/po:underline transition-colors text-xs">
+                              {row.styleNoSnapshot || row.styleNo || '—'}
                             </div>
-                            <div className="text-[11px] text-slate-500 font-normal">
-                              Style: {row.styleNoSnapshot || row.styleNo}
+                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              {row.poNumberSnapshot || row.poNumber}
                             </div>
                           </div>
                         </td>

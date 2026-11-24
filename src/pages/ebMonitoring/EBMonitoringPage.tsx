@@ -5,6 +5,7 @@ import { EBMonitoringService } from '../../services/ebMonitoringService';
 import { EBSettingsService } from '../../services/ebSettingsService';
 import { isUserAdmin } from '../../utils/permissions';
 import { Modal } from '../../components/ui/Modal';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import {
   Plus,
@@ -16,6 +17,7 @@ import {
   X,
   FileSpreadsheet,
   CheckCircle2,
+  Loader2,
   Clock,
   Zap,
   Lock,
@@ -1509,16 +1511,25 @@ export const EBMonitoringPage: React.FC = () => {
             <button
               type="submit"
               disabled={formSubmitting}
-              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
             >
-              {formSubmitting
-                ? 'Saving...'
-                : isEditMode
-                ? 'Update Reading'
-                : 'Save Reading'}
+              {formSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>{isEditMode ? 'Update Reading' : 'Save Reading'}</span>
+              )}
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={formSubmitting}
+          title={isEditMode ? 'Updating EB Reading...' : 'Recording EB Meter Reading...'}
+          message="Calculating peak/normal power units, applying slab rates, and saving EB log..."
+        />
       </Modal>
     </div>
   );

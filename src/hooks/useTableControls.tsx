@@ -55,15 +55,14 @@ export function useTableControls<T>(data: T[], options: UseTableControlsOptions<
     const isCurrent = sortField === field && sortDirection !== 'normal';
     return (
       <span
-        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${
-          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
-        }`}
+        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
+          }`}
         title={
           sortField === field && sortDirection === 'asc'
             ? 'Sorted ascending (click to sort descending or reset to normal)'
             : sortField === field && sortDirection === 'desc'
-            ? 'Sorted descending (click to reset to normal)'
-            : 'Click to sort'
+              ? 'Sorted descending (click to reset to normal)'
+              : 'Click to sort'
         }
       >
         {isCurrent ? (

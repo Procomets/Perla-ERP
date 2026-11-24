@@ -14,6 +14,7 @@ import { LandingPage } from './pages/landing/LandingPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { PurchaseOrdersPage } from './pages/purchaseOrders/PurchaseOrdersPage';
+import { SamplePoPage } from './pages/sampleProcess/SamplePoPage';
 import { InwardPage } from './pages/inward/InwardPage';
 import { OutwardPage } from './pages/outward/OutwardPage';
 import { StatementPage } from './pages/statement/StatementPage';
@@ -60,6 +61,8 @@ import { InvoiceService } from './services/invoiceService';
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Executive Dashboard', subtitle: 'Overview of operational trends, PO balances, and quick actions' },
   po: { title: 'Purchase Orders (PO)', subtitle: 'Customer work order creation & style/colour line specifications' },
+  'sample-po': { title: 'Sample PO Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
+  sample: { title: 'Sample PO Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
   inward: { title: 'Inward Receipt Entry', subtitle: 'Record incoming customer fabric batches against POs' },
   outward: { title: 'Outward Dispatch Entry', subtitle: 'Record finished processed goods dispatched to customers' },
   statement: { title: 'Inward vs Outward Reconciliation Statement', subtitle: 'Colour-wise balance ledger & invoice approval' },
@@ -99,6 +102,7 @@ interface ErpLayoutProps {
   onUpdateOutward?: (outward: OutwardEntry) => void;
   onApproveForInvoice: (id: string) => void;
   onAddInvoice: (inv: Invoice) => void;
+  onUpdateInvoice?: (inv: Invoice) => void;
   onAddChemicalEntry: (entry: ChemicalEntry) => void;
   onAddVendor: (v: Vendor) => void;
   onAddItem: (item: InventoryItem) => void;
@@ -174,6 +178,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
           <div className="max-w-7xl mx-auto p-3 sm:p-5 md:p-8">
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
             {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} onUpdatePo={props.onUpdatePo} />}
+            {(moduleId === 'sample-po' || moduleId === 'sample') && <SamplePoPage vendors={props.vendors} />}
             {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} onUpdateInward={props.onUpdateInward} />}
             {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} vendors={props.vendors} onAddOutward={props.onAddOutward} onUpdateOutward={props.onUpdateOutward} />}
             {moduleId === 'statement' && (
@@ -181,6 +186,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
                 pos={props.pos}
                 inwards={props.inwards}
                 outwards={props.outwards}
+                vendors={props.vendors}
                 approvedPoLineIds={props.approvedPoLineIds}
                 invoicedPoLineIds={props.invoicedPoLineIds}
                 onApproveForInvoice={props.onApproveForInvoice}
@@ -193,6 +199,7 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
                 vendors={props.vendors}
                 approvedPoLineIds={props.approvedPoLineIds}
                 onAddInvoice={props.onAddInvoice}
+                onUpdateInvoice={props.onUpdateInvoice}
               />
             )}
             {moduleId === 'chemical' && <ChemicalEntryPage />}
@@ -341,7 +348,12 @@ const AppContent: React.FC = () => {
     }
   };
   const handleAddInvoice = (newInvoice: Invoice) => {
-    setInvoices((prev) => [newInvoice, ...prev]);
+    setInvoices((prev) => [
+      newInvoice,
+      ...prev.filter(
+        (i) => i.id !== newInvoice.id && i.invoiceNo !== newInvoice.invoiceNo
+      )
+    ]);
     newInvoice.lines.forEach((l) => {
       if (!invoicedPoLineIds.includes(l.sourcePoLineId)) {
         setInvoicedPoLineIds((prev) => [...prev, l.sourcePoLineId]);
@@ -354,6 +366,16 @@ const AppContent: React.FC = () => {
         isDemoMode
       ).catch((err) => console.error('Failed to mark approval as invoiced:', err));
     });
+  };
+
+  const handleUpdateInvoice = (updatedInvoice: Invoice) => {
+    setInvoices((prev) =>
+      prev.map((i) =>
+        i.id === updatedInvoice.id || i.invoiceNo === updatedInvoice.invoiceNo
+          ? updatedInvoice
+          : i
+      )
+    );
   };
   const handleAddChemicalEntry = (entry: ChemicalEntry) => setChemicalEntries((prev) => [entry, ...prev]);
   const handleAddVendor = (v: Vendor) => setVendors((prev) => [v, ...prev]);
@@ -403,6 +425,7 @@ const AppContent: React.FC = () => {
             onUpdateOutward={handleUpdateOutward}
             onApproveForInvoice={handleApproveForInvoice}
             onAddInvoice={handleAddInvoice}
+            onUpdateInvoice={handleUpdateInvoice}
             onAddChemicalEntry={handleAddChemicalEntry}
             onAddVendor={handleAddVendor}
             onAddItem={handleAddItem}

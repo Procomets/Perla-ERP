@@ -13,6 +13,7 @@ import {
 } from '../../services/vehicleMonitoringService';
 import { VehicleService } from '../../services/vehicleService';
 import { Modal } from '../../components/ui/Modal';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import {
   Plus,
@@ -23,6 +24,7 @@ import {
   X,
   FileSpreadsheet,
   CheckCircle2,
+  Loader2,
   Calendar,
   Clock,
   Gauge,
@@ -1656,16 +1658,25 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
             <button
               type="submit"
               disabled={formSubmitting}
-              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
             >
-              {formSubmitting
-                ? 'Saving...'
-                : isEditMode
-                ? 'Update Daily Entry'
-                : 'Save Daily Entry'}
+              {formSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>{isEditMode ? 'Update Daily Entry' : 'Save Daily Entry'}</span>
+              )}
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={formSubmitting}
+          title={isEditMode ? 'Updating Daily Expense...' : 'Saving Daily Expense...'}
+          message="Calculating fuel costs, mileage metrics, and recording trip details..."
+        />
       </Modal>
     </div>
   );

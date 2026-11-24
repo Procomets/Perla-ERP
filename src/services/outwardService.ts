@@ -487,18 +487,18 @@ export class OutwardService {
     let transporterName: string | null = null;
 
     try {
-      const custRes = await VendorService.getVendorById(input.customerVendorId, isDemo);
+      const [custRes, subRes, transRes] = await Promise.all([
+        VendorService.getVendorById(input.customerVendorId, isDemo),
+        input.subcontractorVendorId
+          ? VendorService.getVendorById(input.subcontractorVendorId, isDemo)
+          : Promise.resolve(null),
+        input.transporterVendorId
+          ? VendorService.getVendorById(input.transporterVendorId, isDemo)
+          : Promise.resolve(null)
+      ]);
       if (custRes?.vendor) customerName = custRes.vendor.companyName;
-
-      if (input.subcontractorVendorId) {
-        const subRes = await VendorService.getVendorById(input.subcontractorVendorId, isDemo);
-        if (subRes?.vendor) subcontractorName = subRes.vendor.companyName;
-      }
-
-      if (input.transporterVendorId) {
-        const transRes = await VendorService.getVendorById(input.transporterVendorId, isDemo);
-        if (transRes?.vendor) transporterName = transRes.vendor.companyName;
-      }
+      if (subRes?.vendor) subcontractorName = subRes.vendor.companyName;
+      if (transRes?.vendor) transporterName = transRes.vendor.companyName;
     } catch (e) {
       // keep fallback
     }
@@ -547,6 +547,8 @@ export class OutwardService {
       poId: input.poId,
       poNumberSnapshot: po.poNumber,
       poNumber: po.poNumber,
+      customerPoNumberSnapshot: po.customerPoNumber || null,
+      customerPoNumber: po.customerPoNumber || null,
       customerVendorId: input.customerVendorId,
       customerId: input.customerVendorId,
       customerCompanyNameSnapshot: customerName,
@@ -603,17 +605,18 @@ export class OutwardService {
         const outRef = doc(db, 'outward_entries', docId);
         const auditRef = doc(db, 'outward_audit_logs', auditLog.auditId);
 
-        await setDoc(outRef, {
-          ...newEntry,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now(),
-          postedAt: Timestamp.now()
-        });
-
-        await setDoc(auditRef, {
-          ...auditLog,
-          performedAt: Timestamp.now()
-        });
+        await Promise.all([
+          setDoc(outRef, {
+            ...newEntry,
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+            postedAt: Timestamp.now()
+          }),
+          setDoc(auditRef, {
+            ...auditLog,
+            performedAt: Timestamp.now()
+          })
+        ]);
       } catch (err) {
         console.warn('Firestore outward write failed, writing to local fallback:', err);
       }
@@ -718,6 +721,8 @@ export class OutwardService {
       poId: input.poId,
       poNumberSnapshot: po.poNumber,
       poNumber: po.poNumber,
+      customerPoNumberSnapshot: po.customerPoNumber || null,
+      customerPoNumber: po.customerPoNumber || null,
       customerVendorId: input.customerVendorId,
       customerId: input.customerVendorId,
       customerCompanyNameSnapshot: customerName,

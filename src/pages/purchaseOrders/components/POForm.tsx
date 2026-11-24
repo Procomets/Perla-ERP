@@ -33,6 +33,8 @@ import {
   RateBasis
 } from '../../../types/po';
 import { Vendor } from '../../../types/vendor';
+import { ValidationToast } from '../../../components/ui/ValidationToast';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 import { InwardEntry } from '../../../types/inwardOutward';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -45,11 +47,13 @@ import { formatCurrency, formatQuantity } from '../../../utils/formatters';
 import { hasInwardForPO } from '../../../utils/calculations';
 import { InwardService } from '../../../services/inwardService';
 import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/components/SearchableSelect';
+import { POLockService, POLockStatus } from '../../../services/poLockService';
 
 interface POFormProps {
   initialPO?: PurchaseOrder | null;
   vendors: Vendor[];
   inwards?: InwardEntry[];
+  lockedPOMap?: Record<string, POLockStatus>;
   onSave: (
     poData: Partial<PurchaseOrder>,
     status: 'draft' | 'approved' | string
@@ -63,6 +67,7 @@ export const POForm: React.FC<POFormProps> = ({
   initialPO,
   vendors,
   inwards = [],
+  lockedPOMap,
   onSave,
   onCancel,
   isSaving,
@@ -75,6 +80,13 @@ export const POForm: React.FC<POFormProps> = ({
       (user as any)?.role === 'Admin' ||
       (user as any)?.role === 'admin');
   const hasInward = initialPO ? hasInwardForPO(initialPO, inwards) : false;
+
+  const poLockStatus = useMemo(() => {
+    if (!initialPO) return null;
+    return POLockService.getPOStatus(initialPO, lockedPOMap);
+  }, [initialPO, lockedPOMap]);
+
+  const isPoFullyLocked = Boolean(poLockStatus?.isFullyLocked);
   const [allVendors, setAllVendors] = useState<Vendor[]>(() => {
     return (vendors || []).map((v) => ({
       ...v,
@@ -147,14 +159,6 @@ export const POForm: React.FC<POFormProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(() => {
     if (initialPO?.customerId) return initialPO.customerId;
     if (initialPO?.customerVendorId) return initialPO.customerVendorId;
-    if (eligibleCustomers[0]) {
-      return (
-        eligibleCustomers[0].vendorId ||
-        eligibleCustomers[0].id ||
-        eligibleCustomers[0].vendorCode ||
-        ''
-      );
-    }
     return '';
   });
 
@@ -164,10 +168,9 @@ export const POForm: React.FC<POFormProps> = ({
     return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
   };
 
-  // Selected customer snapshot - guaranteed never null when eligibleCustomers has items
+  // Selected customer snapshot - null when no customer is selected
   const selectedCustomer = useMemo(() => {
-    if (eligibleCustomers.length === 0) return null;
-    if (!selectedCustomerId) return eligibleCustomers[0];
+    if (eligibleCustomers.length === 0 || !selectedCustomerId) return null;
 
     const target = selectedCustomerId.toLowerCase().trim();
     const targetClean = cleanStr(selectedCustomerId);
@@ -205,21 +208,9 @@ export const POForm: React.FC<POFormProps> = ({
           cleanStr(name) === targetClean
         );
       }) ||
-      eligibleCustomers[0]
+      null
     );
   }, [eligibleCustomers, allVendors, selectedCustomerId]);
-
-  // Ensure selectedCustomerId is valid
-  useEffect(() => {
-    if (!selectedCustomerId && eligibleCustomers.length > 0) {
-      setSelectedCustomerId(
-        eligibleCustomers[0].vendorId ||
-          eligibleCustomers[0].id ||
-          eligibleCustomers[0].vendorCode ||
-          ''
-      );
-    }
-  }, [eligibleCustomers, selectedCustomerId]);
 
   // Subcontractor / Subcompany Unit toggle state: 'none' | 'subcontractor' | 'subcompany'
   const [unitType, setUnitType] = useState<'none' | 'subcontractor' | 'subcompany'>(() => {
@@ -373,7 +364,7 @@ export const POForm: React.FC<POFormProps> = ({
     }
   }, [selectedCustomerId, unitType, linkedUnits]);
   const [processCategory, setProcessCategory] = useState<ProcessCategory>(
-    initialPO?.processCategory || 'washing'
+    initialPO?.processCategory || ('' as any)
   );
   const [styleNo, setStyleNo] = useState<string>(
     initialPO?.styleNo || initialPO?.styleNumber || ''
@@ -415,19 +406,36 @@ export const POForm: React.FC<POFormProps> = ({
           colourName: '',
           colourCode: null,
           colourId: null,
-          processType: 'Softener Wash',
-          quantity: 1000,
+          processType: '',
+          quantity: '' as any,
           unit: 'piece',
           rateBasis: 'per_piece',
-          rate: 6.0,
-          lineAmount: 6000.0,
-          amount: 6000.0,
+          rate: '' as any,
+          lineAmount: 0,
+          amount: 0,
           notes: ''
         }
       ];
 
   const [lines, setLines] = useState<POColourLine[]>(defaultInitialLines);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [toastTitle, setToastTitle] = useState<string>('Cannot Submit Purchase Order');
+  const [toastSubtitle, setToastSubtitle] = useState<string>('Please fill all compulsory fields to submit:');
+  const [toastErrors, setToastErrors] = useState<string[]>([]);
+  const [showToast, setShowToast] = useState<boolean>(false);
+
+  const triggerToast = (title: string, subtitle: string, errors: string[]) => {
+    setToastTitle(title);
+    setToastSubtitle(subtitle);
+    setToastErrors(errors);
+    setShowToast(true);
+  };
+
+  useEffect(() => {
+    if (showToast) {
+      const timer = setTimeout(() => setShowToast(false), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [showToast]);
   const [masterColours, setMasterColours] = useState<ColourItem[]>([]);
   const [masterProcesses, setMasterProcesses] = useState<ProcessItem[]>([]);
   const [masterHsns, setMasterHsns] = useState<HsnItem[]>([]);
@@ -706,11 +714,6 @@ export const POForm: React.FC<POFormProps> = ({
   // Add colour row
   const handleAddLine = () => {
     const newLineId = `pol_${Date.now()}_${lines.length + 1}`;
-    const defaultWash =
-      processCategory.toLowerCase() === 'dyeing'
-        ? 'Reactive Dyeing'
-        : 'Softener Wash';
-    const defaultHsn = masterHsns.find((h) => h.isActive)?.hsnNo || '998821';
 
     const newLine: POColourLine = {
       id: newLineId,
@@ -718,14 +721,14 @@ export const POForm: React.FC<POFormProps> = ({
       colourName: '',
       colourCode: null,
       colourId: null,
-      processType: defaultWash,
-      hsnNo: defaultHsn,
-      quantity: 500,
+      processType: '',
+      hsnNo: '',
+      quantity: '' as any,
       unit: 'piece',
       rateBasis: 'per_piece',
-      rate: 6.0,
-      lineAmount: 3000.0,
-      amount: 3000.0,
+      rate: '' as any,
+      lineAmount: 0,
+      amount: 0,
       notes: ''
     };
 
@@ -739,6 +742,10 @@ export const POForm: React.FC<POFormProps> = ({
       return;
     }
     const targetLine = lines[index];
+    if (initialPO && POLockService.isLineLocked(initialPO, targetLine, lockedPOMap)) {
+      alert(`Cannot remove colour '${targetLine.colourName || `Row #${index + 1}`}': This colour line has already been invoiced.`);
+      return;
+    }
     const minQty = getMinAllowedQtyForLine(targetLine);
     if (minQty > 0) {
       alert(
@@ -755,6 +762,9 @@ export const POForm: React.FC<POFormProps> = ({
     field: keyof POColourLine,
     value: any
   ) => {
+    if (initialPO && POLockService.isLineLocked(initialPO, lines[index], lockedPOMap)) {
+      return;
+    }
     const updated = [...lines];
     const item = { ...updated[index], [field]: value };
 
@@ -782,24 +792,157 @@ export const POForm: React.FC<POFormProps> = ({
 
   // Form submission handler
   const handleSubmit = async (targetStatus: 'draft' | 'submitted' | string) => {
-    setValidationErrors([]);
+    setToastErrors([]);
+    setShowToast(false);
 
-    if (hasInward && !isUserAdmin) {
-      alert('This Purchase Order has inward entries and can only be edited by an Administrator.');
-      return;
-    }
-
-    // Validate that no colour line has its quantity reduced below inward received
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const minQty = getMinAllowedQtyForLine(line);
-      const currentQty = Number(line.quantity) || 0;
-      if (minQty > 0 && currentQty < minQty) {
-        const errMsg = `Quantity for colour '${line.colourName || `Row #${i + 1}`}' cannot be less than ${minQty.toLocaleString()} ${line.unit} because ${minQty.toLocaleString()} ${line.unit} has already been received in Inward entries.`;
-        setValidationErrors([errMsg]);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (initialPO) {
+      if (isPoFullyLocked) {
+        const lockMsg = poLockStatus?.reason || 'All colour lines have been invoiced completely. PO entry cannot be edited.';
+        triggerToast('Purchase Order Entry Locked', 'This purchase order cannot be edited:', [lockMsg]);
         return;
       }
+      if (poLockStatus && (poLockStatus.invoicedLinesCount > 0 || poLockStatus.approvedLinesCount > 0)) {
+        const origLines = initialPO.colourLines || initialPO.lines || [];
+        for (const orig of origLines) {
+          if (POLockService.isLineLocked(initialPO, orig, lockedPOMap)) {
+            const currentLine = lines.find(
+              (l) =>
+                (l.id && l.id === orig.id) ||
+                (orig.lineId && l.lineId === orig.lineId) ||
+                (l.colourName && l.colourName.trim().toLowerCase() === orig.colourName.trim().toLowerCase())
+            );
+            if (!currentLine) {
+              const msg = `Cannot remove colour line '${orig.colourName}': It has already been invoiced.`;
+              triggerToast('Cannot Remove Invoiced Line', '', [msg]);
+              return;
+            }
+            if (Number(currentLine.quantity) !== Number(orig.quantity)) {
+              const msg = `Cannot change quantity for colour line '${orig.colourName}': It has already been invoiced.`;
+              triggerToast('Cannot Change Invoiced Quantity', '', [msg]);
+              return;
+            }
+            if (Number(currentLine.rate) !== Number(orig.rate)) {
+              const msg = `Cannot change rate for colour line '${orig.colourName}': It has already been invoiced.`;
+              triggerToast('Cannot Change Invoiced Rate', '', [msg]);
+              return;
+            }
+            if (currentLine.unit !== orig.unit) {
+              const msg = `Cannot change unit for colour line '${orig.colourName}': It has already been invoiced.`;
+              triggerToast('Cannot Change Invoiced Unit', '', [msg]);
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    const errors: string[] = [];
+
+    // 1. Customer Company
+    if (!selectedCustomerId) {
+      errors.push('Customer Company is required.');
+    }
+
+    // 2. Process Category
+    if (!processCategory) {
+      errors.push('Process Category (Washing or Dyeing) is required.');
+    }
+
+    // 3. Style Number
+    if (!styleNo || !styleNo.trim()) {
+      errors.push('Style Number is required.');
+    }
+
+    // 4. Item Name / Description
+    if (!itemName || !itemName.trim()) {
+      errors.push('Item Name / Description is required.');
+    }
+
+    // 5. Order Date
+    if (!orderDate) {
+      errors.push('Order Date is required.');
+    }
+
+    // 6. Subcontractor / Subcompany Unit
+    if (unitType !== 'none' && !selectedSubUnitId) {
+      errors.push(
+        `Please select a ${
+          unitType === 'subcontractor' ? 'Subcontractor Unit' : 'Sister Company Unit'
+        }.`
+      );
+    }
+
+    // 7. Colour Lines
+    if (!lines || lines.length === 0) {
+      errors.push('At least one colour row is required.');
+    } else {
+      lines.forEach((line, idx) => {
+        const rowNum = idx + 1;
+        const lineDesc = line.colourName ? `Row #${rowNum} (${line.colourName})` : `Row #${rowNum}`;
+
+        if (!line.colourName || !line.colourName.trim()) {
+          errors.push(`Row #${rowNum}: Colour Name is required.`);
+        }
+
+        if (!line.processType || !line.processType.trim()) {
+          errors.push(`Row #${rowNum}: Wash / Process is required.`);
+        }
+
+        const rawQty = line.quantity as any;
+        const numQty = Number(rawQty);
+        if (rawQty === '' || rawQty === null || rawQty === undefined || isNaN(numQty) || numQty <= 0) {
+          errors.push(`Row #${rowNum}: Quantity must be greater than 0.`);
+        } else {
+          // Check against inward received minimum
+          const minQty = getMinAllowedQtyForLine(line);
+          if (minQty > 0 && numQty < minQty) {
+            errors.push(
+              `${lineDesc}: Quantity cannot be less than ${minQty.toLocaleString()} ${line.unit} (already received in Inward entries).`
+            );
+          }
+        }
+
+        const rawRate = line.rate as any;
+        const numRate = Number(rawRate);
+        if (rawRate === '' || rawRate === null || rawRate === undefined || isNaN(numRate) || numRate < 0) {
+          errors.push(`Row #${rowNum}: Rate (₹) is required.`);
+        }
+
+        const isPerKg =
+          line.rateBasis === 'per_kg' ||
+          line.rateBasis === 'perKg' ||
+          line.rateBasis === ('per kg' as any);
+        if (line.unit === 'piece' && isPerKg) {
+          const rawWeight = line.billableWeightKg;
+          const numWeight = Number(rawWeight);
+          if (rawWeight === undefined || rawWeight === null || isNaN(numWeight) || numWeight <= 0) {
+            errors.push(`Row #${rowNum}: Billable weight (kg) is required when rate basis is Per Kg.`);
+          }
+        }
+      });
+
+      // Duplicate colour & process check
+      const seen = new Set<string>();
+      lines.forEach((line, idx) => {
+        if (line.colourName && line.processType) {
+          const key = `${line.colourName.trim().toLowerCase()}_${line.processType.trim().toLowerCase()}`;
+          if (seen.has(key)) {
+            errors.push(
+              `Row #${idx + 1}: Duplicate colour & process '${line.colourName} - ${line.processType}' detected.`
+            );
+          }
+          seen.add(key);
+        }
+      });
+    }
+
+    if (errors.length > 0) {
+      triggerToast(
+        'Cannot Save Purchase Order',
+        'Please correct the following errors:',
+        errors
+      );
+      return;
     }
 
     const payload = {
@@ -854,16 +997,33 @@ export const POForm: React.FC<POFormProps> = ({
     const parseResult = purchaseOrderFormSchema.safeParse(payload);
     if (!parseResult.success) {
       const errMsgs = parseResult.error.issues.map((iss) => iss.message);
-      setValidationErrors(errMsgs);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      triggerToast(
+        'Cannot Submit Purchase Order',
+        'Please fill all compulsory fields to submit:',
+        errMsgs
+      );
       return;
     }
 
-    await onSave(payload, targetStatus);
+    try {
+      await onSave(payload, targetStatus);
+    } catch (err: any) {
+      const msg = err.message || 'Failed to save Purchase Order.';
+      triggerToast('Error Saving Purchase Order', '', [msg]);
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+    <div className="space-y-6 max-w-6xl mx-auto pb-12 relative">
+      {/* Toast Notification for Unfilled / Compulsory Missing Fields & Notices */}
+      <ValidationToast
+        isOpen={showToast}
+        onClose={() => setShowToast(false)}
+        title={toastTitle}
+        subtitle={toastSubtitle}
+        errors={toastErrors}
+      />
+
       {/* Top Header Bar */}
       <div className="flex items-center justify-between bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex items-center gap-3">
@@ -885,93 +1045,43 @@ export const POForm: React.FC<POFormProps> = ({
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-          {initialPO ? (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={hasInward && !isUserAdmin ? <Lock className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              onClick={() => handleSubmit(initialPO.status || 'draft')}
-              disabled={isSaving || (hasInward && !isUserAdmin)}
-              title={hasInward && !isUserAdmin ? 'Inward has been entered. Only Admin can edit this PO.' : undefined}
-              className={hasInward && !isUserAdmin ? 'opacity-60 cursor-not-allowed bg-slate-600 hover:bg-slate-600' : undefined}
-            >
-              {isSaving ? 'Saving...' : hasInward && !isUserAdmin ? 'Admin Edit Only' : 'Save Changes'}
-            </Button>
-          ) : isUserAdmin ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Save className="w-4 h-4" />}
-                onClick={() => handleSubmit('draft')}
-                disabled={isSaving}
-              >
-                Save as Draft
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<CheckCircle2 className="w-4 h-4" />}
-                onClick={() => handleSubmit('approved')}
-                disabled={isSaving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                Approve & Save PO
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Save className="w-4 h-4" />}
-              onClick={() => handleSubmit('draft')}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Saving...' : 'Save as Draft'}
-            </Button>
-          )}
-        </div>
       </div>
 
-      {/* Inward Restriction Notice */}
-      {hasInward && !isUserAdmin && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3 text-amber-900 shadow-2xs">
-          <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800 shrink-0">
-            <Lock className="w-5 h-5 text-amber-700" />
+      {/* Whole PO Locked Banner if all lines moved to invoice generation */}
+      {isPoFullyLocked && (
+        <div className="bg-rose-50 border border-rose-300 rounded-xl p-4 flex items-center gap-3 text-rose-900 shadow-2xs">
+          <div className="p-2.5 bg-rose-100 rounded-xl text-rose-800 shrink-0">
+            <Lock className="w-5 h-5 text-rose-700" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-amber-950">Editing Restricted (Administrator Only)</h4>
-            <p className="text-xs text-amber-800 mt-0.5">
-              Inward receipts/entries have already been entered for this Purchase Order. Once an inward is entered, this PO can only be edited by an Administrator.
+            <h4 className="text-sm font-bold text-rose-950">Purchase Order Entry Locked</h4>
+            <p className="text-xs text-rose-800 mt-0.5">
+              All colour lines for this purchase order have been moved to invoice generation. This purchase order cannot be edited.
             </p>
           </div>
         </div>
       )}
 
-      {/* Validation Errors Alert */}
-      {validationErrors.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-xs text-rose-800 space-y-1">
-          <div className="flex items-center gap-2 font-bold text-rose-900 mb-1">
-            <AlertCircle className="w-4 h-4 text-rose-600" />
-            <span>Please correct the following errors:</span>
+      {/* Partial Lock Notice if some colour lines are invoiced */}
+      {!isPoFullyLocked && poLockStatus && poLockStatus.invoicedLinesCount > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3 text-emerald-900 shadow-2xs">
+          <div className="p-2.5 bg-emerald-100 rounded-xl text-emerald-800 shrink-0">
+            <Lock className="w-5 h-5 text-emerald-700" />
           </div>
-          <ul className="list-disc list-inside space-y-0.5 pl-2 text-rose-700">
-            {validationErrors.map((err, i) => (
-              <li key={i}>{err}</li>
-            ))}
-          </ul>
+          <div>
+            <h4 className="text-sm font-bold text-emerald-950">
+              Invoiced Lines: {poLockStatus.invoicedLinesCount} of {poLockStatus.totalLines} Colour Lines Invoiced
+            </h4>
+            <p className="text-xs text-emerald-800 mt-0.5">
+              Colour lines that have already been invoiced cannot be modified or removed. All other colour lines remain editable (minimum allowable quantity is the inward received).
+            </p>
+          </div>
         </div>
       )}
 
       {/* Section 1: Customer & Work Order Specifications */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs space-y-5">
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-          <Building className="w-4 h-4 text-[#1F4E79]" />
+        <div className="border-b border-slate-100 pb-3">
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
             1. Customer & Work Order Header
           </h3>
@@ -988,8 +1098,8 @@ export const POForm: React.FC<POFormProps> = ({
             </div>
             <SearchableSelect
               value={selectedCustomer ? (selectedCustomer.vendorId || selectedCustomer.id || selectedCustomer.vendorCode || selectedCustomer.companyName) : selectedCustomerId}
-              placeholder="-- Select Customer Company --"
-              searchPlaceholder="Search customer company name or code..."
+              placeholder=""
+              searchPlaceholder=""
               groups={customerOptionGroups}
               onSelect={(opt) => setSelectedCustomerId(opt.id)}
               formatTriggerLabel={(opt) => (
@@ -998,26 +1108,6 @@ export const POForm: React.FC<POFormProps> = ({
                 </span>
               )}
             />
-
-            {selectedCustomer && (
-              <div className="mt-2 p-2.5 rounded-lg bg-[#EEF5FB] border border-[#BDD7EE] text-[11px] text-slate-700 space-y-1">
-                <div className="font-semibold text-[#1F4E79] flex items-center justify-between">
-                  <span>{selectedCustomer.companyName}</span>
-                  <span className="text-[10px] bg-blue-100 text-blue-800 font-mono px-1.5 py-0.5 rounded font-medium">
-                    Main Company
-                  </span>
-                </div>
-                <div className="text-slate-500">
-                  Code: <span className="font-mono">{selectedCustomer.vendorCode}</span> •{' '}
-                  {selectedCustomer.address?.city || 'Tamil Nadu'}
-                </div>
-                {selectedCustomer.taxDetails?.gstin && (
-                  <div className="text-slate-500 font-mono">
-                    GSTIN: {selectedCustomer.taxDetails.gstin}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Process Category */}
@@ -1030,8 +1120,8 @@ export const POForm: React.FC<POFormProps> = ({
                 type="button"
                 onClick={() => setProcessCategory('washing')}
                 className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
-                  processCategory.toLowerCase() === 'washing'
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                  processCategory?.toLowerCase() === 'washing'
+                    ? 'bg-black text-white border-black shadow-xs'
                     : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                 }`}
               >
@@ -1041,8 +1131,8 @@ export const POForm: React.FC<POFormProps> = ({
                 type="button"
                 onClick={() => setProcessCategory('dyeing')}
                 className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
-                  processCategory.toLowerCase() === 'dyeing'
-                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                  processCategory?.toLowerCase() === 'dyeing'
+                    ? 'bg-black text-white border-black shadow-xs'
                     : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                 }`}
               >
@@ -1060,7 +1150,6 @@ export const POForm: React.FC<POFormProps> = ({
               Style Number <span className="text-rose-500">*</span>
             </label>
             <Input
-              placeholder="e.g. 7777 / SKT-DENIM-9021"
               value={styleNo}
               onChange={(e) => setStyleNo(e.target.value)}
               required
@@ -1078,7 +1167,6 @@ export const POForm: React.FC<POFormProps> = ({
               Item Name / Description <span className="text-rose-500">*</span>
             </label>
             <Input
-              placeholder="e.g. Denim Shirts / Men's Twill Jeans"
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
               required
@@ -1091,7 +1179,6 @@ export const POForm: React.FC<POFormProps> = ({
               Customer PO Number
             </label>
             <Input
-              placeholder="e.g. Test-CUST-001"
               value={customerPoNumber}
               onChange={(e) => setCustomerPoNumber(e.target.value)}
             />
@@ -1120,27 +1207,20 @@ export const POForm: React.FC<POFormProps> = ({
       {/* Section 2: Colour-Wise Order Lines */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <Layers className="w-4 h-4 text-[#1F4E79]" />
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              2. Colour-Wise Order Details
-            </h3>
-            {masterColours.length > 0 && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#1F4E79] border border-blue-200">
-                <Palette className="w-3 h-3 text-[#1F4E79]" />
-                {masterColours.filter((c) => c.isActive).length} master colours
-              </span>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={<Plus className="w-3.5 h-3.5" />}
-            onClick={handleAddLine}
-          >
-            Add Colour Row
-          </Button>
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+            2. Colour-Wise Order Details
+          </h3>
+          {!isPoFullyLocked && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={handleAddLine}
+            >
+              Add Colour Row
+            </Button>
+          )}
         </div>
 
         {/* Dynamic Colour Rows */}
@@ -1149,6 +1229,13 @@ export const POForm: React.FC<POFormProps> = ({
             const minQty = getMinAllowedQtyForLine(line);
             const hasInwardForThisRow = minQty > 0;
             const isBelowInward = hasInwardForThisRow && (Number(line.quantity) || 0) < minQty;
+            const isLineInvoiced = Boolean(
+              initialPO && POLockService.isLineLocked(initialPO, line, lockedPOMap)
+            );
+            const isLineApproved = Boolean(
+              initialPO && POLockService.isLineApproved(initialPO, line, lockedPOMap)
+            );
+            const isRowDisabled = isLineInvoiced || isPoFullyLocked;
 
             const isPerKg =
               line.rateBasis === 'per_kg' ||
@@ -1160,8 +1247,12 @@ export const POForm: React.FC<POFormProps> = ({
               <div
                 key={line.id || line.lineId || idx}
                 className={`p-3.5 rounded-xl border transition-colors space-y-2 text-xs ${
-                  isBelowInward
-                    ? 'border-amber-300 bg-amber-50/50'
+                  isLineInvoiced
+                    ? 'border-emerald-200 bg-emerald-50/30'
+                    : isBelowInward
+                    ? 'border-rose-300 bg-rose-50/40 ring-1 ring-rose-200'
+                    : isLineApproved
+                    ? 'border-blue-200 bg-blue-50/20'
                     : 'border-slate-200 bg-slate-50/70 hover:bg-slate-50'
                 }`}
               >
@@ -1170,8 +1261,26 @@ export const POForm: React.FC<POFormProps> = ({
                     <span className="font-bold text-[#1F4E79]">
                       Row #{idx + 1}
                     </span>
+                    {isLineInvoiced && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5 text-emerald-600" />
+                        Invoiced (Locked)
+                      </span>
+                    )}
+                    {isLineApproved && !isLineInvoiced && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
+                        <FileCheck2 className="w-2.5 h-2.5 text-blue-600" />
+                        Moved to Invoice Generation
+                      </span>
+                    )}
                     {hasInwardForThisRow && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          isBelowInward
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}
+                      >
                         Inward Received: {minQty.toLocaleString()} {line.unit}
                       </span>
                     )}
@@ -1186,10 +1295,14 @@ export const POForm: React.FC<POFormProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRemoveLine(idx)}
-                      disabled={lines.length <= 1 || hasInwardForThisRow}
+                      disabled={lines.length <= 1 || hasInwardForThisRow || isRowDisabled}
                       className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                       title={
-                        hasInwardForThisRow
+                        isLineInvoiced
+                          ? 'Cannot remove: this colour line has already been invoiced.'
+                          : isPoFullyLocked
+                          ? 'Cannot remove: PO entry is locked.'
+                          : hasInwardForThisRow
                           ? `Cannot remove: ${minQty.toLocaleString()} ${line.unit} already received in Inward entries`
                           : lines.length <= 1
                           ? 'PO must have at least one line'
@@ -1208,7 +1321,7 @@ export const POForm: React.FC<POFormProps> = ({
                       <label className="text-[11px] font-semibold text-slate-600">
                         Colour Name *
                       </label>
-                      {!hasInwardForThisRow && (
+                      {!hasInwardForThisRow && !isRowDisabled && (
                         <button
                           type="button"
                           onClick={() => handleOpenAddOther(idx)}
@@ -1221,9 +1334,11 @@ export const POForm: React.FC<POFormProps> = ({
                     </div>
                     <select
                       value={line.colourName}
-                      disabled={hasInwardForThisRow}
+                      disabled={hasInwardForThisRow || isRowDisabled}
                       title={
-                        hasInwardForThisRow
+                        isLineInvoiced
+                          ? 'Colour cannot be changed: line has already been invoiced.'
+                          : hasInwardForThisRow
                           ? `Colour cannot be changed: ${minQty.toLocaleString()} ${line.unit} already received in Inward.`
                           : undefined
                       }
@@ -1243,7 +1358,7 @@ export const POForm: React.FC<POFormProps> = ({
                         }
                       }}
                       className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
-                        hasInwardForThisRow
+                        hasInwardForThisRow || isRowDisabled
                           ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
                           : ''
                       }`}
@@ -1265,7 +1380,7 @@ export const POForm: React.FC<POFormProps> = ({
                             {c.name}
                           </option>
                         ))}
-                      {!hasInwardForThisRow && (
+                      {!hasInwardForThisRow && !isRowDisabled && (
                         <option value="__other__" className="text-[#1F4E79] font-bold">
                           + Other (Enter New Colour)...
                         </option>
@@ -1282,6 +1397,8 @@ export const POForm: React.FC<POFormProps> = ({
                     </div>
                     <select
                       value={line.processType}
+                      disabled={isRowDisabled}
+                      title={isLineInvoiced ? 'Process cannot be changed: line has already been invoiced.' : undefined}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === '__other_process__') {
@@ -1290,7 +1407,9 @@ export const POForm: React.FC<POFormProps> = ({
                           handleLineChange(idx, 'processType', val);
                         }
                       }}
-                      className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
+                        isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
+                      }`}
                       required
                     >
                       <option value="">Select Process...</option>
@@ -1309,9 +1428,11 @@ export const POForm: React.FC<POFormProps> = ({
                             {p.name}
                           </option>
                         ))}
-                      <option value="__other_process__" className="text-[#1F4E79] font-bold">
-                        + Other (Enter New Process)...
-                      </option>
+                      {!isRowDisabled && (
+                        <option value="__other_process__" className="text-[#1F4E79] font-bold">
+                          + Other (Enter New Process)...
+                        </option>
+                      )}
                     </select>
                   </div>
 
@@ -1321,17 +1442,21 @@ export const POForm: React.FC<POFormProps> = ({
                       <label className="text-[11px] font-semibold text-slate-600">
                         HSN No. *
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddOtherHsn(idx)}
-                        className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
-                        title="Add a new HSN to General Settings > HSN Master"
-                      >
-                        + Other
-                      </button>
+                      {!isRowDisabled && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddOtherHsn(idx)}
+                          className="text-[10px] text-[#1F4E79] hover:underline font-bold cursor-pointer"
+                          title="Add a new HSN to General Settings > HSN Master"
+                        >
+                          + Other
+                        </button>
+                      )}
                     </div>
                     <select
                       value={line.hsnNo || ''}
+                      disabled={isRowDisabled}
+                      title={isLineInvoiced ? 'HSN cannot be changed: line has already been invoiced.' : undefined}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === '__other_hsn__') {
@@ -1347,7 +1472,9 @@ export const POForm: React.FC<POFormProps> = ({
                           setLines(updated);
                         }
                       }}
-                      className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79]"
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
+                        isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
+                      }`}
                       required
                     >
                       <option value="">Select HSN...</option>
@@ -1363,9 +1490,11 @@ export const POForm: React.FC<POFormProps> = ({
                             {h.hsnNo} {h.description ? `(${h.description.slice(0, 16)}...)` : ''}
                           </option>
                         ))}
-                      <option value="__other_hsn__" className="text-[#1F4E79] font-bold">
-                        + Other (Enter New HSN)...
-                      </option>
+                      {!isRowDisabled && (
+                        <option value="__other_hsn__" className="text-[#1F4E79] font-bold">
+                          + Other (Enter New HSN)...
+                        </option>
+                      )}
                     </select>
                   </div>
 
@@ -1377,8 +1506,12 @@ export const POForm: React.FC<POFormProps> = ({
                       </label>
                       {hasInwardForThisRow && (
                         <span
-                          className="text-[10px] text-amber-700 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300 whitespace-nowrap"
-                          title={`Minimum allowable: ${minQty.toLocaleString()} ${line.unit}`}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${
+                            isBelowInward
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : 'bg-amber-100/70 text-amber-700 border-amber-300'
+                          }`}
+                          title={`Minimum allowable: ${minQty.toLocaleString()} ${line.unit} (Inward received)`}
                         >
                           Min: {minQty.toLocaleString()}
                         </span>
@@ -1388,8 +1521,16 @@ export const POForm: React.FC<POFormProps> = ({
                       <input
                         type="number"
                         min={hasInwardForThisRow ? minQty : 1}
-                        placeholder="Qty"
                         value={line.quantity === 0 || (line.quantity as any) === '' ? '' : line.quantity}
+                        disabled={isRowDisabled}
+                        readOnly={isRowDisabled}
+                        title={
+                          isLineInvoiced
+                            ? 'Quantity cannot be changed: line has already been invoiced.'
+                            : hasInwardForThisRow
+                            ? `Min allowable quantity: ${minQty} ${line.unit}`
+                            : undefined
+                        }
                         onChange={(e) => {
                           const raw = e.target.value;
                           if (raw === '') {
@@ -1411,20 +1552,31 @@ export const POForm: React.FC<POFormProps> = ({
                         onBlur={() => {
                           if (hasInwardForThisRow && (Number(line.quantity) || 0) < minQty) {
                             handleLineChange(idx, 'quantity', minQty);
+                            triggerToast(
+                              'Quantity Auto-Adjusted',
+                              'Quantity cannot be less than received inward:',
+                              [
+                                `Row #${idx + 1} (${line.colourName || 'Colour'}): Quantity cannot be less than ${minQty.toLocaleString()} ${line.unit} (already received in Inward entries). Auto-adjusted to ${minQty.toLocaleString()}.`
+                              ]
+                            );
                           }
                         }}
                         className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
-                          isBelowInward
-                            ? 'border-2 border-amber-500 bg-amber-50 text-amber-900 focus:border-amber-600'
+                          isRowDisabled
+                            ? 'bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200'
+                            : isBelowInward
+                            ? 'border-2 border-rose-500 bg-rose-50/50 text-rose-900 focus:border-rose-600'
                             : 'border border-slate-200 text-slate-900 focus:border-[#1F4E79]'
                         }`}
                         required
                       />
                       <select
                         value={line.unit}
-                        disabled={hasInwardForThisRow}
+                        disabled={hasInwardForThisRow || isRowDisabled}
                         title={
-                          hasInwardForThisRow
+                          isLineInvoiced
+                            ? 'Unit cannot be changed: line has already been invoiced.'
+                            : hasInwardForThisRow
                             ? 'Unit locked because inward entries have already been received in this unit.'
                             : undefined
                         }
@@ -1435,14 +1587,22 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as QuantityUnit
                           )
                         }
-                        className={`w-1/3 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700 ${
-                          hasInwardForThisRow ? 'disabled:bg-slate-100 disabled:cursor-not-allowed' : ''
+                        className={`w-1/3 h-9 bg-white border border-slate-200 rounded-lg px-1 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
+                          hasInwardForThisRow || isRowDisabled
+                            ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
+                            : ''
                         }`}
                       >
                         <option value="piece">Pcs</option>
                         <option value="kg">Kg</option>
                       </select>
                     </div>
+                    {isBelowInward && (
+                      <div className="text-[10px] text-rose-600 font-bold flex items-center gap-1 pt-0.5">
+                        <AlertCircle className="w-3 h-3 flex-shrink-0 text-rose-600" />
+                        <span>Cannot be less than inward received ({minQty.toLocaleString()} {line.unit})</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Rate & Rate Basis */}
@@ -1455,6 +1615,8 @@ export const POForm: React.FC<POFormProps> = ({
                     <div className="flex gap-1 h-9">
                       <select
                         value={line.rateBasis}
+                        disabled={isRowDisabled}
+                        title={isLineInvoiced ? 'Rate basis cannot be changed: line has already been invoiced.' : undefined}
                         onChange={(e) =>
                           handleLineChange(
                             idx,
@@ -1462,7 +1624,9 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as RateBasis
                           )
                         }
-                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700"
+                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700 ${
+                          isRowDisabled ? 'disabled:bg-slate-100 disabled:cursor-not-allowed' : ''
+                        }`}
                       >
                         <option value="per_piece">/ Pc</option>
                         <option value="per_kg">/ Kg</option>
@@ -1471,8 +1635,10 @@ export const POForm: React.FC<POFormProps> = ({
                         type="number"
                         min="0"
                         step="0.1"
-                        placeholder="Rate ₹"
                         value={line.rate === 0 || (line.rate as any) === '' ? '' : line.rate}
+                        disabled={isRowDisabled}
+                        readOnly={isRowDisabled}
+                        title={isLineInvoiced ? 'Rate cannot be changed: line has already been invoiced.' : undefined}
                         onChange={(e) => {
                           const raw = e.target.value;
                           if (raw === '') {
@@ -1490,7 +1656,9 @@ export const POForm: React.FC<POFormProps> = ({
                             e.preventDefault();
                           }
                         }}
-                        className="w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden"
+                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
+                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                        }`}
                         required
                       />
                     </div>
@@ -1507,8 +1675,10 @@ export const POForm: React.FC<POFormProps> = ({
                       <input
                         type="number"
                         step="0.01"
-                        placeholder="Billable kg"
                         value={line.billableWeightKg || ''}
+                        disabled={isRowDisabled}
+                        readOnly={isRowDisabled}
+                        title={isLineInvoiced ? 'Billable weight cannot be changed: line has already been invoiced.' : undefined}
                         onChange={(e) =>
                           handleLineChange(
                             idx,
@@ -1521,18 +1691,24 @@ export const POForm: React.FC<POFormProps> = ({
                             e.preventDefault();
                           }
                         }}
-                        className="w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden"
+                        className={`w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
+                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                        }`}
                         required
                       />
                     ) : (
                       <input
                         type="text"
-                        placeholder="Optional remarks"
                         value={line.notes || line.remarks || ''}
+                        disabled={isRowDisabled}
+                        readOnly={isRowDisabled}
+                        title={isLineInvoiced ? 'Remarks cannot be changed: line has already been invoiced.' : undefined}
                         onChange={(e) =>
                           handleLineChange(idx, 'notes', e.target.value)
                         }
-                        className="w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-700"
+                        className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-700 ${
+                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                        }`}
                       />
                     )}
                   </div>
@@ -1594,43 +1770,56 @@ export const POForm: React.FC<POFormProps> = ({
         {initialPO ? (
           <Button
             variant="primary"
-            icon={<Save className="w-4 h-4" />}
-            onClick={() => handleSubmit(initialPO.status === 'approved' ? 'approved' : 'draft')}
-            disabled={isSaving}
+            icon={isPoFullyLocked || (hasInward && !isUserAdmin) ? <Lock className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            onClick={() => handleSubmit(initialPO.status || 'draft')}
+            loading={isSaving}
+            loadingText="Saving Changes..."
+            disabled={isSaving || isPoFullyLocked || (hasInward && !isUserAdmin)}
+            title={
+              isPoFullyLocked
+                ? 'All colour lines have been moved to invoice generation. PO entry cannot be edited.'
+                : hasInward && !isUserAdmin
+                ? 'Inward has been entered. Only Admin can edit this PO.'
+                : undefined
+            }
+            className={
+              isPoFullyLocked || (hasInward && !isUserAdmin)
+                ? 'opacity-60 cursor-not-allowed bg-slate-600 hover:bg-slate-600'
+                : 'bg-black hover:bg-neutral-800 text-white border-black cursor-pointer'
+            }
           >
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {isPoFullyLocked ? 'PO Entry Locked' : hasInward && !isUserAdmin ? 'Admin Edit Only' : 'Save Changes'}
           </Button>
         ) : isUserAdmin ? (
-          <>
-            <Button
-              variant="secondary"
-              icon={<Save className="w-4 h-4" />}
-              onClick={() => handleSubmit('draft')}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Saving...' : 'Save as Draft'}
-            </Button>
-            <Button
-              variant="primary"
-              icon={<CheckCircle2 className="w-4 h-4" />}
-              onClick={() => handleSubmit('approved')}
-              disabled={isSaving}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {isSaving ? 'Approving...' : 'Approve & Save PO'}
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            icon={<CheckCircle2 className="w-4 h-4" />}
+            onClick={() => handleSubmit('approved')}
+            loading={isSaving}
+            loadingText="Approving & Saving..."
+            className="bg-black hover:bg-neutral-800 text-white border-black cursor-pointer"
+          >
+            Approve & Save PO
+          </Button>
         ) : (
           <Button
             variant="primary"
             icon={<Save className="w-4 h-4" />}
             onClick={() => handleSubmit('draft')}
-            disabled={isSaving}
+            loading={isSaving}
+            loadingText="Saving PO..."
+            className="bg-black hover:bg-neutral-800 text-white border-black cursor-pointer"
           >
-            {isSaving ? 'Saving...' : 'Save as Draft'}
+            Save PO
           </Button>
         )}
       </div>
+
+      <LoadingOverlay
+        isOpen={isSaving}
+        title={initialPO ? 'Updating Purchase Order...' : 'Creating Purchase Order...'}
+        message="Saving colour lines, calculating order totals, and securing purchase order records..."
+      />
 
       {/* Add New Colour to General Settings > Colour Master Modal */}
       {isOtherColourModalOpen && (
@@ -1667,7 +1856,6 @@ export const POForm: React.FC<POFormProps> = ({
                 New Colour Name <span className="text-rose-500">*</span>
               </label>
               <Input
-                placeholder="e.g. Lavender, Olive Green, Navy Blue..."
                 value={newColourName}
                 onChange={(e) => setNewColourName(e.target.value)}
                 autoFocus
@@ -1743,7 +1931,6 @@ export const POForm: React.FC<POFormProps> = ({
                 New Wash / Process Name <span className="text-rose-500">*</span>
               </label>
               <Input
-                placeholder="e.g. Acid Wash, Enzyme Bio Wash, Pigment Dyeing..."
                 value={newProcessModalName}
                 onChange={(e) => setNewProcessModalName(e.target.value)}
                 autoFocus
@@ -1821,7 +2008,6 @@ export const POForm: React.FC<POFormProps> = ({
                   HSN No. <span className="text-rose-500">*</span>
                 </label>
                 <Input
-                  placeholder="e.g. 998821 or 6203"
                   value={newHsnNo}
                   onChange={(e) => setNewHsnNo(e.target.value)}
                   autoFocus
@@ -1834,7 +2020,6 @@ export const POForm: React.FC<POFormProps> = ({
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="e.g. Textiles, apparel dyeing and finishing services"
                   value={newHsnDescription}
                   onChange={(e) => setNewHsnDescription(e.target.value)}
                   className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#1F4E79] transition-colors"
@@ -1863,9 +2048,11 @@ export const POForm: React.FC<POFormProps> = ({
                 variant="primary"
                 size="sm"
                 onClick={handleSaveNewHsn}
-                disabled={isAddingHsn || !newHsnNo.trim() || !newHsnDescription.trim()}
+                loading={isAddingHsn}
+                loadingText="Saving to Master..."
+                disabled={!newHsnNo.trim() || !newHsnDescription.trim()}
               >
-                {isAddingHsn ? 'Saving to Master...' : 'Save & Select HSN'}
+                Save & Select HSN
               </Button>
             </div>
           </div>

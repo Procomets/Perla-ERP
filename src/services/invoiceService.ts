@@ -19,12 +19,16 @@ import {
   InvoiceFilterOptions,
   InvoiceMetrics,
   InvoiceAuditLog,
-  RateBasis
+  RateBasis,
+  InvoiceReadinessLine,
+  InvoiceReadinessPOGroup
 } from '../types/invoice';
 import { InvoiceApprovalRecord } from '../types/statement';
 import { StatementService } from './statementService';
 import { VendorService } from './vendorService';
 import { POService } from './poService';
+import { InwardService } from './inwardService';
+import { OutwardService } from './outwardService';
 import { InvoiceSettingsService } from './invoiceSettingsService';
 import { formatCurrency } from '../utils/formatters';
 import {
@@ -57,6 +61,9 @@ function safeSetStorage(key: string, value: string): void {
   if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
     try {
       window.localStorage.setItem(key, value);
+      if (key === INVOICES_STORAGE_KEY) {
+        window.dispatchEvent(new CustomEvent('perla:invoices-updated'));
+      }
     } catch {
       // ignore
     }
@@ -102,6 +109,224 @@ function saveLocalAuditLog(log: InvoiceAuditLog): void {
 }
 
 export class InvoiceService {
+  /**
+   * Retrieves the comprehensive Colour-Wise Reconciliation & Invoice Readiness Ledger across POs.
+   * Only includes POs that have at least one eligible or approved colour line.
+   * Within each eligible PO, includes both eligible colour lines (ready for approval),
+   * already-approved lines (ready for invoice generation), and unfinished colour lines.
+   */
+  static async getInvoiceReadinessLedger(
+    filters?: { companyId?: string; poNumber?: string; styleNo?: string },
+    isDemo: boolean = false
+  ): Promise<InvoiceReadinessPOGroup[]> {
+    const [poRes, inwRes, outRes, approvals, vendorsRes] = await Promise.all([
+      POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo),
+      InwardService.getInwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo),
+      OutwardService.getOutwardEntries({ status: 'posted' }, { page: 1, pageSize: 1000 }, isDemo),
+      StatementService.getInvoiceApprovals(undefined, isDemo),
+      VendorService.getVendors({}, { page: 1, pageSize: 1000 }, isDemo)
+    ]);
+
+    const pos = poRes.pos || [];
+    const inwards = inwRes.inwards || [];
+    const outwards = outRes.outwards || [];
+    const vendors = vendorsRes.vendors || [];
+
+    const vendorMap = new Map<string, string>();
+    vendors.forEach((v) => {
+      if (v.id) vendorMap.set(v.id, v.companyName);
+      if (v.vendorId) vendorMap.set(v.vendorId, v.companyName);
+    });
+
+    const approvalMap = new Map<string, InvoiceApprovalRecord>();
+    approvals.forEach((app) => {
+      if (app.poColourLineId) {
+        approvalMap.set(app.poColourLineId, app);
+      }
+      if (app.purchaseOrderId && app.colourName) {
+        approvalMap.set(`${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`, app);
+      }
+      if (app.poNumber && app.colourName) {
+        approvalMap.set(`${(app.poNumber || '').trim().toLowerCase()}:::${app.colourName.trim().toLowerCase()}`, app);
+      }
+    });
+
+    const groups: InvoiceReadinessPOGroup[] = [];
+
+    for (const po of pos) {
+      const companyId = po.customerId || po.customerVendorId || '';
+      const companyName =
+        vendorMap.get(companyId) ||
+        po.customerName ||
+        po.customerCompanyNameSnapshot ||
+        'Customer';
+
+      if (filters?.companyId && filters.companyId !== 'all') {
+        const matchesComp =
+          companyId === filters.companyId ||
+          po.customerId === filters.companyId ||
+          po.customerVendorId === filters.companyId;
+        if (!matchesComp) continue;
+      }
+      if (filters?.poNumber && (po.poNumber || '').trim().toLowerCase() !== filters.poNumber.trim().toLowerCase()) {
+        continue;
+      }
+      if (filters?.styleNo && (po.styleNo || po.styleNumber || '').trim().toLowerCase() !== filters.styleNo.trim().toLowerCase()) {
+        continue;
+      }
+
+      const rawLines = po.colourLines || po.lines || [];
+      if (rawLines.length === 0) continue;
+
+      const poKeyId = po.id || po.poId;
+      const poKeyNum = (po.poNumber || '').trim().toLowerCase();
+
+      // Find matching posted inwards and outwards for this PO
+      const matchingInwards = inwards.filter(
+        (inEntry) =>
+          inEntry.status === 'posted' &&
+          (inEntry.poId === poKeyId ||
+            (inEntry.poNumberSnapshot && inEntry.poNumberSnapshot.trim().toLowerCase() === poKeyNum) ||
+            (inEntry.poNumber && inEntry.poNumber.trim().toLowerCase() === poKeyNum))
+      );
+
+      const matchingOutwards = outwards.filter(
+        (outEntry) =>
+          outEntry.status === 'posted' &&
+          (outEntry.poId === poKeyId ||
+            (outEntry.poNumberSnapshot && outEntry.poNumberSnapshot.trim().toLowerCase() === poKeyNum) ||
+            (outEntry.poNumber && outEntry.poNumber.trim().toLowerCase() === poKeyNum))
+      );
+
+      const poLines: InvoiceReadinessLine[] = [];
+
+      for (const line of rawLines) {
+        const lineId = line.id || line.lineId;
+        const lineColour = line.colourName || (line as any).colour || 'Standard';
+        const colourLower = lineColour.trim().toLowerCase();
+
+        // Calculate cumulative inward for this line
+        let cumulativeInward = 0;
+        matchingInwards.forEach((inEntry) => {
+          if (inEntry.lines && inEntry.lines.length > 0) {
+            inEntry.lines.forEach((l) => {
+              if (
+                (lineId && l.poLineId === lineId) ||
+                (l.colourNameSnapshot || l.colour || '').trim().toLowerCase() === colourLower
+              ) {
+                cumulativeInward += Number(l.receivedQty) || 0;
+              }
+            });
+          } else {
+            cumulativeInward += Number(inEntry.totalQuantity) || inEntry.totalQtyByUnit?.piece || 0;
+          }
+        });
+
+        // Calculate cumulative outward for this line
+        let cumulativeOutward = 0;
+        matchingOutwards.forEach((outEntry) => {
+          if (outEntry.lines && outEntry.lines.length > 0) {
+            outEntry.lines.forEach((l) => {
+              if (
+                (lineId && l.poLineId === lineId) ||
+                (l.colourNameSnapshot || l.colour || '').trim().toLowerCase() === colourLower
+              ) {
+                cumulativeOutward += Number(l.dispatchQty) || 0;
+              }
+            });
+          } else {
+            cumulativeOutward += Number(outEntry.totalQuantity) || outEntry.totalQtyByUnit?.piece || 0;
+          }
+        });
+
+        const orderedQty = Number(line.quantity) || 0;
+        const orderedVsInwardDiff = orderedQty - cumulativeInward;
+        const balanceQty = cumulativeInward - cumulativeOutward;
+
+        const approvalRecord =
+          approvalMap.get(lineId) ||
+          approvalMap.get(`${poKeyId}:::${colourLower}`) ||
+          approvalMap.get(`${poKeyNum}:::${colourLower}`);
+
+        const isApprovedForInvoice = Boolean(approvalRecord && approvalRecord.status === 'approved' && !approvalRecord.invoiceId);
+        const isInvoiced = Boolean(approvalRecord && (approvalRecord.status === 'invoiced' || Boolean(approvalRecord.invoiceId)));
+
+        const isReadyForInvoice =
+          cumulativeInward > 0 &&
+          cumulativeInward === cumulativeOutward &&
+          !isApprovedForInvoice &&
+          !isInvoiced;
+
+        const isUnfinished = !isReadyForInvoice && !isApprovedForInvoice && !isInvoiced;
+
+        poLines.push({
+          poId: po.id,
+          poNumber: po.poNumber,
+          customerPoNumber: po.customerPoNumber || null,
+          styleNo: po.styleNo || po.styleNumber || 'N/A',
+          itemName: po.itemName || 'Garments',
+          companyId,
+          companyName,
+          poLineId: lineId,
+          colour: lineColour,
+          colourCode: line.colourCode || null,
+          processType: line.processType || 'Standard Process',
+          unit: line.unit || 'piece',
+          orderedQty,
+          rate: Number(line.rate) || 0,
+          rateBasis: (String(line.rateBasis || '').toLowerCase().includes('kg') ? 'per_kg' : 'per_piece') as RateBasis,
+          hsnNo: (line as any).hsnNo,
+          cumulativeInward,
+          orderedVsInwardDiff,
+          cumulativeOutward,
+          balanceQty,
+          isReadyForInvoice,
+          isApprovedForInvoice,
+          isInvoiced,
+          isUnfinished,
+          approvalId: approvalRecord?.approvalId,
+          approvedAt: approvalRecord?.approvedAt,
+          approvedByName: approvalRecord?.approvedByName,
+          invoiceId: approvalRecord?.invoiceId,
+          invoiceNo: approvalRecord?.invoiceNo
+        });
+      }
+
+      const eligibleLines = poLines.filter((l) => l.isReadyForInvoice);
+      const approvedLines = poLines.filter((l) => l.isApprovedForInvoice);
+      const unfinishedLines = poLines.filter((l) => l.isUnfinished);
+
+      // Only include POs that have at least one eligible line or approved line ready for invoice!
+      if (eligibleLines.length > 0 || approvedLines.length > 0) {
+        groups.push({
+          poId: po.id,
+          poNumber: po.poNumber,
+          customerPoNumber: po.customerPoNumber || null,
+          styleNo: po.styleNo || po.styleNumber || 'N/A',
+          itemName: po.itemName || 'Garments',
+          companyId,
+          companyName,
+          lines: poLines,
+          eligibleLines,
+          approvedLines,
+          unfinishedLines,
+          hasMultipleColours: poLines.length > 1,
+          latestActivityAt: po.orderDate || po.createdAt
+        });
+      }
+    }
+
+    // Sort: POs with highest eligible lines count first, then by date
+    groups.sort((a, b) => {
+      if (b.eligibleLines.length !== a.eligibleLines.length) {
+        return b.eligibleLines.length - a.eligibleLines.length;
+      }
+      return (b.latestActivityAt || '').localeCompare(a.latestActivityAt || '');
+    });
+
+    return groups;
+  }
+
   /**
    * Retrieves all Statement colour lines approved for invoicing that have not yet been invoiced
    */
@@ -212,7 +437,8 @@ export class InvoiceService {
     selectedApprovalIds: string[],
     user: { uid: string; displayName?: string },
     isDemo: boolean = false,
-    preloadedItems?: InvoiceEligibleItem[]
+    preloadedItems?: InvoiceEligibleItem[],
+    options?: { isWithoutGst?: boolean; gstType?: 'with_gst' | 'without_gst' }
   ): Promise<Invoice> {
     if (!selectedApprovalIds || selectedApprovalIds.length === 0) {
       throw new Error('Please select at least one approved colour line item to generate an invoice.');
@@ -267,6 +493,7 @@ export class InvoiceService {
 
     // 5. Determine Intra-State vs Inter-State supply
     const isIntraState = isIntraStateSupply(customerStateCode, customerState, settings.stateCode);
+    const isWithoutGstOption = Boolean(options?.isWithoutGst || options?.gstType === 'without_gst');
 
     // 6. Build Invoice Lines
     let subtotal = 0;
@@ -286,14 +513,16 @@ export class InvoiceService {
       let igstRate = 0;
       let igstAmount = 0;
 
-      if (isIntraState) {
-        cgstRate = settings.defaultCgstRate;
-        sgstRate = settings.defaultSgstRate;
-        cgstAmount = safeRound(lineTaxable * (cgstRate / 100), 2);
-        sgstAmount = safeRound(lineTaxable * (sgstRate / 100), 2);
-      } else {
-        igstRate = settings.defaultIgstRate;
-        igstAmount = safeRound(lineTaxable * (igstRate / 100), 2);
+      if (!isWithoutGstOption) {
+        if (isIntraState) {
+          cgstRate = settings.defaultCgstRate;
+          sgstRate = settings.defaultSgstRate;
+          cgstAmount = safeRound(lineTaxable * (cgstRate / 100), 2);
+          sgstAmount = safeRound(lineTaxable * (sgstRate / 100), 2);
+        } else {
+          igstRate = settings.defaultIgstRate;
+          igstAmount = safeRound(lineTaxable * (igstRate / 100), 2);
+        }
       }
 
       return {
@@ -330,12 +559,25 @@ export class InvoiceService {
     });
 
     // 7. Calculate Invoice Totals
-    const taxTotals = calculateInvoiceTaxes(subtotal, {
-      isIntraState,
-      cgstRate: settings.defaultCgstRate,
-      sgstRate: settings.defaultSgstRate,
-      igstRate: settings.defaultIgstRate
-    });
+    const taxTotals = isWithoutGstOption
+      ? {
+          subtotal,
+          taxableAmount: subtotal,
+          cgstRate: 0,
+          cgstAmount: 0,
+          sgstRate: 0,
+          sgstAmount: 0,
+          igstRate: 0,
+          igstAmount: 0,
+          roundOff: 0,
+          finalTotal: subtotal
+        }
+      : calculateInvoiceTaxes(subtotal, {
+          isIntraState,
+          cgstRate: settings.defaultCgstRate,
+          sgstRate: settings.defaultSgstRate,
+          igstRate: settings.defaultIgstRate
+        });
 
     const now = new Date();
     const financialYear = getFinancialYear(now);
@@ -399,6 +641,9 @@ export class InvoiceService {
       finalTotal: taxTotals.finalTotal,
       grandTotal: taxTotals.finalTotal,
       amountInWords: convertNumberToIndianWords(taxTotals.finalTotal),
+      isWithoutGst: isWithoutGstOption,
+      gstType: isWithoutGstOption ? 'without_gst' : 'with_gst',
+      isFirebaseOnly: isWithoutGstOption,
       bankDetailsSnapshot: {
         bankName: settings.bankName,
         accountName: settings.accountName,
@@ -490,6 +735,11 @@ export class InvoiceService {
 
     const finalInvoiceNo = userChosenInvoiceNo || (await this.getNextInvoiceNumber(financialYear, isDemo));
     const finalInvoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const isWithoutGst = Boolean(
+      draftInvoice.isWithoutGst ||
+      draftInvoice.gstType === 'without_gst' ||
+      (Number(draftInvoice.totalCgst) === 0 && Number(draftInvoice.totalSgst) === 0 && Number(draftInvoice.totalIgst) === 0 && Number(draftInvoice.cgstRate) === 0)
+    );
 
     const finalizedInvoice: Invoice = {
       ...draftInvoice,
@@ -500,6 +750,18 @@ export class InvoiceService {
       invoiceDate: draftInvoice.invoiceDate || now.toISOString().split('T')[0],
       modeOfPayment: draftInvoice.modeOfPayment || draftInvoice.paymentTerms || 'Against Delivery / 30 Days',
       paymentTerms: draftInvoice.modeOfPayment || draftInvoice.paymentTerms || 'Against Delivery / 30 Days',
+      isWithoutGst,
+      gstType: isWithoutGst ? 'without_gst' : 'with_gst',
+      isFirebaseOnly: isWithoutGst,
+      cgstRate: isWithoutGst ? 0 : draftInvoice.cgstRate,
+      totalCgst: isWithoutGst ? 0 : draftInvoice.totalCgst,
+      sgstRate: isWithoutGst ? 0 : draftInvoice.sgstRate,
+      totalSgst: isWithoutGst ? 0 : draftInvoice.totalSgst,
+      igstRate: isWithoutGst ? 0 : draftInvoice.igstRate,
+      totalIgst: isWithoutGst ? 0 : draftInvoice.totalIgst,
+      roundOff: isWithoutGst ? 0 : draftInvoice.roundOff,
+      finalTotal: isWithoutGst ? Number(draftInvoice.subtotal) || 0 : draftInvoice.finalTotal,
+      grandTotal: isWithoutGst ? Number(draftInvoice.subtotal) || 0 : draftInvoice.grandTotal,
       status: 'finalized',
       finalizedBy: user.uid,
       finalizedByName: user.displayName || 'Authorized User',

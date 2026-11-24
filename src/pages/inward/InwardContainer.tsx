@@ -18,6 +18,7 @@ import { InwardForm } from './components/InwardForm';
 import { InwardDetails } from './components/InwardDetails';
 import { InwardPrintView } from './components/InwardPrintView';
 import { QuickInwardView } from './components/QuickInwardView';
+import { InwardReport } from './components/InwardReport';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { AlertTriangle, RotateCcw, Plus, Zap } from 'lucide-react';
@@ -48,7 +49,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
     canDelete('inward');
 
   // Navigation Views
-  const [currentView, setCurrentView] = useState<'list' | 'quick-inward' | 'add' | 'edit' | 'details' | 'print'>('list');
+  const [currentView, setCurrentView] = useState<'list' | 'quick-inward' | 'add' | 'edit' | 'details' | 'print' | 'report'>('list');
   const [selectedInwardId, setSelectedInwardId] = useState<string | null>(null);
   const [preselectedPoId, setPreselectedPoId] = useState<string | null>(null);
 
@@ -269,15 +270,24 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const savedDraft = await InwardService.createInwardDraft(data, activeUser, isDemoMode);
 
+      // Instantly update in-memory list
+      setInwards((prev) => [savedDraft, ...prev.filter((i) => i.id !== savedDraft.id && i.inwardId !== savedDraft.inwardId)]);
+
       if (onAddInward) {
         onAddInward(savedDraft);
       }
 
-      await loadData();
-      await handleViewDetails(savedDraft.inwardId);
+      // Immediately dismiss saving overlay and switch view (0ms delay)
+      setIsSaving(false);
+      setSelectedInwardId(savedDraft.inwardId);
+      setSelectedInwardDetails({ inward: savedDraft, logs: [] });
+      setCurrentView('details');
+
+      // Refresh in background non-blocking
+      loadData().catch(console.warn);
+      loadSingleInward(savedDraft.inwardId).catch(console.warn);
     } catch (err: any) {
       alert(`Error saving draft: ${err.message || 'Unknown error'}`);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -293,15 +303,24 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const posted = await InwardService.postInwardReceipt(data, activeUser, isDemoMode);
 
+      // Instantly update in-memory list
+      setInwards((prev) => [posted, ...prev.filter((i) => i.id !== posted.id && i.inwardId !== posted.inwardId)]);
+
       if (onAddInward) {
         onAddInward(posted);
       }
 
-      await loadData();
-      await handleViewDetails(posted.inwardId);
+      // Immediately dismiss saving overlay and switch view (0ms delay)
+      setIsSaving(false);
+      setSelectedInwardId(posted.inwardId);
+      setSelectedInwardDetails({ inward: posted, logs: [] });
+      setCurrentView('details');
+
+      // Refresh in background non-blocking
+      loadData().catch(console.warn);
+      loadSingleInward(posted.inwardId).catch(console.warn);
     } catch (err: any) {
       alert(`Error posting inward receipt: ${err.message || 'Unknown error'}`);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -326,18 +345,23 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const reversed = await InwardService.reverseInwardReceipt(selectedInwardId, reason, activeUser, isDemoMode);
 
+      setInwards((prev) =>
+        prev.map((i) => (i.id === selectedInwardId || i.inwardId === selectedInwardId ? reversed : i))
+      );
+      setSelectedInwardDetails((prev) => ({ ...prev, inward: reversed }));
+
       if (onUpdateInward) {
         onUpdateInward(reversed);
       } else if (onAddInward) {
         onAddInward(reversed);
       }
 
-      await loadData();
-      await loadSingleInward(selectedInwardId);
-    } catch (err: any) {
-      throw err;
-    } finally {
       setIsSaving(false);
+      loadData().catch(console.warn);
+      loadSingleInward(selectedInwardId).catch(console.warn);
+    } catch (err: any) {
+      setIsSaving(false);
+      throw err;
     }
   };
 
@@ -354,17 +378,22 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       const posted = await InwardService.postExistingDraft(targetId, activeUser, isDemoMode);
 
+      setInwards((prev) =>
+        prev.map((i) => (i.id === targetId || i.inwardId === targetId ? posted : i))
+      );
+      setSelectedInwardDetails((prev) => ({ ...prev, inward: posted }));
+
       if (onUpdateInward) {
         onUpdateInward(posted);
       } else if (onAddInward) {
         onAddInward(posted);
       }
 
-      await loadData();
-      await loadSingleInward(posted.inwardId);
+      setIsSaving(false);
+      loadData().catch(console.warn);
+      loadSingleInward(posted.inwardId).catch(console.warn);
     } catch (err: any) {
       alert(`Error posting draft inward receipt: ${err.message || 'Unknown error'}`);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -416,6 +445,10 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
     }
   };
 
+  const matchedPO = selectedInwardDetails.inward
+    ? pos.find((p) => p.poId === selectedInwardDetails.inward?.poId || p.poNumber === (selectedInwardDetails.inward?.poNumberSnapshot || selectedInwardDetails.inward?.poNumber))
+    : null;
+
   const selectedCustomerVendor = selectedInwardDetails.inward
     ? vendors.find(
         (v) =>
@@ -429,15 +462,64 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
       ) || null
     : null;
 
+  const selectedSubcontractorVendor = selectedInwardDetails.inward
+    ? vendors.find(
+        (v) =>
+          (v.id && (v.id === selectedInwardDetails.inward?.subcontractorVendorId || v.id === selectedInwardDetails.inward?.subContractorId || v.id === matchedPO?.subcontractorId)) ||
+          (v.vendorId && (v.vendorId === selectedInwardDetails.inward?.subcontractorVendorId || v.vendorId === selectedInwardDetails.inward?.subContractorId || v.vendorId === matchedPO?.subcontractorId)) ||
+          (v.vendorCode && (
+            v.vendorCode === (selectedInwardDetails.inward as any)?.subcontractorCodeSnapshot ||
+            v.vendorCode === (selectedInwardDetails.inward as any)?.subcontractorCode ||
+            v.vendorCode === matchedPO?.subcontractorCode
+          )) ||
+          (v.companyName && (
+            v.companyName.trim().toLowerCase() === (selectedInwardDetails.inward?.subcontractorNameSnapshot || '').trim().toLowerCase() ||
+            v.companyName.trim().toLowerCase() === (selectedInwardDetails.inward?.subContractorName || '').trim().toLowerCase() ||
+            v.companyName.trim().toLowerCase() === (matchedPO?.subcontractorName || '').trim().toLowerCase()
+          ))
+      ) || null
+    : null;
+
   return (
     <div className="space-y-6">
-      {/* Top Header - Minimal & Airy */}
-      {currentView === 'list' && (
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Inward Receipts</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Record incoming customer fabric batches against open purchase orders
-          </p>
+      {/* Top Header & Section Tabs */}
+      {(currentView === 'list' || currentView === 'report') && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-2 border-b border-slate-200/80">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Inward Receipts</h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Record incoming customer fabric batches against open purchase orders
+            </p>
+          </div>
+
+          {/* Section Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto border border-slate-200/80 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setCurrentView('list')}
+              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+                currentView === 'list'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>All Inwards</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                {inwards.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentView('report')}
+              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+                currentView === 'report'
+                  ? 'bg-white text-[#1F4E79] shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Report Generation</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -470,6 +552,17 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
           isAdmin={isAdmin}
           isLoading={loading}
           lockedPOMap={lockedPOMap}
+        />
+      )}
+
+      {/* 2.2 Inward Report Generation View */}
+      {currentView === 'report' && (
+        <InwardReport
+          inwards={inwards}
+          vendors={vendors}
+          pos={pos}
+          onBack={() => setCurrentView('list')}
+          onViewInward={handleViewDetails}
         />
       )}
 
@@ -508,6 +601,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
           inward={selectedInwardDetails.inward}
           auditLogs={selectedInwardDetails.logs}
           customerVendor={selectedCustomerVendor}
+          subcontractorVendor={selectedSubcontractorVendor}
           lockedPOMap={lockedPOMap}
           onBack={() => setCurrentView('list')}
           onPrint={() => setCurrentView('print')}
@@ -524,6 +618,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
         <InwardPrintView
           inward={selectedInwardDetails.inward}
           customerVendor={selectedCustomerVendor}
+          subcontractorVendor={selectedSubcontractorVendor}
           onBack={() => setCurrentView('details')}
         />
       )}

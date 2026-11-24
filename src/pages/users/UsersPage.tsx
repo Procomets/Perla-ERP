@@ -46,8 +46,10 @@ import {
   SlidersHorizontal,
   RotateCcw,
   X,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { UserRole, ModuleId, ModulePermissionsMap } from '../../types/user';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -1379,11 +1381,24 @@ export const UsersPage: React.FC = () => {
                 type="submit"
                 form="user-form"
                 disabled={formLoading}
-                className="px-5 py-2 text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-xs font-semibold transition shadow-xs disabled:opacity-50 cursor-pointer"
+                className="px-5 py-2 text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-xs font-semibold transition shadow-xs disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
               >
-                {formLoading ? 'Saving...' : isEditMode ? 'Update User & Permissions' : 'Create User & Assign Access'}
+                {formLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>{isEditMode ? 'Update User & Permissions' : 'Create User & Assign Access'}</span>
+                )}
               </button>
             </div>
+
+            <LoadingOverlay
+              isOpen={formLoading}
+              title={isEditMode ? 'Updating User Permissions...' : 'Creating User & Provisioning Access...'}
+              message="Configuring role-based permissions, credentials, and access rules..."
+            />
           </div>
         </div>
       )}

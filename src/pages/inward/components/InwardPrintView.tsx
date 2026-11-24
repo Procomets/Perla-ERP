@@ -8,10 +8,11 @@ import { ArrowLeft, Printer } from 'lucide-react';
 interface InwardPrintViewProps {
   inward: InwardEntry;
   customerVendor?: Vendor | null;
+  subcontractorVendor?: Vendor | null;
   onBack: () => void;
 }
 
-export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, customerVendor, onBack }) => {
+export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, customerVendor, subcontractorVendor, onBack }) => {
   const handlePrint = () => {
     window.print();
   };
@@ -29,6 +30,20 @@ export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, custom
 
   const formattedAddress = [addressLine1, addressLine2].filter(Boolean).join(', ');
   const cityState = [city, state].filter(Boolean).join(', ') + (pinCode ? ` - ${pinCode}` : '');
+
+  // Subcontractor / Contractor details
+  const subName = inward.subcontractorNameSnapshot || inward.subContractorName || subcontractorVendor?.companyName;
+  const subCode = subcontractorVendor?.vendorCode || (subcontractorVendor as any)?.code || (subcontractorVendor as any)?.companyCode || inward.subcontractorVendorId || inward.subContractorId || '';
+  const subGstin = subcontractorVendor?.taxDetails?.gstin || (subcontractorVendor as any)?.gstin || '';
+  const subAddress = subcontractorVendor?.address;
+  const subAddressLine1 = typeof subAddress === 'object' ? subAddress?.addressLine1 : (typeof subAddress === 'string' ? subAddress : '');
+  const subAddressLine2 = typeof subAddress === 'object' ? subAddress?.addressLine2 : '';
+  const subCity = (typeof subAddress === 'object' ? subAddress?.city : '') || subcontractorVendor?.city || '';
+  const subState = (typeof subAddress === 'object' ? subAddress?.state : '') || subcontractorVendor?.state || '';
+  const subPinCode = (typeof subAddress === 'object' ? subAddress?.pinCode : '') || subcontractorVendor?.pinCode || '';
+
+  const formattedSubAddress = [subAddressLine1, subAddressLine2].filter(Boolean).join(', ');
+  const subCityState = [subCity, subState].filter(Boolean).join(', ') + (subPinCode ? ` - ${subPinCode}` : '');
 
   return (
     <div className="space-y-6">
@@ -97,9 +112,34 @@ export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, custom
                 <span className="font-semibold">City, State:</span> {cityState}
               </div>
             )}
-            {inward.subcontractorNameSnapshot && (
-              <div className="text-slate-600">
-                <span className="font-semibold">Subcontractor:</span> {inward.subcontractorNameSnapshot}
+            {subName && (
+              <div className="pt-2 mt-2 border-t border-slate-200 space-y-0.5">
+                <span className="font-bold text-[10px] uppercase text-slate-400 block tracking-wider">
+                  SUBCONTRACTOR UNIT
+                </span>
+                <div className="font-bold text-slate-800">
+                  {subName}
+                </div>
+                {subCode && (
+                  <div className="text-slate-600">
+                    <span className="font-semibold">Company Code:</span> {subCode}
+                  </div>
+                )}
+                {subGstin && (
+                  <div className="text-slate-600">
+                    <span className="font-semibold">GST NO:</span> {subGstin}
+                  </div>
+                )}
+                {formattedSubAddress && (
+                  <div className="text-slate-600">
+                    <span className="font-semibold">Address:</span> {formattedSubAddress}
+                  </div>
+                )}
+                {subCityState && (
+                  <div className="text-slate-600">
+                    <span className="font-semibold">City, State:</span> {subCityState}
+                  </div>
+                )}
               </div>
             )}
           </div>

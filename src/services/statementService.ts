@@ -47,6 +47,9 @@ function getLocalApprovals(): InvoiceApprovalRecord[] {
 function saveLocalApprovals(approvals: InvoiceApprovalRecord[]): void {
   try {
     localStorage.setItem(APPROVALS_STORAGE_KEY, JSON.stringify(approvals));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('perla:approvals-updated'));
+    }
   } catch (e) {
     console.warn('Failed to save local approvals:', e);
   }
@@ -470,13 +473,20 @@ export class StatementService {
     params: {
       poId: string;
       poLineId: string;
-      companyId: string;
+      companyId?: string;
     },
     user: { uid: string; displayName?: string },
     isDemo: boolean = false
   ): Promise<InvoiceApprovalRecord> {
+    let companyId = params.companyId;
+    if (!companyId) {
+      const poRes = await POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo);
+      const matched = poRes.pos.find((p) => p.id === params.poId || p.poId === params.poId || p.poNumber === params.poId);
+      companyId = matched?.customerId || matched?.customerVendorId || '';
+    }
+
     // 1. Fetch current authoritative Statement data to re-validate eligibility
-    const statement = await this.getStatementData({ companyId: params.companyId, poId: params.poId }, isDemo);
+    const statement = await this.getStatementData({ companyId, poId: params.poId }, isDemo);
     const line = statement.colourLines.find((l) => l.poLineId === params.poLineId);
 
     if (!line) {
@@ -522,7 +532,7 @@ export class StatementService {
 
     const approvalRecord: InvoiceApprovalRecord = {
       approvalId,
-      companyId: params.companyId,
+      companyId: companyId || params.companyId || '',
       companyName: statement.companyName,
       purchaseOrderId: line.poId,
       poNumber: line.poNumber,
@@ -574,12 +584,19 @@ export class StatementService {
   static async approveEntirePOForInvoice(
     params: {
       poId: string;
-      companyId: string;
+      companyId?: string;
     },
     user: { uid: string; displayName?: string },
     isDemo: boolean = false
   ): Promise<{ approvedRecords: InvoiceApprovalRecord[]; skippedLineCount: number }> {
-    const statement = await this.getStatementData({ companyId: params.companyId, poId: params.poId }, isDemo);
+    let companyId = params.companyId;
+    if (!companyId) {
+      const poRes = await POService.getPurchaseOrders({}, { page: 1, pageSize: 1000 }, isDemo);
+      const matched = poRes.pos.find((p) => p.id === params.poId || p.poId === params.poId || p.poNumber === params.poId);
+      companyId = matched?.customerId || matched?.customerVendorId || '';
+    }
+
+    const statement = await this.getStatementData({ companyId, poId: params.poId }, isDemo);
     const poLines = statement.colourLines.filter(
       (l) => l.poId === params.poId || l.poNumber === params.poId
     );

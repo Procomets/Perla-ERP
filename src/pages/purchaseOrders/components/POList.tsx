@@ -25,7 +25,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Lock
+  Lock,
+  FileSpreadsheet
 } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
 import {
@@ -63,6 +64,7 @@ interface POListProps {
   onDeletePO?: (poId: string) => void;
   onPrintPO: (poId: string) => void;
   onAddNewPO: () => void;
+  onOpenReport?: () => void;
   canManage: boolean; // Admin or Manager
   isAdmin?: boolean; // Admin only
   lockedPOMap?: Record<string, POLockStatus>;
@@ -99,113 +101,29 @@ export const POList: React.FC<POListProps> = ({
   onDeletePO,
   onPrintPO,
   onAddNewPO,
+  onOpenReport,
   canManage,
   isAdmin,
   lockedPOMap = {}
 }) => {
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+
+  // Active drawer filter count (Processes, Statuses, Customers, Dates)
+  const activeDrawerFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.processCategory && filters.processCategory !== 'all') count++;
+    if (filters.status && filters.status !== 'all') count++;
+    if (filters.customerId) count++;
+    if (filters.startDate) count++;
+    if (filters.endDate) count++;
+    return count;
+  }, [filters]);
 
   // Column search & filter state
   const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-
-  // Hovered company popup state
-  const [hoveredCustomer, setHoveredCustomer] = useState<{
-    po: PurchaseOrder;
-    vendor: Vendor | null;
-    subUnit: Vendor | null;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // Close hover popup on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      setHoveredCustomer(null);
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
-  }, []);
-
-  const cleanStr = (s: any): string => {
-    if (!s) return '';
-    return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-  };
-
-  const findVendorForPO = (po: PurchaseOrder): Vendor | null => {
-    const targetId = (po.customerId || po.customerVendorId || '').toLowerCase().trim();
-    const targetCode = (po.customerCode || '').toLowerCase().trim();
-    const targetName = (po.customerName || '').toLowerCase().trim();
-    const targetClean = cleanStr(po.customerName);
-
-    return (
-      vendors.find((v) => {
-        const vId = (v.vendorId || v.id || '').toLowerCase().trim();
-        const vCode = (v.vendorCode || '').toLowerCase().trim();
-        const vName = (v.companyName || '').toLowerCase().trim();
-        return (
-          (targetId && (vId === targetId || cleanStr(vId) === cleanStr(targetId))) ||
-          (targetCode && vCode === targetCode) ||
-          (targetName && vName === targetName) ||
-          (targetClean && cleanStr(vName) === targetClean)
-        );
-      }) || null
-    );
-  };
-
-  const findSubUnitForPO = (po: PurchaseOrder): Vendor | null => {
-    const targetId = (po.subcontractorId || po.subcompanyId || '').toLowerCase().trim();
-    const targetCode = (po.subcontractorCode || po.subcompanyCode || '').toLowerCase().trim();
-    const targetName = (po.subcontractorName || po.subcompanyName || '').toLowerCase().trim();
-    if (!targetId && !targetCode && !targetName) return null;
-
-    return (
-      vendors.find((v) => {
-        const vId = (v.vendorId || v.id || '').toLowerCase().trim();
-        const vCode = (v.vendorCode || '').toLowerCase().trim();
-        const vName = (v.companyName || '').toLowerCase().trim();
-        return (
-          (targetId && (vId === targetId || cleanStr(vId) === cleanStr(targetId))) ||
-          (targetCode && vCode === targetCode) ||
-          (targetName && vName === targetName) ||
-          (targetName && cleanStr(vName) === cleanStr(targetName))
-        );
-      }) || null
-    );
-  };
-
-  const handleCustomerMouseEnter = (e: React.MouseEvent, po: PurchaseOrder) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cardWidth = 320;
-    const cardEstimatedHeight = 280;
-
-    let left = rect.left;
-    if (left + cardWidth > window.innerWidth - 16) {
-      left = window.innerWidth - cardWidth - 16;
-    }
-    if (left < 16) {
-      left = 16;
-    }
-
-    let top = rect.bottom + 6;
-    if (top + cardEstimatedHeight > window.innerHeight - 16) {
-      top = Math.max(16, rect.top - cardEstimatedHeight - 6);
-    }
-
-    setHoveredCustomer({
-      po,
-      vendor: findVendorForPO(po),
-      subUnit: findSubUnitForPO(po),
-      x: left,
-      y: top
-    });
-  };
-
-  const handleCustomerMouseLeave = () => {
-    setHoveredCustomer(null);
-  };
 
   // Eligible customer vendors (Main company customers only)
   const eligibleCustomers = vendors.filter(
@@ -321,40 +239,46 @@ export const POList: React.FC<POListProps> = ({
   // Client-side filtering for column selector & inline column filters
   const filteredPOs = useMemo(() => {
     return pos.filter((po) => {
-      // 1. Column-specific search if searchColumn !== 'ALL'
+      // 1. Column-specific search if searchColumn !== 'ALL' or global search
       const query = (filters.searchQuery || '').trim().toLowerCase();
-      if (query && searchColumn !== 'ALL') {
-        let val = '';
-        switch (searchColumn) {
-          case 'poNumber':
-            val = po.poNumber || '';
-            break;
-          case 'orderDate':
-            val = po.orderDate || '';
-            break;
-          case 'customerName':
-            val = po.customerName || '';
-            break;
-          case 'customerPoNumber':
-            val = po.customerPoNumber || '';
-            break;
-          case 'processCategory':
-            val = po.processCategory || '';
-            break;
-          case 'styleNo':
-            val = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''}`;
-            break;
-          case 'totalQuantity':
-            val = String(po.totalQuantity || '');
-            break;
-          case 'totalAmount':
-            val = String(po.totalAmount || '');
-            break;
-          case 'status':
-            val = po.status || '';
-            break;
+      if (query) {
+        if (searchColumn !== 'ALL') {
+          let val = '';
+          switch (searchColumn) {
+            case 'poNumber':
+              val = `${po.poNumber || ''} ${po.revision ? `r${po.revision}` : ''}`;
+              break;
+            case 'orderDate':
+              val = `${po.orderDate || ''} ${formatDate(po.orderDate) || ''}`;
+              break;
+            case 'customerName':
+              val = `${po.customerName || ''} ${(po as any).customerCompanyNameSnapshot || ''} ${po.customerCode || ''} ${po.subcontractorName || ''} ${po.subcompanyName || ''}`;
+              break;
+            case 'customerPoNumber':
+              val = `${po.customerPoNumber || ''} ${po.customerPoDate || ''} ${formatDate(po.customerPoDate) || ''}`;
+              break;
+            case 'processCategory':
+              val = po.processCategory || '';
+              break;
+            case 'styleNo':
+              val = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''} ${(po.colourLines || []).map((l: any) => `${l.colourName || ''} ${l.processType || ''}`).join(' ')}`;
+              break;
+            case 'totalQuantity':
+              val = `${po.totalQuantity ?? ''} ${po.totalQtyByUnit?.piece ?? ''} ${po.totalQtyByUnit?.kg ?? ''}`;
+              break;
+            case 'totalAmount':
+              val = `${po.totalAmount ?? ''} ${formatCurrency(po.totalAmount) || ''}`;
+              break;
+            case 'status':
+              val = po.status || '';
+              break;
+          }
+          if (!val.toLowerCase().includes(query)) return false;
+        } else {
+          // searchColumn === 'ALL'
+          const allText = `${po.poNumber || ''} ${po.customerName || ''} ${(po as any).customerCompanyNameSnapshot || ''} ${po.customerCode || ''} ${po.customerPoNumber || ''} ${po.processCategory || ''} ${po.styleNo || po.styleNumber || ''} ${po.itemName || ''} ${po.status || ''} ${(po.colourLines || []).map((l: any) => `${l.colourName || ''} ${l.processType || ''}`).join(' ')}`.toLowerCase();
+          if (!allText.includes(query)) return false;
         }
-        if (!val.toLowerCase().includes(query)) return false;
       }
 
       // 2. Inline column filters
@@ -365,32 +289,34 @@ export const POList: React.FC<POListProps> = ({
         let haystack = '';
         switch (colKey) {
           case 'poNumber':
-            haystack = po.poNumber || '';
+            haystack = `${po.poNumber || ''} ${po.revision ? `r${po.revision}` : ''} ${po.id || ''}`;
             break;
           case 'orderDate':
-            haystack = po.orderDate || '';
+            haystack = `${po.orderDate || ''} ${formatDate(po.orderDate) || ''}`;
             break;
           case 'customerName':
-            haystack = po.customerName || '';
+            haystack = `${po.customerName || ''} ${(po as any).customerCompanyNameSnapshot || ''} ${(po as any).customer?.companyName || ''} ${po.customerCode || ''} ${po.subcontractorName || ''} ${po.subcompanyName || ''}`;
             break;
           case 'customerPoNumber':
-            haystack = po.customerPoNumber || '';
+            haystack = `${po.customerPoNumber || ''} ${po.customerPoDate || ''} ${formatDate(po.customerPoDate) || ''}`;
             break;
           case 'processCategory':
             haystack = po.processCategory || '';
             break;
           case 'styleNo':
-            haystack = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''}`;
+            haystack = `${po.styleNo || po.styleNumber || ''} ${po.itemName || ''} ${(po.colourLines || []).map((l: any) => `${l.colourName || ''} ${l.processType || ''}`).join(' ')}`;
             break;
           case 'totalQuantity':
-            haystack = String(po.totalQuantity || '');
+            haystack = `${po.totalQuantity ?? ''} ${po.totalQtyByUnit?.piece ?? ''} ${po.totalQtyByUnit?.kg ?? ''}`;
             break;
           case 'totalAmount':
-            haystack = String(po.totalAmount || '');
+            haystack = `${po.totalAmount ?? ''} ${formatCurrency(po.totalAmount) || ''}`;
             break;
           case 'status':
             haystack = po.status || '';
             break;
+          default:
+            haystack = String((po as any)[colKey] || '');
         }
 
         if (!haystack.toLowerCase().includes(needle)) {
@@ -461,7 +387,7 @@ export const POList: React.FC<POListProps> = ({
           return 0;
       }
     });
-  }, [pos, sortField, sortDirection]);
+  }, [filteredPOs, sortField, sortDirection]);
 
   const renderSortIcon = (field: POSortField) => {
     if (sortField === field) {
@@ -606,62 +532,8 @@ export const POList: React.FC<POListProps> = ({
             </div>
           </div>
 
-          {/* Quick Filter Selects & Controls */}
+          {/* Controls: Column Filters, Single Filter Button, Reset, New PO */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Process Category Filter */}
-            <select
-              value={filters.processCategory || 'all'}
-              onChange={(e) =>
-                onFilterChange({
-                  ...filters,
-                  processCategory: e.target.value as any
-                })
-              }
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:border-[#1F4E79]"
-            >
-              <option value="all">All Processes</option>
-              <option value="washing">Washing</option>
-              <option value="dyeing">Dyeing</option>
-            </select>
-
-            {/* Dynamic Status Filter */}
-            <select
-              value={(filters.status || 'all').toLowerCase()}
-              onChange={(e) =>
-                onFilterChange({
-                  ...filters,
-                  status: e.target.value as any
-                })
-              }
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:border-[#1F4E79]"
-            >
-              <option value="all">All Statuses</option>
-              {dynamicStatusOptions.map((st) => (
-                <option key={st.value} value={st.value}>
-                  {st.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Customer Filter */}
-            <select
-              value={filters.customerId || ''}
-              onChange={(e) =>
-                onFilterChange({
-                  ...filters,
-                  customerId: e.target.value || undefined
-                })
-              }
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:border-[#1F4E79] max-w-[160px] truncate"
-            >
-              <option value="">All Customers</option>
-              {eligibleCustomers.map((c) => (
-                <option key={c.vendorId || c.id} value={c.vendorId || c.id}>
-                  {c.companyName}
-                </option>
-              ))}
-            </select>
-
             {/* Toggle Inline Column Filters Button */}
             <button
               type="button"
@@ -682,19 +554,24 @@ export const POList: React.FC<POListProps> = ({
               )}
             </button>
 
-            {/* Advanced Filters Toggle */}
+            {/* Single Filter Button */}
             <button
               type="button"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={`p-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                showAdvancedFilters || hasActiveFilters
-                  ? 'bg-[#EEF5FB] border-[#BDD7EE] text-[#1F4E79]'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              onClick={() => setShowFilterDrawer((prev) => !prev)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                showFilterDrawer || activeDrawerFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79] font-bold'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
-              title="Date filters"
+              title="Toggle filters (Processes, Statuses, Customers, Dates)"
             >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Dates</span>
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeDrawerFilterCount > 0 && (
+                <span className="bg-[#1F4E79] text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {activeDrawerFilterCount}
+                </span>
+              )}
             </button>
 
             {hasActiveFilters && (
@@ -722,13 +599,75 @@ export const POList: React.FC<POListProps> = ({
           </div>
         </div>
 
-        {/* Advanced Filters Drawer */}
-        {showAdvancedFilters && (
-          <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-            <div>
-              <label className="block text-slate-500 font-medium mb-1">
-                Order Date From
-              </label>
+        {/* Collapsible Filters Drawer */}
+        {showFilterDrawer && (
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-end gap-3 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+            {/* Process Category Filter */}
+            <div className="flex flex-col gap-1 min-w-[130px]">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Process</label>
+              <select
+                value={filters.processCategory || 'all'}
+                onChange={(e) =>
+                  onFilterChange({
+                    ...filters,
+                    processCategory: e.target.value as any
+                  })
+                }
+                className="h-9 px-3 bg-white border border-slate-200 text-slate-800 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#1F4E79] shadow-2xs cursor-pointer"
+              >
+                <option value="all">All Processes</option>
+                <option value="washing">Washing</option>
+                <option value="dyeing">Dyeing</option>
+              </select>
+            </div>
+
+            {/* Dynamic Status Filter */}
+            <div className="flex flex-col gap-1 min-w-[130px]">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</label>
+              <select
+                value={(filters.status || 'all').toLowerCase()}
+                onChange={(e) =>
+                  onFilterChange({
+                    ...filters,
+                    status: e.target.value as any
+                  })
+                }
+                className="h-9 px-3 bg-white border border-slate-200 text-slate-800 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#1F4E79] shadow-2xs cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                {dynamicStatusOptions.map((st) => (
+                  <option key={st.value} value={st.value}>
+                    {st.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Customer Filter */}
+            <div className="flex flex-col gap-1 min-w-[180px] max-w-[240px]">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Customer</label>
+              <select
+                value={filters.customerId || ''}
+                onChange={(e) =>
+                  onFilterChange({
+                    ...filters,
+                    customerId: e.target.value || undefined
+                  })
+                }
+                className="h-9 px-3 bg-white border border-slate-200 text-slate-800 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#1F4E79] shadow-2xs cursor-pointer truncate"
+              >
+                <option value="">All Customers</option>
+                {eligibleCustomers.map((c) => (
+                  <option key={c.vendorId || c.id} value={c.vendorId || c.id}>
+                    {c.companyName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date From */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date From</label>
               <input
                 type="date"
                 value={filters.startDate || ''}
@@ -738,14 +677,13 @@ export const POList: React.FC<POListProps> = ({
                     startDate: e.target.value || undefined
                   })
                 }
-                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
+                className="h-9 px-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-medium focus:outline-hidden focus:border-[#1F4E79] shadow-2xs cursor-pointer"
               />
             </div>
 
-            <div>
-              <label className="block text-slate-500 font-medium mb-1">
-                Order Date To
-              </label>
+            {/* Date To */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date To</label>
               <input
                 type="date"
                 value={filters.endDate || ''}
@@ -755,9 +693,30 @@ export const POList: React.FC<POListProps> = ({
                     endDate: e.target.value || undefined
                   })
                 }
-                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
+                className="h-9 px-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-medium focus:outline-hidden focus:border-[#1F4E79] shadow-2xs cursor-pointer"
               />
             </div>
+
+            {activeDrawerFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  onFilterChange({
+                    ...filters,
+                    processCategory: 'all',
+                    status: 'all',
+                    customerId: undefined,
+                    startDate: undefined,
+                    endDate: undefined
+                  })
+                }
+                className="h-9 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-rose-200 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                title="Clear these filters"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Clear Filters</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1074,18 +1033,29 @@ export const POList: React.FC<POListProps> = ({
                   return (
                     <tr
                       key={po.id || po.poId}
-                      className="even:bg-slate-50/60 hover:bg-blue-50/50 transition-colors group cursor-pointer border-b border-slate-200"
-                      onClick={() => onViewPO(po.id || po.poId)}
+                      className="even:bg-slate-50/60 hover:bg-slate-100/70 transition-colors group border-b border-slate-200"
                     >
                       {/* PO Number - Left */}
                       <td className="py-2.5 px-3.5 border-r border-slate-200 font-bold whitespace-nowrap align-middle text-left">
                         <div className="flex items-center gap-1.5">
                           {po.poNumber === 'PO/PENDING' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            <button
+                              type="button"
+                              onClick={() => onViewPO(po.id || po.poId)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:underline cursor-pointer"
+                              title="View PO Details"
+                            >
                               PO/PENDING
-                            </span>
+                            </button>
                           ) : (
-                            <span className="text-[#1F4E79] font-mono">{po.poNumber}</span>
+                            <button
+                              type="button"
+                              onClick={() => onViewPO(po.id || po.poId)}
+                              className="text-[#1F4E79] font-mono hover:underline cursor-pointer text-left"
+                              title="View PO Details"
+                            >
+                              {po.poNumber}
+                            </button>
                           )}
                           {po.revision && po.revision > 1 && (
                             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
@@ -1101,13 +1071,9 @@ export const POList: React.FC<POListProps> = ({
                       </td>
 
                       {/* Customer - Left */}
-                      <td
-                        className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left"
-                        onMouseEnter={(e) => handleCustomerMouseEnter(e, po)}
-                        onMouseLeave={handleCustomerMouseLeave}
-                      >
-                        <div className="group/cust">
-                          <div className="truncate font-semibold cursor-help group-hover/cust:underline decoration-dotted transition-colors">
+                      <td className="py-2.5 px-3.5 border-r border-slate-200 font-medium text-slate-900 max-w-[200px] truncate align-middle text-left">
+                        <div>
+                          <div className="truncate font-semibold text-slate-900">
                             {po.customerName}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -1220,13 +1186,13 @@ export const POList: React.FC<POListProps> = ({
                                 View
                               </button>
 
-                              {/* 2. Edit - If inward is entered, ONLY admin can edit */}
+                              {/* 2. Edit - Available until all colour lines are invoiced completely */}
                               {canManage && !isCancelled && (() => {
                                 const lockStatus = POLockService.isLocked(po, lockedPOMap);
-                                if (lockStatus) {
+                                if (lockStatus?.isFullyLocked) {
                                   return (
                                     <span
-                                      title={lockStatus.reason}
+                                      title={lockStatus.reason || 'All colour lines have been invoiced completely. PO entry cannot be edited.'}
                                       className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
                                     >
                                       <Lock className="w-2.5 h-2.5 text-slate-400" />
@@ -1234,37 +1200,35 @@ export const POList: React.FC<POListProps> = ({
                                     </span>
                                   );
                                 }
-                                if (hasInward && !isAdmin) {
-                                  return (
-                                    <button
-                                      type="button"
-                                      disabled
-                                      title="Inward has been entered for this PO. Only Admin can edit."
-                                      className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed opacity-60 inline-flex items-center gap-1"
-                                    >
-                                      <Lock className="w-3 h-3 text-slate-400" />
-                                      Edit
-                                    </button>
-                                  );
-                                }
+                                const poStatus = POLockService.getPOStatus(po, lockedPOMap);
                                 return (
                                   <button
                                     type="button"
                                     onClick={() => onEditPO(po.id || po.poId)}
-                                    className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    title={
+                                      poStatus && poStatus.invoicedLinesCount > 0
+                                        ? `${poStatus.invoicedLinesCount} of ${poStatus.totalLines} colour line(s) invoiced. Uninvoiced lines can be edited.`
+                                        : undefined
+                                    }
+                                    className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors inline-flex items-center gap-1"
                                   >
                                     Edit
+                                    {poStatus && poStatus.invoicedLinesCount > 0 && (
+                                      <span className="text-[9px] bg-emerald-200/80 text-emerald-900 px-1 py-0.2 rounded-full font-bold">
+                                        {poStatus.invoicedLinesCount}/{poStatus.totalLines}
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })()}
 
                               {/* 3. Delete (Admin only - Not permitted if inward entered or locked) */}
                               {isAdmin && onDeletePO && (() => {
-                                const lockStatus = POLockService.isLocked(po, lockedPOMap);
-                                if (lockStatus) {
+                                const poStatus = POLockService.getPOStatus(po, lockedPOMap);
+                                if (poStatus && (poStatus.isFullyLocked || poStatus.approvedLinesCount > 0)) {
                                   return (
                                     <span
-                                      title={lockStatus.reason}
+                                      title={poStatus.reason || 'Cannot delete: Colour lines have been moved to invoice generation.'}
                                       className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
                                     >
                                       <Lock className="w-2.5 h-2.5 text-slate-400" />
@@ -1407,142 +1371,6 @@ export const POList: React.FC<POListProps> = ({
               </Button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Light & Simple Company Profile Hover Popover */}
-      {hoveredCustomer && (
-        <div
-          className="fixed z-50 w-84 bg-white text-slate-800 border border-slate-200/90 rounded-2xl p-4 shadow-xl pointer-events-none text-left animate-in fade-in zoom-in-95 duration-100"
-          style={{
-            top: hoveredCustomer.y,
-            left: hoveredCustomer.x
-          }}
-        >
-          {/* Top Label & Code */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-[#1F4E79] tracking-wider uppercase">
-              COMPANY PROFILE
-            </span>
-            <span className="font-mono text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md shrink-0">
-              {hoveredCustomer.vendor?.vendorCode || hoveredCustomer.po.customerCode || 'VND-000000'}
-            </span>
-          </div>
-
-          {/* Company Name */}
-          <h4 className="font-bold text-base text-slate-900 tracking-tight leading-tight mt-1">
-            {hoveredCustomer.vendor?.companyName || hoveredCustomer.po.customerName}
-          </h4>
-
-          {/* Subtitle: Type · Category */}
-          <p className="text-xs text-slate-500 mt-0.5">
-            {hoveredCustomer.vendor?.vendorType || 'Customer'} ·{' '}
-            {(hoveredCustomer.vendor?.vendorCategory || hoveredCustomer.po.subcontractorType || 'Main Company')
-              .replace('_', ' ')
-              .split(' ')
-              .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-              .join(' ')}
-          </p>
-
-          {/* Subtle Divider */}
-          <div className="border-b border-slate-100 my-3" />
-
-          {/* 2-Column Info Grid */}
-          <div className="space-y-3">
-            {/* Row 1: GSTIN & PAN */}
-            <div className="grid grid-cols-2 gap-3 text-left">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  GSTIN
-                </span>
-                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
-                  {hoveredCustomer.vendor?.taxDetails?.gstin || 'Unregistered'}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  PAN
-                </span>
-                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
-                  {hoveredCustomer.vendor?.taxDetails?.pan || 'N/A'}
-                </span>
-              </div>
-            </div>
-
-            {/* Row 2: FULL ADDRESS */}
-            <div className="text-left">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                ADDRESS
-              </span>
-              <p className="text-xs font-semibold text-slate-800 mt-0.5 leading-relaxed">
-                {[
-                  hoveredCustomer.vendor?.address?.addressLine1,
-                  hoveredCustomer.vendor?.address?.addressLine2,
-                  hoveredCustomer.vendor?.address?.city,
-                  hoveredCustomer.vendor?.address?.state,
-                  hoveredCustomer.vendor?.address?.pinCode ? `PIN: ${hoveredCustomer.vendor.address.pinCode}` : ''
-                ]
-                  .filter(Boolean)
-                  .join(', ') || 'N/A'}
-              </p>
-            </div>
-
-            {/* Row 3: PHONE & EMAIL */}
-            <div className="grid grid-cols-2 gap-3 text-left">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  PHONE
-                </span>
-                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate">
-                  {hoveredCustomer.vendor?.communication?.officePhone ||
-                    hoveredCustomer.vendor?.communication?.mobileNumber ||
-                    'N/A'}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  EMAIL
-                </span>
-                <span className="text-xs font-semibold text-slate-800 mt-0.5 block truncate" title={hoveredCustomer.vendor?.communication?.officialEmail || ''}>
-                  {hoveredCustomer.vendor?.communication?.officialEmail || 'N/A'}
-                </span>
-              </div>
-            </div>
-
-            {/* Row 4: PAYMENT TERMS */}
-            <div className="flex items-center justify-between text-left pt-1 border-t border-slate-100">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                PAYMENT TERMS
-              </span>
-              <span className="text-xs font-bold text-slate-800">
-                {hoveredCustomer.vendor?.financialDetails?.paymentTerms
-                  ? hoveredCustomer.vendor.financialDetails.paymentTerms.replace('_', ' ')
-                  : '30 Days'}
-              </span>
-            </div>
-          </div>
-
-          {/* Linked Subcontractor / Subcompany (if present on this PO) */}
-          {(hoveredCustomer.po.subcontractorName || hoveredCustomer.po.subcompanyName) && (
-            <div className="border-t border-slate-100 pt-2.5 mt-3 space-y-1">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                Linked {hoveredCustomer.po.subcontractorType === 'subcompany' ? 'Subcompany' : 'Subcontractor'}
-              </span>
-              <div className="font-semibold text-slate-800 text-xs">
-                {hoveredCustomer.po.subcontractorName || hoveredCustomer.po.subcompanyName}
-                {(hoveredCustomer.po.subcontractorCode || hoveredCustomer.po.subcompanyCode) && (
-                  <span className="font-mono text-[10px] ml-1.5 font-normal text-slate-400">
-                    ({hoveredCustomer.po.subcontractorCode || hoveredCustomer.po.subcompanyCode})
-                  </span>
-                )}
-              </div>
-              {hoveredCustomer.subUnit?.taxDetails?.gstin && (
-                <div className="text-[10px] text-slate-500 font-mono">
-                  GSTIN: {hoveredCustomer.subUnit.taxDetails.gstin}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

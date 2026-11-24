@@ -2724,6 +2724,8 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 searchPlaceholder="Search purchase type..."
                 groups={purchaseTypeOptionGroups}
                 onSelect={(opt) => setPurchaseType(opt.id as PurchaseType)}
+                dropdownWidth="trigger"
+                showSearch={false}
                 formatTriggerLabel={(opt) => (
                   <span className="truncate font-semibold text-slate-900 text-xs">
                     {opt.primaryText}

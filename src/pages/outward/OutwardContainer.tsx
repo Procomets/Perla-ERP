@@ -19,6 +19,7 @@ import { OutwardList } from './components/OutwardList';
 import { OutwardForm } from './components/OutwardForm';
 import { OutwardDetails } from './components/OutwardDetails';
 import { OutwardPrintView } from './components/OutwardPrintView';
+import { OutwardReport } from './components/OutwardReport';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Plus } from 'lucide-react';
@@ -50,8 +51,8 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
     (user as any)?.designation?.toLowerCase() === 'admin' ||
     canDelete('outward');
 
-  // Navigation Views: 'list' | 'add' | 'edit' | 'details' | 'print'
-  const [currentView, setCurrentView] = useState<'list' | 'add' | 'edit' | 'details' | 'print'>('list');
+  // Navigation Views: 'list' | 'report' | 'add' | 'edit' | 'details' | 'print'
+  const [currentView, setCurrentView] = useState<'list' | 'report' | 'add' | 'edit' | 'details' | 'print'>('list');
   const [selectedOutwardId, setSelectedOutwardId] = useState<string | null>(null);
   const [preselectedPoId, setPreselectedPoId] = useState<string | null>(null);
 
@@ -254,20 +255,26 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         name: user?.displayName || (user as any)?.name || 'Authorized User'
       };
 
+      let draftEntry: OutwardEntry;
       if (currentView === 'edit' && selectedOutwardId) {
-        await OutwardService.updateDraftOutwardEntry(selectedOutwardId, data, userMeta, isDemoMode);
+        draftEntry = await OutwardService.updateDraftOutwardEntry(selectedOutwardId, data, userMeta, isDemoMode);
+        setOutwards((prev) =>
+          prev.map((o) => (o.outwardId === selectedOutwardId || o.id === selectedOutwardId ? draftEntry : o))
+        );
       } else {
-        const newDraft = await OutwardService.createDraftOutwardEntry(data, userMeta, isDemoMode);
-        if (onAddOutward) onAddOutward(newDraft);
+        draftEntry = await OutwardService.createDraftOutwardEntry(data, userMeta, isDemoMode);
+        setOutwards((prev) => [draftEntry, ...prev]);
+        if (onAddOutward) onAddOutward(draftEntry);
       }
 
-      await loadData();
+      setIsSaving(false);
+      setPreselectedPoId(null);
       setCurrentView('list');
+      loadData().catch(console.warn);
     } catch (err: any) {
       console.error('Failed to save draft:', err);
-      throw err;
-    } finally {
       setIsSaving(false);
+      throw err;
     }
   };
 
@@ -292,16 +299,30 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         postedEntry = await OutwardService.postOutwardEntry(data, userMeta, isDemoMode);
       }
 
+      // Immediately update in-memory list (0ms delay)
+      setOutwards((prev) => [
+        postedEntry,
+        ...prev.filter(
+          (o) => (o.outwardId || o.id) !== (postedEntry.outwardId || postedEntry.id)
+        )
+      ]);
+
       if (onAddOutward) onAddOutward(postedEntry);
 
-      await loadData();
-      await loadSingleOutward(postedEntry.outwardId || postedEntry.id);
+      // Immediately dismiss saving overlay and navigate to details
+      setIsSaving(false);
+      setSelectedOutwardId(postedEntry.outwardId || postedEntry.id);
+      setSelectedOutwardDetails({ outward: postedEntry, logs: [] });
+      setPreselectedPoId(null);
       setCurrentView('details');
+
+      // Refresh data in background non-blocking
+      loadData().catch(console.warn);
+      loadSingleOutward(postedEntry.outwardId || postedEntry.id).catch(console.warn);
     } catch (err: any) {
       console.error('Failed to post outward dispatch:', err);
-      throw err;
-    } finally {
       setIsSaving(false);
+      throw err;
     }
   };
 
@@ -317,8 +338,9 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
       };
 
       const out = selectedOutwardDetails.outward;
+      const targetId = out.outwardId || out.id;
       const posted = await OutwardService.postExistingDraft(
-        out.outwardId || out.id,
+        targetId,
         {
           customerVendorId: out.customerVendorId,
           subcontractorVendorId: out.subcontractorVendorId,
@@ -336,16 +358,21 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
         isDemoMode
       );
 
+      setOutwards((prev) =>
+        prev.map((o) => (o.outwardId === targetId || o.id === targetId ? posted : o))
+      );
+      setSelectedOutwardDetails((prev) => ({ ...prev, outward: posted }));
+
       if (onUpdateOutward) {
         onUpdateOutward(posted);
       }
 
-      await loadData();
-      await loadSingleOutward(posted.outwardId || posted.id);
+      setIsSaving(false);
+      loadData().catch(console.warn);
+      loadSingleOutward(targetId).catch(console.warn);
     } catch (err) {
       console.error('Failed to move draft to posted:', err);
       alert((err as any)?.message || 'Failed to move draft to posted.');
-    } finally {
       setIsSaving(false);
     }
   };
@@ -413,13 +440,44 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Header - Minimal & Airy */}
-      {currentView === 'list' && (
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Outward Dispatches</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Generate delivery challans, track completed processing batches, and dispatch goods
-          </p>
+      {/* Top Header & Section Tabs (Top Right aligned, matching Inward) */}
+      {(currentView === 'list' || currentView === 'report') && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-2 border-b border-slate-200/80">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Outward Dispatches</h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Generate delivery challans, track completed processing batches, and dispatch goods
+            </p>
+          </div>
+
+          {/* Section Tabs on Top Right */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto border border-slate-200/80 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setCurrentView('list')}
+              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+                currentView === 'list'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>All Outwards</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                {outwards.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentView('report')}
+              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+                currentView === 'report'
+                  ? 'bg-white text-[#1F4E79] shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Report Generation</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -457,6 +515,17 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
           isAdmin={isAdmin}
           isLoading={loading}
           lockedPOMap={lockedPOMap}
+        />
+      )}
+
+      {/* 2.2 Outward Report Generation View */}
+      {currentView === 'report' && (
+        <OutwardReport
+          outwards={outwards}
+          vendors={vendors}
+          pos={pos}
+          onBack={() => setCurrentView('list')}
+          onViewOutward={handleViewDetails}
         />
       )}
 

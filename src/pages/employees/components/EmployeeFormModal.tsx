@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Camera, X, AlertCircle, Loader2 } from 'lucide-react';
 import { EmployeeMaster, EmployeeMasterFormData, EmployeeType, EmploymentStatus, Gender } from '../../../types/employee';
 import { EmployeeService } from '../../../services/employeeService';
+import { ValidationToast } from '../../../components/ui/ValidationToast';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 
 interface EmployeeFormModalProps {
   isOpen: boolean;
@@ -146,6 +148,9 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({
     setErrorMessage(null);
   }, [initialEmployee, isOpen, existingEmployees]);
 
+  const [toastErrors, setToastErrors] = useState<string[]>([]);
+  const [showToast, setShowToast] = useState<boolean>(false);
+
   if (!isOpen) return null;
 
   // Handle Photo File Upload
@@ -171,14 +176,23 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({
     setErrorMessage(null);
 
     // Validation
+    const errors: string[] = [];
     if (!fullName.trim()) {
-      setErrorMessage('Full Name is required.');
-      return;
+      errors.push('Full Name is required.');
     }
     if (!mobileNumber.trim()) {
-      setErrorMessage('Mobile Number is required.');
+      errors.push('Mobile Number is required.');
+    }
+
+    if (errors.length > 0) {
+      setToastErrors(errors);
+      setShowToast(true);
+      setErrorMessage(errors[0]);
       return;
     }
+
+    setToastErrors([]);
+    setShowToast(false);
 
     setIsSubmitting(true);
     try {
@@ -231,6 +245,15 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
+      {/* Toast Notification for Unfilled / Compulsory Missing Fields */}
+      <ValidationToast
+        isOpen={showToast}
+        onClose={() => setShowToast(false)}
+        title="Cannot Save Employee Profile"
+        subtitle="Please fill all compulsory fields to submit:"
+        errors={toastErrors}
+      />
+
       {/* Backdrop */}
       <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs transition-opacity" onClick={onClose} />
 
@@ -766,6 +789,12 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({
           </form>
         </div>
       </div>
+
+      <LoadingOverlay
+        isOpen={isSubmitting}
+        title={isEditMode ? 'Updating Employee Profile...' : 'Creating Employee Record...'}
+        message="Validating salary structure, statutory details, and saving employee profile..."
+      />
     </div>
   );
 };

@@ -64,27 +64,13 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
   onOpenCancel,
   onEditInvoice
 }) => {
-  // Search & column filter states
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchColumn, setSearchColumn] = useState<string>('ALL');
+  // Column filter states
   const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   // 3-State Column Sorting (asc -> desc -> unsort/normal)
   const [sortField, setSortField] = useState<InvoiceSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
-
-  const INVOICE_SEARCH_COLUMNS = [
-    { value: 'ALL', label: 'All Columns' },
-    { value: 'invoiceNo', label: 'Invoice No' },
-    { value: 'invoiceDate', label: 'Date' },
-    { value: 'customerName', label: 'Customer' },
-    { value: 'poNumber', label: 'PO & Style' },
-    { value: 'taxableSubtotal', label: 'Taxable Subtotal' },
-    { value: 'gstTotal', label: 'GST Total' },
-    { value: 'grandTotal', label: 'Grand Total' },
-    { value: 'status', label: 'Status' }
-  ];
 
   const handleSort = (field: InvoiceSortField) => {
     if (sortField !== field) {
@@ -102,70 +88,31 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
   };
 
   const handleResetFilters = () => {
-    setSearchQuery('');
-    setSearchColumn('ALL');
     setColumnFilters({});
     setSortField(null);
     setSortDirection(null);
   };
 
   const hasActiveFilters =
-    Boolean(searchQuery) ||
-    searchColumn !== 'ALL' ||
     Object.values(columnFilters).some((v) => (v || '').trim() !== '') ||
     Boolean(sortField);
 
-  // Client-side filtering for column selector & inline column filters
-  const filteredInvoices = useMemo(() => {
+  // Deduplicate invoices passed via props
+  const uniqueInvoices = useMemo(() => {
+    const seen = new Set<string>();
     return invoices.filter((inv) => {
-      const gstTotal = (inv.totalCgst || 0) + (inv.totalSgst || 0) + (inv.totalIgst || 0);
+      const key = inv.id || inv.invoiceNo;
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [invoices]);
 
-      // 1. Search Query
-      const query = searchQuery.trim().toLowerCase();
-      if (query) {
-        if (searchColumn === 'ALL') {
-          const matchAll =
-            (inv.invoiceNo || inv.invoiceNumber || inv.id || '').toLowerCase().includes(query) ||
-            (inv.invoiceDate || '').toLowerCase().includes(query) ||
-            (inv.customerSnapshot?.companyName || '').toLowerCase().includes(query) ||
-            (inv.customerSnapshot?.gstin || '').toLowerCase().includes(query) ||
-            (inv.poNumber || '').toLowerCase().includes(query) ||
-            (inv.styleNo || '').toLowerCase().includes(query) ||
-            (inv.status || '').toLowerCase().includes(query);
-          if (!matchAll) return false;
-        } else {
-          let val = '';
-          switch (searchColumn) {
-            case 'invoiceNo':
-              val = inv.invoiceNo || inv.invoiceNumber || inv.id || '';
-              break;
-            case 'invoiceDate':
-              val = inv.invoiceDate || '';
-              break;
-            case 'customerName':
-              val = `${inv.customerSnapshot?.companyName || ''} ${inv.customerSnapshot?.gstin || ''}`;
-              break;
-            case 'poNumber':
-              val = `${inv.poNumber || ''} ${inv.styleNo || ''}`;
-              break;
-            case 'taxableSubtotal':
-              val = String(inv.subtotal || inv.taxableAmount || 0);
-              break;
-            case 'gstTotal':
-              val = String(gstTotal);
-              break;
-            case 'grandTotal':
-              val = String(inv.finalTotal || inv.grandTotal || 0);
-              break;
-            case 'status':
-              val = inv.status || '';
-              break;
-          }
-          if (!val.toLowerCase().includes(query)) return false;
-        }
-      }
-
-      // 2. Inline Column Filters
+  // Client-side filtering for inline column filters
+  const filteredInvoices = useMemo(() => {
+    return uniqueInvoices.filter((inv) => {
+      // Inline Column Filters
       for (const [colKey, rawVal] of Object.entries(columnFilters)) {
         const needle = (rawVal || '').trim().toLowerCase();
         if (!needle) continue;
@@ -188,7 +135,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
             haystack = String(inv.subtotal || inv.taxableAmount || 0);
             break;
           case 'gstTotal':
-            haystack = String(gstTotal);
+            haystack = String((inv.totalCgst || 0) + (inv.totalSgst || 0) + (inv.totalIgst || 0));
             break;
           case 'grandTotal':
             haystack = String(inv.finalTotal || inv.grandTotal || 0);
@@ -205,7 +152,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
 
       return true;
     });
-  }, [invoices, searchQuery, searchColumn, columnFilters]);
+  }, [invoices, columnFilters]);
 
   const sortedInvoices = useMemo(() => {
     if (!sortField || !sortDirection) {
@@ -352,11 +299,10 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
   return (
     <Card className="overflow-hidden border border-slate-200 bg-white shadow-2xs">
       {/* Table Toolbar Header */}
-      <div className="p-4 border-b border-slate-200 space-y-3">
+      <div className="p-4 border-b border-slate-200">
         <div className="flex flex-col md:flex-row justify-between md:items-center gap-3">
           <div>
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#1F4E79]" />
+            <h3 className="font-bold text-slate-900 text-base">
               Generated Tax Invoices &amp; Records
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -364,93 +310,49 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
             </p>
           </div>
 
-          <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200 self-start md:self-auto">
-            {sortedInvoices.length} of {totalCount} total invoice{totalCount === 1 ? '' : 's'}
-          </span>
-        </div>
+          <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0">
+            <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200 whitespace-nowrap">
+              {sortedInvoices.length} of {totalCount} total invoice{totalCount === 1 ? '' : 's'}
+            </span>
 
-        {/* Search Bar with Column Selector & Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          {/* Integrated Column Selector & Search Bar */}
-          <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px]">
-            <div className="relative">
-              <select
-                value={searchColumn}
-                onChange={(e) => setSearchColumn(e.target.value)}
-                className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
-              >
-                {INVOICE_SEARCH_COLUMNS.map((col) => (
-                  <option key={col.value} value={col.value}>
-                    {col.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            <div className="relative flex-1 flex items-center">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                placeholder={
-                  searchColumn === 'ALL'
-                    ? 'Search across all invoice columns...'
-                    : `Search by ${INVOICE_SEARCH_COLUMNS.find((c) => c.value === searchColumn)?.label || searchColumn}...`
-                }
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                  title="Clear search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Toggle Inline Column Filters Button */}
-          <button
-            type="button"
-            onClick={() => setShowColumnFilters(!showColumnFilters)}
-            className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs shrink-0 ${
-              showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
-                ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-            title="Toggle column-wise search inputs on table header"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Column Filters</span>
-            {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
-              <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
-              </span>
-            )}
-          </button>
-
-          {/* Reset Filters */}
-          {hasActiveFilters && (
+            {/* Toggle Inline Column Filters Button */}
             <button
               type="button"
-              onClick={handleResetFilters}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
-              title="Reset Filters"
+              onClick={() => setShowColumnFilters(!showColumnFilters)}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs shrink-0 whitespace-nowrap ${
+                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                  ? 'bg-black text-white border-black font-bold'
+                  : 'bg-white border-slate-300 text-black hover:bg-black hover:text-white'
+              }`}
+              title="Toggle column-wise search inputs on table header"
             >
-              <RotateCcw className="w-4 h-4" />
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Column Filters</span>
+              {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                <span className="bg-slate-700 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+                </span>
+              )}
             </button>
-          )}
+
+            {/* Reset Filters */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="p-2 rounded-lg text-black hover:text-white hover:bg-black border border-slate-300 transition-colors cursor-pointer shrink-0"
+                title="Reset Filters"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Active Sort Banner */}
       {sortField && sortDirection && (
-        <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+        <div className="flex items-center justify-between px-3.5 py-2 bg-slate-100 border-b border-slate-200 text-xs text-black">
           <div className="flex items-center gap-2">
             <span className="font-medium">
               Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
@@ -462,7 +364,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
               setSortField(null);
               setSortDirection(null);
             }}
-            className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+            className="text-xs font-semibold text-black hover:underline cursor-pointer"
             title="Reset to normal order"
           >
             Clear / Desort
@@ -673,7 +575,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                     <button
                       type="button"
                       onClick={() => setColumnFilters({})}
-                      className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                      className="text-[10px] text-black hover:text-white hover:bg-black font-bold px-1.5 py-0.5 bg-white border border-slate-300 rounded cursor-pointer transition-colors"
                       title="Clear column filters"
                     >
                       Clear
@@ -688,7 +590,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
             {loading ? (
               <tr>
                 <td colSpan={9} className="py-14 text-center text-slate-500 text-sm bg-white">
-                  <div className="w-8 h-8 border-2 border-[#1F4E79] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                   Loading invoices...
                 </td>
               </tr>
@@ -709,7 +611,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                       <button
                         type="button"
                         onClick={handleResetFilters}
-                        className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                        className="mt-2 px-3.5 py-1.5 bg-black hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
                       >
                         <X className="w-3.5 h-3.5" />
                         <span>Reset All Filters</span>
@@ -733,7 +635,14 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                       <span className="font-mono font-bold text-slate-900 text-xs block">
                         {inv.invoiceNo || inv.invoiceNumber || inv.id}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">FY: {inv.financialYear || '2026-27'}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-slate-400 font-mono">FY: {inv.financialYear || '2026-27'}</span>
+                        {(inv.isWithoutGst || inv.gstType === 'without_gst') && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            Without GST (Firebase)
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-3 text-slate-700 whitespace-nowrap font-medium border-r border-slate-200">
                       {formatDate(inv.invoiceDate)}
@@ -754,7 +663,14 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                       {formatCurrency(inv.subtotal || inv.taxableAmount || 0)}
                     </td>
                     <td className="py-3.5 px-3 text-right font-medium text-slate-700 whitespace-nowrap border-r border-slate-200">
-                      {formatCurrency(gstTotal)}
+                      {inv.isWithoutGst || inv.gstType === 'without_gst' ? (
+                        <div>
+                          <span>₹0.00</span>
+                          <span className="block text-[10px] text-emerald-700 font-semibold">Non-GST</span>
+                        </div>
+                      ) : (
+                        formatCurrency(gstTotal)
+                      )}
                     </td>
                     <td className="py-3.5 px-3 text-right font-bold text-slate-900 font-mono whitespace-nowrap text-xs border-r border-slate-200">
                       {formatCurrency(inv.finalTotal || inv.grandTotal || 0)}
@@ -768,7 +684,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                           size="sm"
                           variant="outline"
                           onClick={() => onDownloadPdf(inv)}
-                          className="text-xs font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 h-auto py-1 px-2.5"
+                          className="text-xs font-bold text-black border-slate-300 hover:bg-black hover:text-white bg-white h-auto py-1 px-2.5 transition-colors cursor-pointer"
                         >
                           Download
                         </Button>
@@ -776,7 +692,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                           type="button"
                           onClick={() => onViewInvoice(inv)}
                           title="View Invoice Details"
-                          className="p-1.5 text-slate-600 hover:text-black hover:bg-slate-100 rounded-md transition-colors"
+                          className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -784,7 +700,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                           type="button"
                           onClick={() => onPrintPdf(inv)}
                           title="Print Tax Invoice"
-                          className="p-1.5 text-slate-600 hover:text-black hover:bg-slate-100 rounded-md transition-colors"
+                          className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -793,7 +709,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                             type="button"
                             onClick={() => onEditInvoice?.(inv)}
                             title="Edit Invoice Data (Admin Only)"
-                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
+                            className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
                           >
                             <Pencil className="w-4 h-4" />
                           </button>

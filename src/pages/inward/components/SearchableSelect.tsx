@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronDown, Check, X } from 'lucide-react';
 
 export interface SelectOptionGroup {
@@ -30,26 +30,56 @@ interface SearchableSelectProps {
   helperText?: string;
   className?: string;
   formatTriggerLabel?: (option: SelectOption) => React.ReactNode;
+  dropdownWidth?: 'trigger' | 'wide' | 'auto' | string;
+  align?: 'left' | 'right' | 'auto';
+  showSearch?: boolean;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   label,
   required,
   value,
-  placeholder = 'Select an option...',
-  searchPlaceholder = 'Search...',
+  placeholder = '',
+  searchPlaceholder = '',
   groups,
   onSelect,
   onClear,
   disabled = false,
   helperText,
   className = '',
-  formatTriggerLabel
+  formatTriggerLabel,
+  dropdownWidth = 'trigger',
+  align = 'auto',
+  showSearch = true
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Check if dropdown should align right to prevent right-edge clipping
+  const [shouldAlignRight, setShouldAlignRight] = useState(align === 'right');
+
+  useEffect(() => {
+    if (align === 'right') {
+      setShouldAlignRight(true);
+      return;
+    }
+    if (align === 'left') {
+      setShouldAlignRight(false);
+      return;
+    }
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      // If trigger's right is close to viewport edge or trigger left + 350 exceeds viewport
+      if (rect.left + 350 > viewportWidth || rect.right > viewportWidth - 60) {
+        setShouldAlignRight(true);
+      } else {
+        setShouldAlignRight(false);
+      }
+    }
+  }, [isOpen, align]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -81,7 +111,16 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   // Find currently selected option across all groups
   const selectedOption = groups
     .flatMap((g) => g.options)
-    .find((o) => o.id === value);
+    .find(
+      (o) =>
+        o.id === value ||
+        (Boolean(value) && Boolean(o.meta) && (
+          o.meta.id === value ||
+          o.meta.poId === value ||
+          o.meta.vendorId === value ||
+          (o.meta.poNumber && String(o.meta.poNumber).trim().toLowerCase() === String(value).trim().toLowerCase())
+        ))
+    );
 
   // Filter groups and options by search query
   const filteredGroups = groups
@@ -103,12 +142,67 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     })
     .filter((group) => group.options.length > 0);
 
-  const totalOptionsCount = filteredGroups.reduce((acc, g) => acc + g.options.length, 0);
+  const allFilteredOptions = useMemo(() => {
+    return filteredGroups.flatMap((g) => g.options);
+  }, [filteredGroups]);
+
+  const totalOptionsCount = allFilteredOptions.length;
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
+
+  // Automatically highlight when exactly one result matches or reset
+  useEffect(() => {
+    if (allFilteredOptions.length === 1) {
+      setHighlightedIndex(0);
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [allFilteredOptions]);
 
   const handleSelectOption = (opt: SelectOption) => {
     onSelect(opt);
     setIsOpen(false);
     setSearchQuery('');
+    setHighlightedIndex(-1);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (allFilteredOptions.length === 1) {
+        handleSelectOption(allFilteredOptions[0]);
+      } else if (highlightedIndex >= 0 && highlightedIndex < allFilteredOptions.length) {
+        handleSelectOption(allFilteredOptions[highlightedIndex]);
+      } else if (allFilteredOptions.length > 0 && searchQuery.trim()) {
+        handleSelectOption(allFilteredOptions[0]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev < allFilteredOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : allFilteredOptions.length - 1
+      );
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsOpen(false);
+    }
+  };
+
+  const getDropdownWidthClass = () => {
+    if (dropdownWidth === 'wide') {
+      return 'min-w-full sm:min-w-[420px] max-w-[90vw]';
+    }
+    if (dropdownWidth === 'auto') {
+      return 'min-w-full w-max max-w-[90vw]';
+    }
+    if (dropdownWidth && dropdownWidth !== 'trigger') {
+      return dropdownWidth;
+    }
+    return 'w-full min-w-full';
   };
 
   return (
@@ -170,30 +264,35 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
       {/* Dropdown Menu Popup */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 min-w-[300px]">
+        <div
+          className={`absolute ${shouldAlignRight ? 'right-0' : 'left-0'} top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${getDropdownWidthClass()}`}
+        >
           {/* Search Box Header */}
-          <div className="p-2 border-b border-slate-100 bg-slate-50/70">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="w-full h-8 pl-8 pr-7 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#1F4E79] focus:ring-1 focus:ring-[#1F4E79]"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+          {showSearch && (
+            <div className="p-2 border-b border-slate-100 bg-slate-50/70">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                  placeholder={searchPlaceholder}
+                  className="w-full h-8 pl-8 pr-7 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#1F4E79] focus:ring-1 focus:ring-[#1F4E79]"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Options List */}
           <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 p-1">
@@ -219,27 +318,34 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   <div className="space-y-0.5">
                     {group.options.map((opt) => {
                       const isSelected = opt.id === value;
+                      const isHighlighted = allFilteredOptions[highlightedIndex]?.id === opt.id;
                       return (
                         <button
                           key={opt.id}
                           type="button"
                           onClick={() => handleSelectOption(opt)}
+                          onMouseEnter={() => {
+                            const idx = allFilteredOptions.findIndex((o) => o.id === opt.id);
+                            if (idx !== -1) setHighlightedIndex(idx);
+                          }}
                           className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-3 transition cursor-pointer ${
                             isSelected
-                              ? 'bg-blue-50/80 text-[#1F4E79] font-semibold'
+                              ? 'bg-blue-50/90 text-[#1F4E79] font-bold ring-1 ring-[#1F4E79]/30'
+                              : isHighlighted
+                              ? 'bg-blue-50/70 text-[#1F4E79] font-semibold ring-1 ring-[#1F4E79]/20'
                               : 'hover:bg-slate-50 text-slate-700'
                           }`}
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between gap-2">
                               {opt.primaryNode ? (
-                                <div className="truncate flex-1">{opt.primaryNode}</div>
+                                <div className="min-w-0">{opt.primaryNode}</div>
                               ) : (
-                                <span className="font-semibold truncate text-slate-900">{opt.primaryText}</span>
+                                <span className="font-semibold text-slate-900 whitespace-nowrap">{opt.primaryText}</span>
                               )}
                               {opt.badge && (
                                 <span
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 max-w-[140px] truncate ${
                                     opt.badgeVariant === 'amber'
                                       ? 'bg-amber-100 text-amber-800'
                                       : opt.badgeVariant === 'emerald'
@@ -248,6 +354,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                                       ? 'bg-blue-100 text-blue-800'
                                       : 'bg-slate-100 text-slate-600'
                                   }`}
+                                  title={opt.badge}
                                 >
                                   {opt.badge}
                                 </span>

@@ -3,6 +3,7 @@ import { MasterItem, ItemCategoryRecord, UnitOfMeasure, ItemType } from '../../.
 import { Vendor } from '../../../types/vendor';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 import { ItemService } from '../../../services/itemService';
 import {
   ItemCategoryMasterService,
@@ -16,7 +17,8 @@ import {
   Lock,
   Package,
   Plus,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 
 interface ItemModalProps {
@@ -549,9 +551,10 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   type="button"
                   disabled={isSavingCat || !newCatName.trim()}
                   onClick={handleSaveNewCategory}
-                  className="px-3 py-1 bg-[#1F4E79] hover:bg-[#163a5c] text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                  className="px-3 py-1 bg-[#1F4E79] hover:bg-[#163a5c] text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
                 >
-                  {isSavingCat ? 'Saving...' : 'Save & Select Category'}
+                  {isSavingCat && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingCat ? 'Saving...' : 'Save & Select Category'}</span>
                 </button>
               </div>
             </div>
@@ -707,15 +710,22 @@ export const ItemModal: React.FC<ItemModalProps> = ({
               type="submit"
               variant="primary"
               size="md"
-              disabled={isSubmitting}
               icon={<CheckCircle2 className="w-4 h-4" />}
+              loading={isSubmitting}
+              loadingText={isEditing ? 'Updating Master Item...' : 'Creating Master Item...'}
               className="px-6 py-2.5 text-xs font-semibold shadow-xs"
             >
-              {isSubmitting ? 'Saving Item...' : isEditing ? 'Update Master Item' : 'Create Master Item'}
+              {isEditing ? 'Update Master Item' : 'Create Master Item'}
             </Button>
           </div>
         </div>
       </form>
+
+      <LoadingOverlay
+        isOpen={isSubmitting}
+        title={isEditing ? 'Updating Master Item...' : 'Creating Master Item...'}
+        message="Validating item specifications, category mapping, and saving to master..."
+      />
     </Modal>
   );
 };

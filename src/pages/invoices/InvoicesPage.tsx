@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Invoice, InvoiceEligibleItem, InvoiceFilterOptions, InvoiceMetrics } from '../../types/invoice';
+import { Invoice, InvoiceEligibleItem, InvoiceFilterOptions, InvoiceMetrics, InvoiceReadinessPOGroup } from '../../types/invoice';
 import { PurchaseOrder } from '../../types/po';
 import { Vendor } from '../../types/vendor';
 import { Button } from '../../components/ui/Button';
 import { InvoiceService } from '../../services/invoiceService';
 import { InvoicePdfService } from '../../services/invoicePdfService';
+import { StatementService } from '../../services/statementService';
 import { InvoiceDashboardMetrics } from './components/InvoiceDashboardMetrics';
 import { InvoiceEligibleTable } from './components/InvoiceEligibleTable';
 import { InvoiceHistoryTable } from './components/InvoiceHistoryTable';
@@ -13,9 +14,9 @@ import { InvoiceDetailsModal } from './components/InvoiceDetailsModal';
 import { InvoiceCancelModal } from './components/InvoiceCancelModal';
 import { InvoiceSettingsModal } from './components/InvoiceSettingsModal';
 import { InvoiceEditModal } from './components/InvoiceEditModal';
+import { InvoiceTaxChoiceModal } from './components/InvoiceTaxChoiceModal';
 import { useAuth } from '../../context/AuthContext';
 import {
-  FileCheck2,
   FileText,
   RotateCcw,
   Settings,
@@ -31,6 +32,7 @@ interface InvoicesPageProps {
   vendors: Vendor[];
   approvedPoLineIds: string[];
   onAddInvoice: (inv: Invoice) => void;
+  onUpdateInvoice?: (inv: Invoice) => void;
 }
 
 export const InvoicesPage: React.FC<InvoicesPageProps> = ({
@@ -38,7 +40,8 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   pos,
   vendors,
   approvedPoLineIds,
-  onAddInvoice
+  onAddInvoice,
+  onUpdateInvoice
 }) => {
   const { user, isDemoMode } = useAuth();
   const navigate = useNavigate();
@@ -46,8 +49,8 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   const userRole = (user as any)?.role || 'Admin';
   const isAdmin = userRole === 'Admin' || userRole === 'admin';
 
-  // Navigation tab: 'eligible' (waiting for invoicing) or 'history' (generated invoices)
-  const [activeTab, setActiveTab] = useState<'eligible' | 'history'>('eligible');
+  // Navigation tab: 'eligible' (reconciliation & approval), 'generation' (ready for invoice creation), or 'history' (generated invoices)
+  const [activeTab, setActiveTab] = useState<'eligible' | 'generation' | 'history'>('eligible');
 
   // Filter state
   const [filters, setFilters] = useState<InvoiceFilterOptions>({
@@ -56,9 +59,11 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
   // Local state for live eligible items and invoices
   const [eligibleItems, setEligibleItems] = useState<InvoiceEligibleItem[]>([]);
+  const [readinessGroups, setReadinessGroups] = useState<InvoiceReadinessPOGroup[]>([]);
   const [invoicesList, setInvoicesList] = useState<Invoice[]>(propInvoices);
   const [loadingEligible, setLoadingEligible] = useState<boolean>(true);
   const [loadingInvoices, setLoadingInvoices] = useState<boolean>(false);
+  const [isApproving, setIsApproving] = useState<boolean>(false);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 15;
 
@@ -79,6 +84,11 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [generatingLabel, setGeneratingLabel] = useState<string | null>(null);
 
+  // Tax Mode Choice State (Before Generating Invoice)
+  const [isTaxChoiceOpen, setIsTaxChoiceOpen] = useState<boolean>(false);
+  const [taxChoiceItems, setTaxChoiceItems] = useState<InvoiceEligibleItem[]>([]);
+  const [isTaxProcessing, setIsTaxProcessing] = useState<boolean>(false);
+
   // Toast notification
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
@@ -92,26 +102,94 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
   // Sync prop invoices into state if parent updates
   useEffect(() => {
     if (propInvoices) {
-      setInvoicesList(propInvoices);
+      const seen = new Set<string>();
+      const deduped: Invoice[] = [];
+      for (const inv of propInvoices) {
+        const key = inv.id || inv.invoiceNo;
+        if (key) {
+          if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(inv);
+          }
+        } else {
+          deduped.push(inv);
+        }
+      }
+      setInvoicesList(deduped);
     }
   }, [propInvoices]);
 
-  // Load eligible items from Statement approvals
+  // Load eligible items and reconciliation ledger across POs
   const refreshEligibleItems = useCallback(async () => {
     try {
       setLoadingEligible(true);
-      const items = await InvoiceService.getInvoiceEligibleItems(
-        { companyId: filters.companyId, poNumber: filters.poNumber, styleNo: filters.styleNo },
-        false
-      );
+      const [groups, items] = await Promise.all([
+        InvoiceService.getInvoiceReadinessLedger(
+          { companyId: filters.companyId, poNumber: filters.poNumber, styleNo: filters.styleNo },
+          false
+        ),
+        InvoiceService.getInvoiceEligibleItems(
+          { companyId: filters.companyId, poNumber: filters.poNumber, styleNo: filters.styleNo },
+          false
+        )
+      ]);
+      setReadinessGroups(groups || []);
       setEligibleItems(items || []);
     } catch (err) {
       console.warn('Failed to load eligible items:', err);
+      setReadinessGroups([]);
       setEligibleItems([]);
     } finally {
       setLoadingEligible(false);
     }
   }, [filters.companyId, filters.poNumber, filters.styleNo]);
+
+  // Handle explicit colour line approval
+  const handleApproveLine = async (poId: string, poLineId: string, companyId?: string) => {
+    try {
+      setIsApproving(true);
+      const authUser = {
+        uid: user?.uid || 'usr-authorized',
+        displayName: user?.displayName || 'Authorized User'
+      };
+      await StatementService.approveStatementLineForInvoice(
+        { poId, poLineId, companyId },
+        authUser,
+        false
+      );
+      showToast('success', 'Colour line approved for invoicing!');
+      await refreshEligibleItems();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to approve colour line for invoice.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // Handle entire PO approval
+  const handleApproveEntirePO = async (poId: string, companyId?: string) => {
+    try {
+      setIsApproving(true);
+      const authUser = {
+        uid: user?.uid || 'usr-authorized',
+        displayName: user?.displayName || 'Authorized User'
+      };
+      const result = await StatementService.approveEntirePOForInvoice(
+        { poId, companyId },
+        authUser,
+        false
+      );
+      showToast(
+        'success',
+        `Entire PO approved! ${result.approvedRecords.length} colour(s) ready for invoice.`
+      );
+      await refreshEligibleItems();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to approve entire PO for invoice.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
 
   // Load invoices history
   const refreshInvoices = useCallback(async () => {
@@ -134,7 +212,17 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
   // Filtered invoices in memory for search & status filters
   const filteredInvoices = useMemo(() => {
-    let list = [...invoicesList];
+    // Deduplicate by id and invoiceNo
+    const seen = new Set<string>();
+    const uniqueList = invoicesList.filter((inv) => {
+      const key = inv.id || inv.invoiceNo;
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    let list = [...uniqueList];
 
     if (filters.searchQuery) {
       const q = filters.searchQuery.toLowerCase().trim();
@@ -142,8 +230,27 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         (inv) =>
           inv.invoiceNo?.toLowerCase().includes(q) ||
           inv.customerSnapshot?.companyName?.toLowerCase().includes(q) ||
+          (inv as any).customerBillingSnapshot?.companyName?.toLowerCase().includes(q) ||
+          (inv as any).customerName?.toLowerCase().includes(q) ||
+          (inv as any).customerCompanyNameSnapshot?.toLowerCase().includes(q) ||
           inv.poNumber?.toLowerCase().includes(q) ||
-          inv.styleNo?.toLowerCase().includes(q)
+          (inv.poNumbers && inv.poNumbers.some((p) => p.toLowerCase().includes(q))) ||
+          inv.styleNo?.toLowerCase().includes(q) ||
+          (inv as any).styleNumber?.toLowerCase().includes(q) ||
+          (inv as any).itemName?.toLowerCase().includes(q) ||
+          (inv as any).dcNo?.toLowerCase().includes(q) ||
+          (inv as any).ourDcNo?.toLowerCase().includes(q) ||
+          inv.invoiceDate?.toLowerCase().includes(q) ||
+          inv.status?.toLowerCase().includes(q) ||
+          String(inv.grandTotal || (inv as any).totalAmount || '').includes(q) ||
+          (inv.lines && inv.lines.some((l) =>
+            l.colour?.toLowerCase().includes(q) ||
+            l.process?.toLowerCase().includes(q) ||
+            l.hsnSac?.toLowerCase().includes(q) ||
+            l.description?.toLowerCase().includes(q) ||
+            l.poNumber?.toLowerCase().includes(q) ||
+            l.styleNoSnapshot?.toLowerCase().includes(q)
+          ))
       );
     }
 
@@ -178,6 +285,18 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
       .sort((a, b) => a.companyName.localeCompare(b.companyName));
   }, [vendors]);
 
+  // Aggregate line counts for section tab badges
+  const totalPendingLinesCount = useMemo(() => {
+    return readinessGroups.reduce(
+      (sum, g) => sum + g.lines.filter((l) => !l.isApprovedForInvoice && !l.isInvoiced).length,
+      0
+    );
+  }, [readinessGroups]);
+
+  const totalApprovedLinesCount = useMemo(() => {
+    return readinessGroups.reduce((sum, g) => sum + g.approvedLines.length, 0);
+  }, [readinessGroups]);
+
   // Filter change handler
   const handleFilterChange = (updated: Partial<InvoiceFilterOptions>) => {
     setFilters((prev) => ({ ...prev, ...updated }));
@@ -189,62 +308,91 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
     setCurrentPage(1);
   };
 
-  // 1. Generate Invoice trigger from selected approval items
-  const handleInitiateGenerateInvoice = async (selectedApprovalIds: string[]) => {
+  // Triggered when user initiates invoice generation for items (opens With/Without GST choice)
+  const handleRequestInvoicing = (
+    items: InvoiceEligibleItem[],
+    initialAction: 'direct_download' | 'review_draft' = 'direct_download'
+  ) => {
+    if (!items || items.length === 0) return;
+    setTaxChoiceItems(items);
+    setIsTaxChoiceOpen(true);
+  };
+
+  // Callback when user confirms tax choice in InvoiceTaxChoiceModal
+  const handleConfirmTaxChoice = async (
+    gstType: 'with_gst' | 'without_gst',
+    action: 'direct_download' | 'review_draft'
+  ) => {
+    if (taxChoiceItems.length === 0) return;
+    const isWithoutGst = gstType === 'without_gst';
+
     try {
+      setIsTaxProcessing(true);
       const authUser = {
         uid: user?.uid || 'usr-authorized',
         displayName: user?.displayName || 'Authorized User'
       };
 
-      const draft = await InvoiceService.createInvoiceDraft(selectedApprovalIds, authUser, false, eligibleItems);
-      setDraftInvoice(draft);
-      setIsPreviewOpen(true);
+      const approvalIds = taxChoiceItems.map((i) => i.approvalId);
+      const label =
+        taxChoiceItems.length > 1
+          ? `${taxChoiceItems.length} colours (${taxChoiceItems[0].poNumber})`
+          : `${taxChoiceItems[0].colour} (${taxChoiceItems[0].styleNo})`;
+
+      // Create draft with chosen GST mode
+      const draft = await InvoiceService.createInvoiceDraft(
+        approvalIds,
+        authUser,
+        false,
+        eligibleItems,
+        { isWithoutGst, gstType }
+      );
+
+      if (action === 'review_draft') {
+        setIsTaxChoiceOpen(false);
+        setDraftInvoice(draft);
+        setIsPreviewOpen(true);
+        return;
+      }
+
+      // Direct download & finalize
+      setGeneratingLabel(label);
+      setIsTaxChoiceOpen(false);
+      showToast(
+        'info',
+        `Generating ${isWithoutGst ? 'Non-GST' : 'Tax'} Invoice for ${label}...`
+      );
+
+      const finalized = await InvoiceService.finalizeInvoice(draft, authUser, false);
+      onAddInvoice(finalized);
+      setInvoicesList((prev) => [finalized, ...prev.filter((i) => i.id !== finalized.id)]);
+      setEligibleItems((prev) => prev.filter((item) => !approvalIds.includes(item.approvalId)));
+
+      await InvoicePdfService.downloadInvoicePdf(finalized);
+      showToast(
+        'success',
+        `${isWithoutGst ? 'Non-GST Invoice (stored in Firebase)' : 'Tax Invoice'} ${finalized.invoiceNo} generated & downloaded successfully!`
+      );
+
+      refreshEligibleItems();
     } catch (err: any) {
-      showToast('error', err?.message || 'Failed to prepare invoice draft.');
+      showToast('error', err?.message || 'Failed to generate invoice.');
+    } finally {
+      setIsTaxProcessing(false);
+      setGeneratingLabel(null);
     }
+  };
+
+  // 1. Generate Invoice trigger from selected approval items
+  const handleInitiateGenerateInvoice = async (selectedApprovalIds: string[]) => {
+    const items = eligibleItems.filter((i) => selectedApprovalIds.includes(i.approvalId));
+    handleRequestInvoicing(items, 'review_draft');
   };
 
   // Direct download action from eligible table row (supports single item or multiple colours combined)
   const handleDownloadDirectInvoice = async (items: InvoiceEligibleItem | InvoiceEligibleItem[]) => {
-    try {
-      const authUser = {
-        uid: user?.uid || 'usr-authorized',
-        displayName: user?.displayName || 'Authorized User'
-      };
-
-      const itemList = Array.isArray(items) ? items : [items];
-      if (itemList.length === 0) return;
-
-      const approvalIds = itemList.map((i) => i.approvalId);
-      const label =
-        itemList.length > 1
-          ? `${itemList.length} colours (${itemList[0].poNumber})`
-          : `${itemList[0].colour} (${itemList[0].styleNo})`;
-
-      setGeneratingLabel(label);
-      showToast('info', `Generating Tax Invoice for ${label}...`);
-
-      // Pass already loaded items to generate draft instantly without network round-trips
-      const draft = await InvoiceService.createInvoiceDraft(approvalIds, authUser, false, eligibleItems);
-      const finalized = await InvoiceService.finalizeInvoice(draft, authUser, false);
-
-      onAddInvoice(finalized);
-      setInvoicesList((prev) => [finalized, ...prev.filter((i) => i.id !== finalized.id)]);
-      
-      // Instantly remove consumed lines from UI without waiting for network re-fetch
-      setEligibleItems((prev) => prev.filter((item) => !approvalIds.includes(item.approvalId)));
-
-      await InvoicePdfService.downloadInvoicePdf(finalized);
-      showToast('success', `Tax Invoice ${finalized.invoiceNo} generated & downloaded successfully!`);
-
-      // Sync in background
-      refreshEligibleItems();
-    } catch (err: any) {
-      showToast('error', err?.message || 'Failed to download invoice.');
-    } finally {
-      setGeneratingLabel(null);
-    }
+    const itemList = Array.isArray(items) ? items : [items];
+    handleRequestInvoicing(itemList, 'direct_download');
   };
 
   // 2. Finalize Invoice confirmation
@@ -336,8 +484,22 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
       displayName: user?.displayName || 'Admin'
     };
     const saved = await InvoiceService.updateInvoice(updatedInvoice, authUser, isDemoMode);
-    setInvoicesList((prev) => prev.map((inv) => (inv.id === saved.id ? saved : inv)));
-    onAddInvoice(saved);
+    setInvoicesList((prev) => {
+      const exists = prev.some((inv) => inv.id === saved.id || inv.invoiceNo === saved.invoiceNo);
+      if (exists) {
+        return prev.map((inv) =>
+          inv.id === saved.id || inv.invoiceNo === saved.invoiceNo ? saved : inv
+        );
+      }
+      return [saved, ...prev];
+    });
+
+    if (onUpdateInvoice) {
+      onUpdateInvoice(saved);
+    } else {
+      onAddInvoice(saved);
+    }
+
     showToast('success', `Tax Invoice ${saved.invoiceNo} successfully updated & saved to database!`);
   };
 
@@ -457,40 +619,60 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
 
       {/* Main Tabs Navigation */}
       <div className="flex border-b border-slate-200 gap-4">
+        {/* Tab 1: Invoice-Eligible Items (Reconciliation & Approval) */}
         <button
           type="button"
           onClick={() => setActiveTab('eligible')}
           className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'eligible'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
-              : 'border-transparent text-slate-500 hover:text-[#1F4E79]'
+              ? 'border-black text-black'
+              : 'border-transparent text-slate-600 hover:text-black'
           }`}
         >
-          <FileCheck2 className="w-4 h-4" />
-          Invoice-Eligible Items
+          <span>Invoice-Eligible Items</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'eligible' ? 'bg-[#1F4E79] text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              activeTab === 'eligible' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
             }`}
           >
-            {eligibleItems.length}
+            {totalPendingLinesCount}
           </span>
         </button>
 
+        {/* Tab 2: Invoice Generation (Approved POs ready for billing) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('generation')}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'generation'
+              ? 'border-black text-black'
+              : 'border-transparent text-slate-600 hover:text-black'
+          }`}
+        >
+          <span>Invoice Generation</span>
+          <span
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              activeTab === 'generation' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+            }`}
+          >
+            {totalApprovedLinesCount}
+          </span>
+        </button>
+
+        {/* Tab 3: Generated Invoices History */}
         <button
           type="button"
           onClick={() => setActiveTab('history')}
           className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'history'
-              ? 'border-[#1F4E79] text-[#1F4E79]'
-              : 'border-transparent text-slate-500 hover:text-[#1F4E79]'
+              ? 'border-black text-black'
+              : 'border-transparent text-slate-600 hover:text-black'
           }`}
         >
-          <FileText className="w-4 h-4" />
-          Generated Invoices History
+          <span>Generated Invoices History</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              activeTab === 'history' ? 'bg-[#1F4E79] text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              activeTab === 'history' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
             }`}
           >
             {filteredInvoices.length}
@@ -498,18 +680,43 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         </button>
       </div>
 
-      {/* Tab 1: Eligible Items */}
+      {/* Tab 1: Eligible Items (Reconciliation & Line Approval) */}
       {activeTab === 'eligible' && (
         <InvoiceEligibleTable
+          mode="eligible"
+          readinessGroups={readinessGroups}
           eligibleItems={eligibleItems}
           loading={loadingEligible}
+          searchQuery={filters.searchQuery}
+          onApproveLine={handleApproveLine}
+          onApproveEntirePO={handleApproveEntirePO}
+          isApproving={isApproving}
+          onRequestInvoicing={handleRequestInvoicing}
           onGenerateInvoice={handleInitiateGenerateInvoice}
           onDownloadInvoice={handleDownloadDirectInvoice}
-          onNavigateStatement={() => navigate('/erp/statement')}
+          onSwitchTab={(t) => setActiveTab(t)}
         />
       )}
 
-      {/* Tab 2: Invoice History */}
+      {/* Tab 2: Invoice Generation (Approved POs ready for billing) */}
+      {activeTab === 'generation' && (
+        <InvoiceEligibleTable
+          mode="generation"
+          readinessGroups={readinessGroups}
+          eligibleItems={eligibleItems}
+          loading={loadingEligible}
+          searchQuery={filters.searchQuery}
+          onApproveLine={handleApproveLine}
+          onApproveEntirePO={handleApproveEntirePO}
+          isApproving={isApproving}
+          onRequestInvoicing={handleRequestInvoicing}
+          onGenerateInvoice={handleInitiateGenerateInvoice}
+          onDownloadInvoice={handleDownloadDirectInvoice}
+          onSwitchTab={(t) => setActiveTab(t)}
+        />
+      )}
+
+      {/* Tab 3: Invoice History */}
       {activeTab === 'history' && (
         <InvoiceHistoryTable
           invoices={filteredInvoices}
@@ -529,6 +736,20 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           onEditInvoice={handleOpenEdit}
         />
       )}
+
+      {/* Modal 0: Invoice Tax Choice (With GST vs Without GST) */}
+      <InvoiceTaxChoiceModal
+        isOpen={isTaxChoiceOpen}
+        onClose={() => {
+          if (!isTaxProcessing) {
+            setIsTaxChoiceOpen(false);
+            setTaxChoiceItems([]);
+          }
+        }}
+        items={taxChoiceItems}
+        isProcessing={isTaxProcessing}
+        onConfirm={handleConfirmTaxChoice}
+      />
 
       {/* Modal 1: Invoice Preview & Finalization */}
       <InvoicePreviewModal

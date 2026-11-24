@@ -317,8 +317,8 @@ export const InvoiceEditModal: React.FC<InvoiceEditModalProps> = ({
                   onClick={() => handleToggleGstMode(false)}
                   className={`h-full rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                     !isWithoutGst
-                      ? 'bg-[#1F4E79] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                      ? 'bg-black text-white shadow-xs'
+                      : 'text-slate-600 hover:text-black hover:bg-slate-200/60'
                   }`}
                   title="Apply standard GST (CGST + SGST or IGST)"
                 >
@@ -331,8 +331,8 @@ export const InvoiceEditModal: React.FC<InvoiceEditModalProps> = ({
                   onClick={() => handleToggleGstMode(true)}
                   className={`h-full rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                     isWithoutGst
-                      ? 'bg-[#1F4E79] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                      ? 'bg-black text-white shadow-xs'
+                      : 'text-slate-600 hover:text-black hover:bg-slate-200/60'
                   }`}
                   title="Make all GST values '0' and set total amount equal to subtotal"
                 >
@@ -365,8 +365,8 @@ export const InvoiceEditModal: React.FC<InvoiceEditModalProps> = ({
                 }
                 className={`h-7 px-3 text-[11px] font-medium rounded-full border transition cursor-pointer ${
                   (formData.modeOfPayment || formData.paymentTerms) === term
-                    ? 'bg-[#1F4E79] text-white border-[#1F4E79] shadow-2xs'
-                    : 'bg-white text-slate-700 border-slate-300 hover:border-[#1F4E79] hover:bg-slate-50'
+                    ? 'bg-black text-white border-black shadow-2xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-black hover:bg-slate-50'
                 }`}
               >
                 {term}
@@ -415,7 +415,7 @@ export const InvoiceEditModal: React.FC<InvoiceEditModalProps> = ({
               onClick={handleSave}
               disabled={isSaving || isDownloading}
               icon={isSaving ? undefined : <Save className="w-4 h-4" />}
-              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] shadow-xs cursor-pointer"
+              className="bg-black hover:bg-neutral-800 text-white border-black shadow-xs cursor-pointer"
             >
               {isSaving ? 'Saving Changes...' : 'Save Changes'}
             </Button>

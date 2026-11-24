@@ -13,6 +13,8 @@ export interface DeliveryChallanItem {
   itemName?: string;
   colour?: string;
   process?: string;
+  partyDcNo?: string;
+  partyDcDate?: string;
   description: string;
   quantity: string;
 }
@@ -29,6 +31,7 @@ export interface DeliveryChallanData {
   driverName?: string;
   timeOut?: string;
   poNumber?: string;
+  customerPoNumber?: string;
   styleNo?: string;
   companyGstin?: string;
   companyPhone?: string;
@@ -257,6 +260,184 @@ export class DeliveryChallanPdfService {
   }
 
   /**
+   * Resolves the matching Inward DC Number for a specific outward colour line using FIFO (oldest inward first).
+   */
+  static resolvePartyDcForLine(
+    outward: OutwardEntry,
+    line: OutwardLine,
+    inwards?: InwardEntry[]
+  ): { partyDcNumber: string; partyDcDate: string } {
+    const candidates = this.getCandidateInwards(inwards);
+    if (!candidates || candidates.length === 0) {
+      return { partyDcNumber: '-', partyDcDate: '-' };
+    }
+
+    const targetPoId = outward.poId;
+    const targetPoNum = (outward.poNumberSnapshot || (outward as any).poNumber || '').trim().toLowerCase();
+    const targetCustId = outward.customerVendorId;
+    const targetStyle = (outward.styleNoSnapshot || outward.styleNo || '').trim().toLowerCase();
+    const targetLineColour = (line.colourNameSnapshot || line.colour || '').trim().toLowerCase();
+    const targetLineId = line.poLineId;
+
+    const matchingInwards = candidates.filter((inw) => {
+      if (inw.status === 'cancelled' || inw.status === 'reversed') return false;
+      if (!inw.customerDcNo) return false;
+
+      const poMatches =
+        (targetPoId && inw.poId === targetPoId) ||
+        (targetPoNum && (
+          (inw.poNumberSnapshot && inw.poNumberSnapshot.trim().toLowerCase() === targetPoNum) ||
+          ((inw as any).poNumber && (inw as any).poNumber.trim().toLowerCase() === targetPoNum)
+        ));
+
+      const custStyleMatches =
+        targetCustId &&
+        inw.customerVendorId === targetCustId &&
+        targetStyle &&
+        ((inw.styleNoSnapshot && inw.styleNoSnapshot.trim().toLowerCase() === targetStyle) ||
+          ((inw as any).styleNo && (inw as any).styleNo.trim().toLowerCase() === targetStyle));
+
+      if (!poMatches && !custStyleMatches) return false;
+
+      const inwLines = inw.lines || [];
+      if (inwLines.length === 0) return true;
+
+      return inwLines.some((il) => {
+        if (targetLineId && il.poLineId && il.poLineId === targetLineId) return true;
+        const inwColour = (il.colourNameSnapshot || il.colour || '').trim().toLowerCase();
+        return inwColour && inwColour === targetLineColour;
+      });
+    });
+
+    if (matchingInwards.length === 0) {
+      return { partyDcNumber: '-', partyDcDate: '-' };
+    }
+
+    // Sort matching inwards chronologically ascending (oldest inward first)
+    matchingInwards.sort((a, b) => {
+      const dateA = a.customerDate || a.inwardDate || a.createdAt || '';
+      const dateB = b.customerDate || b.inwardDate || b.createdAt || '';
+      const cmp = dateA.localeCompare(dateB);
+      if (cmp !== 0) return cmp;
+      return (a.inwardNo || '').localeCompare(b.inwardNo || '');
+    });
+
+    // FIFO allocation: match against unexhausted inward receipt
+    const prevDispatched = Number(line.previouslyDispatchedQtySnapshot) || 0;
+    const currentDispatch = Number(line.dispatchQty) || 0;
+
+    let cumulativeAllocated = 0;
+    for (const inw of matchingInwards) {
+      const inwLines = inw.lines || [];
+      let inwQty = 0;
+      if (inwLines.length > 0) {
+        const matchingLines = inwLines.filter((il) => {
+          if (targetLineId && il.poLineId && il.poLineId === targetLineId) return true;
+          const inwColour = (il.colourNameSnapshot || il.colour || '').trim().toLowerCase();
+          return inwColour && inwColour === targetLineColour;
+        });
+        inwQty = matchingLines.reduce((sum, il) => sum + (Number(il.receivedQty) || 0), 0);
+      } else {
+        inwQty = Number(inw.totalQuantity) || 0;
+      }
+
+      const inwStart = cumulativeAllocated;
+      const inwEnd = cumulativeAllocated + inwQty;
+      cumulativeAllocated += inwQty;
+
+      // Check if dispatch falls within this inward's batch
+      if (prevDispatched < inwEnd && (prevDispatched + currentDispatch) > inwStart) {
+        return {
+          partyDcNumber: inw.customerDcNo,
+          partyDcDate: inw.customerDate
+            ? formatDate(inw.customerDate)
+            : inw.inwardDate
+            ? formatDate(inw.inwardDate)
+            : '-'
+        };
+      }
+    }
+
+    // Fallback: oldest matching inward
+    const oldest = matchingInwards[0];
+    return {
+      partyDcNumber: oldest.customerDcNo,
+      partyDcDate: oldest.customerDate
+        ? formatDate(oldest.customerDate)
+        : oldest.inwardDate
+        ? formatDate(oldest.inwardDate)
+        : '-'
+    };
+  }
+
+  /**
+   * Resolves the Customer PO Number (from PO or outward)
+   */
+  static resolveCustomerPoNumber(outward: OutwardEntry): string {
+    const directCustPo =
+      (outward as any).customerPoNumber ||
+      (outward as any).customerPoNumberSnapshot ||
+      (outward as any).custPoNumber ||
+      (outward as any).customerPo;
+    if (directCustPo && typeof directCustPo === 'string' && directCustPo.trim() !== '') {
+      return directCustPo.trim();
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('perla_erp_purchase_orders');
+        if (raw) {
+          const pos = JSON.parse(raw);
+          if (Array.isArray(pos)) {
+            const foundPo = pos.find(
+              (p: any) =>
+                (outward.poId && (p.id === outward.poId || p.poId === outward.poId)) ||
+                (outward.poNumberSnapshot &&
+                  (p.poNumber === outward.poNumberSnapshot ||
+                    (p.poNumber && p.poNumber.trim().toLowerCase() === outward.poNumberSnapshot.trim().toLowerCase())))
+            );
+            if (foundPo?.customerPoNumber && String(foundPo.customerPoNumber).trim() !== '') {
+              return String(foundPo.customerPoNumber).trim();
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return outward.poNumberSnapshot || outward.poNumber || '—';
+  }
+
+  /**
+   * Asynchronously resolves the Customer PO Number from Firestore if needed
+   */
+  static async resolveCustomerPoNumberAsync(outward: OutwardEntry): Promise<string> {
+    const syncResult = this.resolveCustomerPoNumber(outward);
+    const internalPo = outward.poNumberSnapshot || outward.poNumber;
+    if (syncResult && syncResult !== '—' && syncResult !== internalPo) {
+      return syncResult;
+    }
+
+    try {
+      if (db && outward.poId) {
+        const poRef = doc(db, 'purchase_orders', outward.poId);
+        const snap = await getDoc(poRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.customerPoNumber && String(data.customerPoNumber).trim() !== '') {
+            return String(data.customerPoNumber).trim();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('DeliveryChallanPdfService: Failed to query customerPoNumber from Firestore:', err);
+    }
+
+    return syncResult;
+  }
+
+  /**
    * Asynchronously resolves the Party DC No. and Date, actively querying Firestore if needed
    */
   static async resolvePartyDcInfoAsync(
@@ -456,6 +637,7 @@ export class DeliveryChallanPdfService {
   ): DeliveryChallanData {
     const { partyDcNumber, partyDcDate } = this.resolvePartyDcInfo(outward, inwards);
     const customerAddress = this.resolveCustomerAddress(outward, vendors);
+    const customerPoNumber = this.resolveCustomerPoNumber(outward);
 
     const dcNumber = outward.ourDcNo || outward.outwardNo || '10001';
     const dcDate = formatDate(outward.outwardDate);
@@ -467,7 +649,7 @@ export class DeliveryChallanPdfService {
     let totalPieces = 0;
     let totalKg = 0;
 
-    const items = lines.map((l: OutwardLine, idx: number) => {
+    const items: DeliveryChallanItem[] = lines.map((l: OutwardLine, idx: number) => {
       const qtyNum = Number(l.dispatchQty) || 0;
       const unitStr = l.unit === 'kg' ? 'kg' : 'ps';
 
@@ -493,13 +675,19 @@ export class DeliveryChallanPdfService {
 
       const qtyDisplay = `${qtyNum.toLocaleString().padStart(2, '0')} ${unitStr}`;
 
+      // FIFO resolve party DC number for this specific line
+      const lineDc = this.resolvePartyDcForLine(outward, l, inwards);
+      const rowPartyDc = lineDc.partyDcNumber !== '-' ? lineDc.partyDcNumber : (partyDcNumber !== '-' ? partyDcNumber : '—');
+
       return {
         sNo: idx + 1,
         itemName: itemDesc,
         colour: colour,
         process: wash,
         description: parts.join(' - '),
-        quantity: qtyDisplay
+        quantity: qtyDisplay,
+        partyDcNo: rowPartyDc,
+        partyDcDate: lineDc.partyDcDate !== '-' ? lineDc.partyDcDate : partyDcDate
       };
     });
 
@@ -534,6 +722,7 @@ export class DeliveryChallanPdfService {
       driverName: outward.driverName || '',
       timeOut: (outward as any).outwardTime || (outward as any).timeOut || '',
       poNumber: outward.poNumberSnapshot || outward.poNumber,
+      customerPoNumber,
       styleNo: outward.styleNoSnapshot || outward.styleNo,
       companyGstin,
       companyPhone,
@@ -728,50 +917,39 @@ export class DeliveryChallanPdfService {
     doc.line(margin, curY, margin + contentWidth, curY);
 
     // --- 2. Metadata Section ---
-    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
-    // Row 1: DC No (Left) & Party DC No (Right)
+    curY += (isThree ? 3.8 : isTwo ? 4.5 : 5.5);
+    // Row 1: DC No (Left) & Date (Right) — Party D.C. No. is now in the table
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9.5);
     doc.text('No. :', margin + 2.5, curY);
     doc.setFontSize(isThree ? 9 : isTwo ? 9.5 : 10.5);
     doc.text(data.dcNumber, margin + 12, curY);
 
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
-    doc.text('Party D.C. No. :', margin + 124, curY);
-    doc.setFontSize(isThree ? 9 : isTwo ? 9.5 : 10.5);
-    doc.text(data.partyDcNumber, margin + 152, curY);
-
-    // Row 2: Date (Left) & Party Date (Right)
-    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
-    doc.text('Date :', margin + 2.5, curY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(data.dcDate, margin + 14, curY);
-
-    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9.5);
     doc.text('Date :', margin + 124, curY);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.partyDcDate, margin + 138, curY);
+    doc.text(data.dcDate, margin + 138, curY);
 
-    // Row 3: Our P.O. No. (Left) & Style No. (Right)
-    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
+    // Row 2: Customer P.O. No. (Left) & Style No. (Right)
+    curY += (isThree ? 4.0 : isTwo ? 4.8 : 5.8);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
-    doc.text('Our P.O. No. :', margin + 2.5, curY);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9.5);
+    doc.text('Customer P.O. No. :', margin + 2.5, curY);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.poNumber || '—', margin + 24, curY);
+    const custPoDisplay = data.customerPoNumber || data.poNumber || '—';
+    doc.text(custPoDisplay, margin + 35, curY);
 
     doc.setFont('helvetica', 'bold');
     doc.text('Style No. :', margin + 124, curY);
     doc.setFont('helvetica', 'normal');
     doc.text(data.styleNo || '—', margin + 142, curY);
 
-    // Row 4: To (Customer Company Name & Full Address)
-    curY += (isThree ? 3.2 : isTwo ? 3.6 : 4.2);
+    // Row 3: To (Customer Company Name & Full Address)
+    curY += (isThree ? 4.0 : isTwo ? 4.8 : 5.8);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9.5);
     doc.text('To :', margin + 2.5, curY);
-    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9);
+    doc.setFontSize(isThree ? 8 : isTwo ? 8.5 : 9.5);
     const fullAddress = data.customerAddress || data.destination || '';
     const toText = [
       data.customerName,
@@ -781,15 +959,17 @@ export class DeliveryChallanPdfService {
     doc.text(cleanTo, margin + 10, curY);
 
     // Table divider line
-    curY += 1.8;
+    curY += (isThree ? 2.2 : isTwo ? 2.8 : 3.4);
     doc.line(margin, curY, margin + contentWidth, curY);
 
-    // --- 3. Particulars Table (Separate Columns for Category: Particulars, Colour, Process, Qty) ---
+    // --- 3. Particulars Table (Col 2 is Party D.C. No.) ---
     // Render all line items without truncation
     const tableBody = data.items.map((item, idx) => {
       const parsed = DeliveryChallanPdfService.parseItemDescription(item);
+      const partyDc = item.partyDcNo && item.partyDcNo !== '-' ? item.partyDcNo : (data.partyDcNumber !== '-' ? data.partyDcNumber : '—');
       return [
         String(item.sNo || idx + 1).padStart(2, '0'),
+        partyDc,
         parsed.itemName,
         parsed.colour,
         parsed.process,
@@ -798,23 +978,23 @@ export class DeliveryChallanPdfService {
     });
 
     if ((isTwo || isThree) && tableBody.length === 1) {
-      tableBody.push(['', '', '', '', '']);
+      tableBody.push(['', '', '', '', '', '']);
     }
 
     const displayTotal = data.totalQuantityStr || this.calculateTotalQuantity(data.items);
     tableBody.push([
-      { content: 'TOTAL QUANTITY:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+      { content: 'TOTAL QUANTITY:', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold' } },
       { content: displayTotal, styles: { halign: 'right', fontStyle: 'bold' } }
     ] as any);
 
     const tableFontSize = isThree ? 7.5 : (isTwo ? (data.items.length > 4 ? 7.5 : 8) : 8.5);
-    const tablePadding = isThree ? 0.75 : (isTwo ? (data.items.length > 4 ? 0.8 : 1.0) : 1.25);
+    const tablePadding = isThree ? 1.5 : (isTwo ? (data.items.length > 4 ? 1.5 : 1.9) : 2.6);
 
     runAutoTable(doc, {
       startY: curY,
       margin: { left: margin, right: margin },
       tableWidth: contentWidth,
-      head: [['S.No.', 'Particulars', 'Colour', 'Process', 'Qty.']],
+      head: [['S.No.', 'Party D.C. No.', 'Particulars', 'Colour', 'Process', 'Qty.']],
       body: tableBody,
       theme: 'plain',
       styles: {
@@ -835,17 +1015,18 @@ export class DeliveryChallanPdfService {
         fillColor: [240, 240, 240]
       },
       columnStyles: {
-        0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 74, halign: 'left', fontStyle: 'bold' },
-        2: { cellWidth: 43, halign: 'left' },
-        3: { cellWidth: 43, halign: 'left' },
-        4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' }
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+        2: { cellWidth: 52, halign: 'left', fontStyle: 'bold' },
+        3: { cellWidth: 40, halign: 'left' },
+        4: { cellWidth: 40, halign: 'left' },
+        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: (hookData: any) => {
-        if (hookData.section === 'head' && hookData.column.index === 0) {
+        if (hookData.section === 'head' && (hookData.column.index === 0 || hookData.column.index === 1)) {
           hookData.cell.styles.halign = 'center';
         }
-        if (hookData.section === 'head' && hookData.column.index === 4) {
+        if (hookData.section === 'head' && hookData.column.index === 5) {
           hookData.cell.styles.halign = 'right';
         }
         if (hookData.section === 'body' && hookData.row.index === tableBody.length - 1) {
@@ -858,7 +1039,8 @@ export class DeliveryChallanPdfService {
     const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : curY + 22;
 
     // --- 3.5. Note Section (Fetched from Database Remarks / Notes) ---
-    const noteY = finalY + (isThree ? 2.0 : isTwo ? 2.5 : 3.5);
+    // Generous clearance between table bottom border and Note section
+    const noteY = finalY + (isThree ? 4.5 : isTwo ? 6.0 : 8.0);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isThree ? 7.5 : isTwo ? 8 : 8.5);
     doc.text('Note :', margin + 2.5, noteY);
@@ -992,13 +1174,41 @@ export class DeliveryChallanPdfService {
   ): Promise<DeliveryChallanData> {
     const baseData = this.extractChallanData(outward, inwards, vendors);
 
-    const [resolvedParty, resolvedAddress, settings] = await Promise.all([
+    let liveInwards = inwards;
+    if ((!liveInwards || liveInwards.length === 0) && db && outward.poId) {
+      try {
+        const qPo = query(collection(db, 'inward_entries'), where('poId', '==', outward.poId));
+        const snap = await getDocs(qPo);
+        liveInwards = snap.docs.map((d) => d.data() as InwardEntry);
+      } catch (err) {
+        console.warn('DeliveryChallanPdfService: Failed to query inward_entries by poId in async:', err);
+      }
+    }
+
+    const [resolvedParty, resolvedAddress, resolvedCustomerPo, settings] = await Promise.all([
       baseData.partyDcNumber && baseData.partyDcNumber !== '-'
         ? Promise.resolve({ partyDcNumber: baseData.partyDcNumber, partyDcDate: baseData.partyDcDate })
-        : this.resolvePartyDcInfoAsync(outward, inwards),
+        : this.resolvePartyDcInfoAsync(outward, liveInwards),
       this.resolveCustomerAddressAsync(outward, vendors),
+      this.resolveCustomerPoNumberAsync(outward),
       InvoiceSettingsService.getSettings().catch(() => DEFAULT_INVOICE_SETTINGS)
     ]);
+
+    // Re-resolve line-level partyDcNo if liveInwards was loaded
+    const updatedItems = baseData.items.map((item, idx) => {
+      const line = (outward.lines || [])[idx];
+      if (line && (!item.partyDcNo || item.partyDcNo === '—' || item.partyDcNo === '-')) {
+        const lineDc = this.resolvePartyDcForLine(outward, line, liveInwards);
+        if (lineDc.partyDcNumber !== '-') {
+          return {
+            ...item,
+            partyDcNo: lineDc.partyDcNumber,
+            partyDcDate: lineDc.partyDcDate !== '-' ? lineDc.partyDcDate : item.partyDcDate
+          };
+        }
+      }
+      return item;
+    });
 
     let resolvedNotes = baseData.notes;
     if (!resolvedNotes && db) {
@@ -1018,14 +1228,32 @@ export class DeliveryChallanPdfService {
       }
     }
 
+    const distinctDcs = Array.from(
+      new Set(
+        updatedItems
+          .map((i) => i.partyDcNo)
+          .filter((d): d is string => !!d && d !== '—' && d !== '-')
+      )
+    );
+    const finalPartyDcNo =
+      resolvedParty.partyDcNumber && resolvedParty.partyDcNumber !== '-'
+        ? resolvedParty.partyDcNumber
+        : distinctDcs.length > 1
+        ? 'As In Table'
+        : distinctDcs.length === 1
+        ? distinctDcs[0]
+        : '-';
+
     return {
       ...baseData,
-      partyDcNumber: resolvedParty.partyDcNumber,
+      partyDcNumber: finalPartyDcNo,
       partyDcDate: resolvedParty.partyDcDate,
+      customerPoNumber: resolvedCustomerPo || baseData.customerPoNumber,
       customerAddress: resolvedAddress || baseData.customerAddress,
       companyGstin: settings.gstin || baseData.companyGstin,
       companyPhone: settings.dcPhone || settings.phone || baseData.companyPhone,
-      notes: resolvedNotes
+      notes: resolvedNotes,
+      items: updatedItems
     };
   }
 

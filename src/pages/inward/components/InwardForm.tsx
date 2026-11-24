@@ -8,6 +8,8 @@ import { Input } from '../../../components/ui/Input';
 import { formatQuantity, formatDate } from '../../../utils/formatters';
 import { InwardService } from '../../../services/inwardService';
 import { SearchableSelect, SelectOption, SelectOptionGroup } from './SearchableSelect';
+import { ValidationToast } from '../../../components/ui/ValidationToast';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -86,10 +88,10 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     initialInward?.customerDcNo || ''
   );
   const [customerDate, setCustomerDate] = useState<string>(
-    initialInward?.customerDate || new Date().toISOString().split('T')[0]
+    initialInward?.customerDate || ''
   );
   const [inwardDate, setInwardDate] = useState<string>(
-    initialInward?.inwardDate || new Date().toISOString().split('T')[0]
+    initialInward?.inwardDate || ''
   );
   const [remarks, setRemarks] = useState<string>(initialInward?.remarks || '');
 
@@ -113,6 +115,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   const [minAllowedMap, setMinAllowedMap] = useState<Record<string, number>>({});
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [toastErrors, setToastErrors] = useState<string[]>([]);
+  const [showToast, setShowToast] = useState<boolean>(false);
 
   // Active customer vendors
   const eligibleCustomers = useMemo(() => {
@@ -193,7 +197,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     );
   }, [eligiblePos, selectedCustomerId]);
 
-  // Set default customer / PO once on mount if not set
+  // Set default customer / PO once on mount ONLY if initialPoId is explicitly passed
   const hasInitializedRef = useRef(false);
   useEffect(() => {
     if (hasInitializedRef.current) return;
@@ -202,16 +206,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
       const cId = targetInitialPo.customerId || targetInitialPo.customerVendorId || '';
       if (cId) setSelectedCustomerId(cId);
       hasInitializedRef.current = true;
-      return;
     }
-    if (!selectedPoId && customerPOs.length > 0) {
-      const firstPo = customerPOs[0];
-      setSelectedPoId(firstPo.id || firstPo.poId);
-      const cId = firstPo.customerId || firstPo.customerVendorId || '';
-      setSelectedCustomerId(cId);
-      hasInitializedRef.current = true;
-    }
-  }, [customerPOs, selectedPoId, initialPoId, targetInitialPo]);
+  }, [initialPoId, targetInitialPo]);
 
   // Customer selection groups for SearchableSelect
   const customerSelectGroups: SelectOptionGroup[] = useMemo(() => {
@@ -297,97 +293,63 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     return groups;
   }, [vendors, selectedCustomerId, eligibleSubcontractors]);
 
-  // Purchase Order selection groups (supports search by PO # and Style #, with cross-company discovery)
+  // Purchase Order selection groups (supports search by PO # and Style #)
   const poSelectGroups: SelectOptionGroup[] = useMemo(() => {
     if (selectedCustomerId) {
       const companyPOs = eligiblePos.filter(
         (p) => p.customerId === selectedCustomerId || p.customerVendorId === selectedCustomerId
-      );
-      const otherPOs = eligiblePos.filter(
-        (p) => p.customerId !== selectedCustomerId && p.customerVendorId !== selectedCustomerId
       );
 
       const currentCompanyName =
         eligibleCustomers.find((c) => (c.vendorId || c.id) === selectedCustomerId)?.companyName ||
         'Selected Company';
 
-      const groups: SelectOptionGroup[] = [];
-
-      groups.push({
-        title: `POs for ${currentCompanyName} (${companyPOs.length})`,
-        options: companyPOs.map((p) => {
-          const pId = p.id || p.poId || '';
-          const sNo = p.styleNo || p.styleNumber || '—';
-          return {
-            id: pId,
-            primaryText: `${p.poNumber} — Style: ${sNo}`,
-            primaryNode: (
-              <span className="flex items-center gap-1.5 truncate">
-                <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
-                <span className="text-slate-300 font-light">—</span>
-                <span className="text-xs text-slate-900 truncate">
-                  Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
-                </span>
-              </span>
-            ),
-            secondaryText: `${p.itemName} • ${String(p.processCategory || '').toUpperCase()} • Ordered: ${formatDate(p.orderDate)}`,
-            badge: `${p.totalQuantity?.toLocaleString() || ''} ${p.lines?.[0]?.unit || 'pcs'}`,
-            badgeVariant: 'slate' as const,
-            meta: p
-          };
-        })
-      });
-
-      if (otherPOs.length > 0) {
-        groups.push({
-          title: `POs from other companies (${otherPOs.length})`,
-          isHighlighted: true,
-          options: otherPOs.map((p) => {
+      return [
+        {
+          title: `POs for ${currentCompanyName} (${companyPOs.length})`,
+          options: companyPOs.map((p) => {
             const pId = p.id || p.poId || '';
             const sNo = p.styleNo || p.styleNumber || '—';
-            const cName = p.customerCompanyNameSnapshot || p.customerName || 'Other Company';
             return {
               id: pId,
-              primaryText: `${p.poNumber} — Style: ${sNo}`,
+              primaryText: `Style: ${sNo} — ${p.poNumber}`,
               primaryNode: (
-                <span className="flex items-center gap-1.5 truncate">
-                  <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
-                  <span className="text-slate-300 font-light">—</span>
-                  <span className="text-xs text-slate-900 truncate">
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="text-xs text-slate-900 font-medium">
                     Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
                   </span>
+                  <span className="text-slate-300 font-light">—</span>
+                  <span className="text-[11px] text-slate-600 font-mono font-medium">{p.poNumber}</span>
                 </span>
               ),
-              secondaryText: `${p.itemName} • Company: ${cName}`,
-              badge: cName,
-              badgeVariant: 'amber' as const,
+              secondaryText: `${p.itemName} • ${String(p.processCategory || '').toUpperCase()} • Ordered: ${formatDate(p.orderDate)}`,
+              badge: `${p.totalQuantity?.toLocaleString() || ''} ${p.lines?.[0]?.unit || 'pcs'}`,
+              badgeVariant: 'slate' as const,
               meta: p
             };
           })
-        });
-      }
-
-      return groups;
+        }
+      ];
     }
 
-    // When no company is selected, show all POs
+    // When no company is selected, show all style numbers / POs applicable for inward
     return [
       {
-        title: `All Available Purchase Orders (${eligiblePos.length})`,
+        title: `All Available Style Numbers / Purchase Orders (${eligiblePos.length})`,
         options: eligiblePos.map((p) => {
           const pId = p.id || p.poId || '';
           const sNo = p.styleNo || p.styleNumber || '—';
           const cName = p.customerCompanyNameSnapshot || p.customerName || 'Client';
           return {
             id: pId,
-            primaryText: `${p.poNumber} — Style: ${sNo}`,
+            primaryText: `Style: ${sNo} — ${p.poNumber}`,
             primaryNode: (
-              <span className="flex items-center gap-1.5 truncate">
-                <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
-                <span className="text-slate-300 font-light">—</span>
-                <span className="text-xs text-slate-900 truncate">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-xs text-slate-900 font-medium">
                   Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
                 </span>
+                <span className="text-slate-300 font-light">—</span>
+                <span className="text-[11px] text-slate-600 font-mono font-medium">{p.poNumber}</span>
               </span>
             ),
             secondaryText: `${p.itemName} • Company: ${cName}`,
@@ -542,56 +504,59 @@ export const InwardForm: React.FC<InwardFormProps> = ({
 
   // Validation function
   const validateForm = () => {
-    if (!activePo) {
-      setValidationError('Please select an active Purchase Order.');
-      return false;
-    }
+    const errors: string[] = [];
 
     if (!selectedCustomerId) {
-      setValidationError('Please select a Customer / Company.');
-      return false;
+      errors.push('Customer / Company selection is required.');
+    }
+
+    if (!activePo || !selectedPoId) {
+      errors.push('Purchase Order selection is required.');
     }
 
     if (!customerDcNo || customerDcNo.trim().length === 0) {
-      setValidationError('Customer Delivery Challan (DC) Number is required.');
-      return false;
+      errors.push('Customer Delivery Challan (DC) Number is required.');
     }
 
     if (!customerDate) {
-      setValidationError('Customer DC Date is required.');
-      return false;
+      errors.push('Customer DC Date is required.');
     }
 
     if (!inwardDate) {
-      setValidationError('Inward receipt date is required.');
-      return false;
+      errors.push('Inward Receipt Date is required.');
     }
 
     // Check for over-receipt
     const overLine = lineDetails.find((l) => l.isOver);
     if (overLine) {
-      setValidationError(
+      errors.push(
         `Over-receipt on colour '${overLine.colourName}': entered quantity (${overLine.currentReceiptQty}) exceeds remaining order quantity (${overLine.remainingOrderQty} ${overLine.unit}).`
       );
-      return false;
     }
 
     // Check that entered quantity is not below present outward dispatches
     const belowMinLine = lineDetails.find((l) => l.isBelowMin);
     if (belowMinLine) {
-      setValidationError(
+      errors.push(
         `Received quantity for colour '${belowMinLine.colourName}' cannot be less than ${belowMinLine.minAllowedQty} ${belowMinLine.unit} because ${belowMinLine.minAllowedQty} ${belowMinLine.unit} has already been dispatched in outward entries.`
       );
-      return false;
     }
 
     // Check that at least one line has positive quantity
     const totalCurrent = lineDetails.reduce((acc, l) => acc + l.currentReceiptQty, 0);
     if (totalCurrent <= 0) {
-      setValidationError('Please enter a received quantity greater than 0 for at least one colour line.');
+      errors.push('Please enter a received quantity greater than 0 for at least one colour line.');
+    }
+
+    if (errors.length > 0) {
+      setToastErrors(errors);
+      setShowToast(true);
+      setValidationError(errors[0]);
       return false;
     }
 
+    setToastErrors([]);
+    setShowToast(false);
     setValidationError(null);
     return true;
   };
@@ -632,44 +597,49 @@ export const InwardForm: React.FC<InwardFormProps> = ({
   const handleSubmitPost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-    const payload = buildPayload();
-    await onPostReceipt(payload);
+    try {
+      const payload = buildPayload();
+      await onPostReceipt(payload);
+    } catch (err: any) {
+      const msg = err.message || 'Failed to post inward receipt.';
+      setToastErrors([msg]);
+      setShowToast(true);
+      setValidationError(msg);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-        <div>
+      {/* Toast Notification for Unfilled / Compulsory Missing Fields */}
+      <ValidationToast
+        isOpen={showToast}
+        onClose={() => setShowToast(false)}
+        title="Cannot Post Inward Receipt"
+        subtitle="Please fill all compulsory fields to submit:"
+        errors={toastErrors}
+      />
+
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-3">
           <button
-            onClick={onCancel}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 mb-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Inward List
-          </button>
-          <h2 className="text-xl font-bold text-[#1F4E79]">
-            {initialInward ? 'Edit Customer Inward Receipt' : 'New Customer Inward Receipt'}
-          </h2>
-          <p className="text-xs text-slate-500">
-            Perla Textiles Processor — Thirumudivakkam, Tamil Nadu
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-
-          <Button
             type="button"
-            variant="primary"
-            size="sm"
-            icon={<CheckCircle2 className="w-4 h-4" />}
-            onClick={handleSubmitPost}
-            disabled={isSaving}
+            onClick={onCancel}
+            className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Back to Inward List"
           >
-            {isSaving ? 'Posting Receipt...' : 'Post Inward Receipt'}
-          </Button>
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h2 className="text-xl font-bold text-[#000000]">
+              {initialInward
+                ? `Edit Customer Inward Receipt (${initialInward.inwardNo})`
+                : 'Create Customer Inward Receipt'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              Textile customer inward receipt with colour-wise breakdown
+            </p>
+          </div>
         </div>
       </div>
 
@@ -696,8 +666,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
             label="Customer / Company"
             required
             value={selectedCustomerId}
-            placeholder="-- Select Customer --"
-            searchPlaceholder="Search customer company name or code..."
+            placeholder=""
+            searchPlaceholder=""
             groups={customerSelectGroups}
             onSelect={handleSelectCustomer}
             onClear={() => handleCustomerChange('')}
@@ -712,8 +682,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
           <SearchableSelect
             label="Subcontractor / Subcompany (Optional)"
             value={selectedSubcontractorId}
-            placeholder="-- Direct Delivery / None --"
-            searchPlaceholder="Search any company or subcontractor..."
+            placeholder=""
+            searchPlaceholder=""
             groups={subcontractorSelectGroups}
             onSelect={handleSelectSubcontractor}
             onClear={() => setSelectedSubcontractorId('')}
@@ -729,8 +699,8 @@ export const InwardForm: React.FC<InwardFormProps> = ({
             label="Purchase Order"
             required
             value={selectedPoId}
-            placeholder="-- Select Eligible PO --"
-            searchPlaceholder="Search by PO #, Style #, or Item..."
+            placeholder=""
+            searchPlaceholder=""
             groups={poSelectGroups}
             onSelect={handleSelectPo}
             onClear={() => setSelectedPoId('')}
@@ -739,19 +709,14 @@ export const InwardForm: React.FC<InwardFormProps> = ({
               if (p) {
                 const sNo = p.styleNo || p.styleNumber || '—';
                 return (
-                  <span className="truncate flex items-center gap-1.5">
-                    <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="text-xs text-slate-900 font-bold">Style: {sNo}</span>
                     <span className="text-slate-300 font-light">—</span>
-                    <span className="text-xs text-slate-900 truncate">
-                      Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
-                    </span>
-                    {p.itemName && (
-                      <span className="text-slate-500 font-normal text-xs truncate">({p.itemName})</span>
-                    )}
+                    <span className="text-xs text-slate-600 font-mono font-medium">{p.poNumber}</span>
                   </span>
                 );
               }
-              return <span className="truncate">{opt.primaryText}</span>;
+              return <span className="whitespace-nowrap">{opt.primaryText}</span>;
             }}
           />
         </div>
@@ -796,7 +761,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <Input
             label="Customer DC Number *"
-            placeholder="e.g. DC-APEX-8891"
+            placeholder=""
             className="h-10"
             value={customerDcNo}
             onChange={(e) => {
@@ -834,7 +799,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
         <div className="pt-2">
           <Input
             label="Inspection and Dispatch Notes"
-            placeholder="e.g. Fabric quality verified, shade verified, and dispatch remarks."
+            placeholder=""
             className="h-10"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
@@ -1046,12 +1011,20 @@ export const InwardForm: React.FC<InwardFormProps> = ({
           type="button"
           variant="primary"
           icon={<CheckCircle2 className="w-4 h-4" />}
+          loading={isSaving}
+          loadingText="Posting Receipt..."
           onClick={handleSubmitPost}
-          disabled={isSaving}
+          className="bg-black hover:bg-slate-900 text-white border-black"
         >
-          {isSaving ? 'Posting Receipt...' : 'Post Inward Receipt'}
+          Post Inward Receipt
         </Button>
       </div>
+
+      <LoadingOverlay
+        isOpen={isSaving}
+        title="Posting Inward Receipt..."
+        message="Validating DC lines, updating PO balance ledgers, and securing inward receipt..."
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ export type UserRole = 'Admin' | 'Manager' | 'Supervisor' | string;
 export type ModuleId =
   | 'dashboard'
   | 'po'
+  | 'sample-po'
   | 'inward'
   | 'outward'
   | 'statement'

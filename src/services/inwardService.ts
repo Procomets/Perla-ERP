@@ -1113,33 +1113,32 @@ export class InwardService {
     if (!isDemo) {
       try {
         const inwardRef = doc(db, 'inward_entries', inwardId);
-        await setDoc(inwardRef, cleanFirestoreData(postedInward));
-
-        for (const l of processedLines) {
-          const lRef = doc(collection(db, 'inward_entries', inwardId, 'lines'), l.inwardLineId);
-          await setDoc(lRef, cleanFirestoreData(l));
-        }
-
-        // Update PO status
         const poRef = doc(db, 'purchase_orders', po.id);
-        await updateDoc(poRef, {
-          status: updatedPOStatus,
-          updatedAt: Timestamp.now(),
-          updatedBy: user.uid
-        });
-
-        // Audit log
         const auditRef = doc(db, 'inward_audit_logs', `audit_${Date.now()}`);
-        await setDoc(auditRef, {
-          auditId: auditRef.id,
-          inwardId,
-          inwardNo,
-          action: 'posted',
-          performedBy: user.uid,
-          performedByName: user.displayName || 'Authorized User',
-          performedAt: now,
-          summary: `Inward Receipt ${inwardNo} posted for PO ${po.poNumber} with DC No '${customerDcNo}'. Total Qty: ${totals.totalQuantity} (${totals.piece} pcs, ${totals.kg} kg). PO status updated to ${updatedPOStatus}.`
-        });
+
+        // Write inward document, all colour lines, PO status update, and audit log concurrently in parallel!
+        await Promise.all([
+          setDoc(inwardRef, cleanFirestoreData(postedInward)),
+          ...processedLines.map((l) => {
+            const lRef = doc(collection(db, 'inward_entries', inwardId, 'lines'), l.inwardLineId);
+            return setDoc(lRef, cleanFirestoreData(l));
+          }),
+          updateDoc(poRef, {
+            status: updatedPOStatus,
+            updatedAt: Timestamp.now(),
+            updatedBy: user.uid
+          }),
+          setDoc(auditRef, {
+            auditId: auditRef.id,
+            inwardId,
+            inwardNo,
+            action: 'posted',
+            performedBy: user.uid,
+            performedByName: user.displayName || 'Authorized User',
+            performedAt: now,
+            summary: `Inward Receipt ${inwardNo} posted for PO ${po.poNumber} with DC No '${customerDcNo}'. Total Qty: ${totals.totalQuantity} (${totals.piece} pcs, ${totals.kg} kg). PO status updated to ${updatedPOStatus}.`
+          })
+        ]);
       } catch (err) {
         console.warn('Firestore postInwardReceipt transaction failed, persisting locally:', err);
       }

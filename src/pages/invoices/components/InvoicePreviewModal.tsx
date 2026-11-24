@@ -78,6 +78,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
           ...prev,
           isWithoutGst: true,
           gstType: 'without_gst',
+          isFirebaseOnly: true,
           cgstRate: 0,
           totalCgst: 0,
           sgstRate: 0,

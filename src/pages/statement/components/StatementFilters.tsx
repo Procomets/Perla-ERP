@@ -3,6 +3,7 @@ import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/
 import { Vendor } from '../../../types/vendor';
 import { Button } from '../../../components/ui/Button';
 import { RotateCcw, Download, RefreshCw, Filter } from 'lucide-react';
+import { PdfExportButton, ExcelExportButton } from '../../../components/ui/ExportButtons';
 
 interface StatementFiltersProps {
   companies: Vendor[];
@@ -112,32 +113,6 @@ export const StatementFilters: React.FC<StatementFiltersProps> = ({
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
-          </Button>
-
-          {onDownloadPdf && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onDownloadPdf}
-              disabled={isLoading || !hasData}
-              className="text-xs flex items-center gap-1.5 bg-black hover:bg-slate-900 text-white border-black shadow-xs cursor-pointer"
-              title="Download reconciliation statement PDF matching delivery statement format"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download Statement (PDF)
-            </Button>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onExportCsv}
-            disabled={isLoading || !hasData}
-            className="text-xs flex items-center gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-50"
-            title="Export statement to Excel / CSV"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
           </Button>
         </div>
       </div>

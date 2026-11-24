@@ -19,6 +19,7 @@ import {
   UnitOption
 } from '../../utils/unitConversion';
 import { Modal } from '../../components/ui/Modal';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { formatDate, formatCurrency, formatQuantity } from '../../utils/formatters';
 import {
   FlaskConical,
@@ -30,6 +31,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CheckCircle2,
+  Loader2,
   Clock,
   Trash2,
   Eye,
@@ -2420,11 +2422,17 @@ const ChemicalEntryContent: React.FC = () => {
               disabled={purchaseSubmitting}
               className="h-9 px-5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              {purchaseSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
               <span>{purchaseSubmitting ? 'Saving...' : 'Save Purchase Entry'}</span>
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={purchaseSubmitting}
+          title="Saving Chemical Purchase..."
+          message="Updating chemical stock ledger, recording vendor lot, and securing transaction..."
+        />
       </Modal>
 
       {/* MODAL 2: Record Process Entry */}
@@ -2806,11 +2814,17 @@ const ChemicalEntryContent: React.FC = () => {
               }
               className="h-9 px-5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              {consumptionSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
               <span>{consumptionSubmitting ? 'Recording...' : 'Confirm & Deduct Stock'}</span>
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={consumptionSubmitting}
+          title="Deducting Chemical Stock..."
+          message="Calculating recipe consumption, updating batch logs, and deducting inventory..."
+        />
       </Modal>
 
       {/* MODAL 3: Record Raw Wood Usage */}
@@ -3187,11 +3201,17 @@ const ChemicalEntryContent: React.FC = () => {
               }
               className="h-9 px-5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              {woodSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
               <span>{woodSubmitting ? 'Recording...' : 'Confirm & Deduct Stock'}</span>
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={woodSubmitting}
+          title="Recording Boiler Wood Consumption..."
+          message="Logging raw wood weight, updating boiler ledger, and adjusting inventory..."
+        />
       </Modal>
 
       {/* MODAL 4: View Entry Details */}

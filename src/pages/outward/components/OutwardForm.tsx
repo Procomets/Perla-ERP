@@ -7,7 +7,11 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { formatDate } from '../../../utils/formatters';
 import { OutwardService } from '../../../services/outwardService';
+import { VehicleService } from '../../../services/vehicleService';
+import { VehicleRecord } from '../../../types/vehicle';
 import { SearchableSelect, SelectOption, SelectOptionGroup } from '../../inward/components/SearchableSelect';
+import { ValidationToast } from '../../../components/ui/ValidationToast';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -239,6 +243,16 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     return map;
   }, [allPosWithInwardSources, inwards, activeOutwards, initialOutward]);
 
+  // Target preselected PO if provided from Quick Outward
+  const targetInitialPo = useMemo(() => {
+    if (!initialPoId) return null;
+    return (
+      allPosWithInwardSources.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
+      pos.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
+      null
+    );
+  }, [initialPoId, allPosWithInwardSources, pos]);
+
   // Filter eligible POs:
   // ONLY show if inward is available for this particular PO!
   // If there is NO inward entry for PO OR all the inward is outwarded, DO NOT SHOW!
@@ -252,6 +266,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
         initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId)
       );
       if (isCurrentEditingPo) return true;
+
+      // Allow preselected PO if redirected from Quick Outward
+      if (initialPoId && (p.id === initialPoId || p.poId === initialPoId)) {
+        return true;
+      }
 
       const bal =
         poBalanceMap[p.id] ||
@@ -269,13 +288,13 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       // Rule 3: Only if inward is available (> 0), show!
       return true;
     });
-  }, [allPosWithInwardSources, poBalanceMap, initialOutward]);
+  }, [allPosWithInwardSources, poBalanceMap, initialOutward, initialPoId]);
 
   // All Customer companies: ONLY show companies that have at least one PO with available inward balance!
   const eligibleCustomers = useMemo(() => {
     const customerMap = new Map<string, Vendor>();
 
-    // 1. Add vendors from master vendors list that match an eligible PO (which has available inward balance)
+    // 1. Add vendors from master vendors list that match an eligible PO or targetInitialPo
     for (const v of vendors) {
       const hasEligiblePO = eligiblePos.some(
         (p) =>
@@ -287,14 +306,39 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === v.companyName.trim().toLowerCase())
       );
 
-      if (hasEligiblePO || (initialOutward && (v.id === initialOutward.customerVendorId || v.id === initialOutward.customerId))) {
+      const isInitialOutwardCust = Boolean(
+        initialOutward && (
+          v.id === initialOutward.customerVendorId ||
+          v.id === initialOutward.customerId ||
+          v.vendorId === initialOutward.customerVendorId ||
+          v.vendorId === initialOutward.customerId
+        )
+      );
+
+      const isTargetPoCust = Boolean(
+        targetInitialPo && (
+          v.id === targetInitialPo.customerId ||
+          v.id === targetInitialPo.customerVendorId ||
+          v.vendorId === targetInitialPo.customerId ||
+          v.vendorId === targetInitialPo.customerVendorId ||
+          (v.companyName && targetInitialPo.customerName && v.companyName.trim().toLowerCase() === targetInitialPo.customerName.trim().toLowerCase()) ||
+          (v.companyName && targetInitialPo.customerCompanyNameSnapshot && v.companyName.trim().toLowerCase() === targetInitialPo.customerCompanyNameSnapshot.trim().toLowerCase())
+        )
+      );
+
+      if (hasEligiblePO || isInitialOutwardCust || isTargetPoCust) {
         const key = v.id || v.vendorId || v.companyName;
         customerMap.set(key, v);
       }
     }
 
-    // 2. Ensure EVERY company name present on any eligible PO is included
-    for (const p of eligiblePos) {
+    // 2. Ensure EVERY company name present on any eligible PO or targetInitialPo is included
+    const allRelevantPos = [...eligiblePos];
+    if (targetInitialPo && !allRelevantPos.some((p) => p.id === targetInitialPo.id || p.poId === targetInitialPo.poId)) {
+      allRelevantPos.push(targetInitialPo);
+    }
+
+    for (const p of allRelevantPos) {
       const custName = p.customerName || p.customerCompanyNameSnapshot;
       if (!custName) continue;
 
@@ -302,6 +346,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
         (v) =>
           v.id === p.customerId ||
           v.vendorId === p.customerId ||
+          v.id === p.customerVendorId ||
+          v.vendorId === p.customerVendorId ||
           v.companyName.trim().toLowerCase() === custName.trim().toLowerCase()
       );
 
@@ -320,31 +366,67 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     }
 
     return Array.from(customerMap.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
-  }, [vendors, eligiblePos, initialOutward]);
+  }, [vendors, eligiblePos, initialOutward, targetInitialPo]);
 
-  // Target preselected PO if provided from Quick Outward
-  const targetInitialPo = useMemo(() => {
-    if (!initialPoId) return null;
-    return (
-      eligiblePos.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
-      allPosWithInwardSources.find((p) => p.id === initialPoId || p.poId === initialPoId) ||
-      pos.find((p) => p.id === initialPoId || p.poId === initialPoId)
+  // Helper to resolve the matching customer option ID for a given PO
+  const getCustomerForPo = (po: PurchaseOrder | null | undefined): string => {
+    if (!po) return '';
+    const matched = eligibleCustomers.find(
+      (c) =>
+        (po.customerId && (c.id === po.customerId || c.vendorId === po.customerId)) ||
+        (po.customerVendorId && (c.id === po.customerVendorId || c.vendorId === po.customerVendorId)) ||
+        (c.companyName && po.customerName && c.companyName.trim().toLowerCase() === po.customerName.trim().toLowerCase()) ||
+        (c.companyName && po.customerCompanyNameSnapshot && c.companyName.trim().toLowerCase() === po.customerCompanyNameSnapshot.trim().toLowerCase())
     );
-  }, [initialPoId, eligiblePos, allPosWithInwardSources, pos]);
+    if (matched) return matched.id || matched.vendorId || '';
 
-  // Active Customer selection
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
-    initialOutward?.customerVendorId ||
-    initialOutward?.customerId ||
-    targetInitialPo?.customerId ||
-    targetInitialPo?.customerVendorId ||
-    ''
-  );
+    const v = vendors.find(
+      (v) =>
+        (po.customerId && (v.id === po.customerId || v.vendorId === po.customerId)) ||
+        (po.customerVendorId && (v.id === po.customerVendorId || v.vendorId === po.customerVendorId)) ||
+        (v.companyName && po.customerName && v.companyName.trim().toLowerCase() === po.customerName.trim().toLowerCase()) ||
+        (v.companyName && po.customerCompanyNameSnapshot && v.companyName.trim().toLowerCase() === po.customerCompanyNameSnapshot.trim().toLowerCase())
+    );
+    if (v) return v.id || v.vendorId || '';
 
-  // Active PO selection
-  const [selectedPoId, setSelectedPoId] = useState<string>(
-    initialOutward?.poId || initialPoId || ''
-  );
+    return po.customerId || po.customerVendorId || '';
+  };
+
+  // Active Customer selection: auto-populated from editing outward OR redirected Quick Outward PO
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(() => {
+    if (initialOutward?.customerVendorId || initialOutward?.customerId) {
+      return initialOutward.customerVendorId || initialOutward.customerId || '';
+    }
+    if (targetInitialPo) {
+      return getCustomerForPo(targetInitialPo);
+    }
+    return '';
+  });
+
+  // Active PO selection: auto-populated from editing outward OR redirected Quick Outward PO
+  const [selectedPoId, setSelectedPoId] = useState<string>(() => {
+    if (initialOutward?.poId) {
+      return initialOutward.poId;
+    }
+    if (targetInitialPo) {
+      return targetInitialPo.id || targetInitialPo.poId || '';
+    }
+    return initialPoId || '';
+  });
+
+  // Synchronize customer and PO when redirected from Quick Outward (or initialPoId / targetInitialPo updates)
+  useEffect(() => {
+    if (!initialOutward && targetInitialPo) {
+      const resolvedPoId = targetInitialPo.id || targetInitialPo.poId;
+      if (resolvedPoId && selectedPoId !== resolvedPoId) {
+        setSelectedPoId(resolvedPoId);
+      }
+      const resolvedCustId = getCustomerForPo(targetInitialPo);
+      if (resolvedCustId && selectedCustomerId !== resolvedCustId) {
+        setSelectedCustomerId(resolvedCustId);
+      }
+    }
+  }, [targetInitialPo, eligibleCustomers, initialOutward]);
 
   // Active Subcontractor selection
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string>(
@@ -353,14 +435,64 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
   // Dispatch Details
   const [outwardDate, setOutwardDate] = useState<string>(
-    initialOutward?.outwardDate || new Date().toISOString().split('T')[0]
+    initialOutward?.outwardDate || ''
   );
   const [ourDcNo, setOurDcNo] = useState<string>(
     initialOutward?.ourDcNo || ''
   );
-  const [vehicleNumber, setVehicleNumber] = useState<string>(
-    initialOutward?.vehicleNumber || initialOutward?.vehicleNo || ''
-  );
+  // Registered company vehicles from Vehicle Master
+  const [vehiclesList, setVehiclesList] = useState<VehicleRecord[]>(() => {
+    return VehicleService.getCache();
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    VehicleService.getVehicles()
+      .then((res) => {
+        if (isMounted && res) {
+          setVehiclesList(res);
+        }
+      })
+      .catch((err) => console.warn('Could not load vehicles in OutwardForm:', err));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const initialVeh = (initialOutward?.vehicleNumber || initialOutward?.vehicleNo || '').trim();
+  const [selectedVehicleOption, setSelectedVehicleOption] = useState<string>('');
+  const [customVehicleNumber, setCustomVehicleNumber] = useState<string>('');
+
+  useEffect(() => {
+    if (initialVeh) {
+      const matched = vehiclesList.find(
+        (v) => v.vehicleNo.replace(/\s+/g, '').toUpperCase() === initialVeh.replace(/\s+/g, '').toUpperCase()
+      );
+      if (matched) {
+        setSelectedVehicleOption(matched.vehicleNo);
+        setCustomVehicleNumber('');
+      } else if (vehiclesList.length > 0) {
+        setSelectedVehicleOption('others');
+        setCustomVehicleNumber(initialVeh);
+      }
+    }
+  }, [vehiclesList, initialVeh]);
+
+  const effectiveVehicleNumber =
+    selectedVehicleOption === 'others'
+      ? customVehicleNumber.trim()
+      : selectedVehicleOption.trim();
+
+  const handleVehicleOptionChange = (value: string) => {
+    setSelectedVehicleOption(value);
+    if (value !== 'others') {
+      setCustomVehicleNumber('');
+      const selectedVeh = vehiclesList.find((v) => v.vehicleNo === value);
+      if (selectedVeh?.driverName && !driverName.trim()) {
+        setDriverName(selectedVeh.driverName);
+      }
+    }
+  };
   const [driverName, setDriverName] = useState<string>(
     initialOutward?.driverName || ''
   );
@@ -381,6 +513,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   const [balances, setBalances] = useState<OutwardBalancesResponse | null>(null);
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [toastErrors, setToastErrors] = useState<string[]>([]);
+  const [showToast, setShowToast] = useState<boolean>(false);
 
   // Active transporters
   const eligibleTransporters = useMemo(() => {
@@ -408,14 +542,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     );
   }, [vendors, selectedCustomerId]);
 
-  // Generate default Our DC Number if empty
-  useEffect(() => {
-    if (!ourDcNo && !initialOutward) {
-      OutwardService.generateOurDcNumber(outwardDate).then((dc) => {
-        setOurDcNo(dc);
-      });
-    }
-  }, [outwardDate, initialOutward]);
+  // Removed auto-generating useEffect so Our DC Number starts completely empty without predefined data
 
   // Load balances when active PO changes
   useEffect(() => {
@@ -477,13 +604,21 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   // Clear selected PO if it is no longer in eligiblePos
   useEffect(() => {
     if (selectedPoId && !initialOutward) {
+      // Do not clear if it matches the preselected targetInitialPo or initialPoId
+      if (
+        initialPoId &&
+        (selectedPoId === initialPoId ||
+         (targetInitialPo && (targetInitialPo.id === selectedPoId || targetInitialPo.poId === selectedPoId)))
+      ) {
+        return;
+      }
       const isEligible = eligiblePos.some((p) => p.id === selectedPoId || p.poId === selectedPoId);
       if (!isEligible) {
         setSelectedPoId('');
         setDispatchQtyMap({});
       }
     }
-  }, [eligiblePos, selectedPoId, initialOutward]);
+  }, [eligiblePos, selectedPoId, initialOutward, initialPoId, targetInitialPo]);
 
   // PO dropdown groups with cross-company discovery
   const poOptionGroups: SelectOptionGroup[] = useMemo(() => {
@@ -496,6 +631,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
         (p.customerId === selectedCustomerId ||
          p.customerVendorId === selectedCustomerId ||
          (selectedCustomer && (
+           (selectedCustomer.id && (p.customerId === selectedCustomer.id || p.customerVendorId === selectedCustomer.id)) ||
+           (selectedCustomer.vendorId && (p.customerId === selectedCustomer.vendorId || p.customerVendorId === selectedCustomer.vendorId)) ||
            (p.customerName && p.customerName.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase()) ||
            (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase())
          )));
@@ -509,16 +646,17 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           ? `Available Inward: ${bal.availableQty} ${bal.primaryUnit}`
           : 'Available Inward';
 
+      const optionId = p.id || p.poId || '';
       const option: SelectOption = {
-        id: p.id,
-        primaryText: `${p.poNumber} — Style: ${p.styleNo || 'N/A'}`,
+        id: optionId,
+        primaryText: `Style: ${p.styleNo || 'N/A'} — ${p.poNumber}`,
         primaryNode: (
           <span className="flex items-center gap-1.5 truncate">
-            <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
-            <span className="text-slate-300 font-light">—</span>
             <span className="text-xs text-slate-900 truncate">
               Style: <strong className="font-extrabold text-slate-950">{p.styleNo || 'N/A'}</strong>
             </span>
+            <span className="text-slate-300 font-light">—</span>
+            <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
           </span>
         ),
         secondaryText: `${availText} • ${p.customerName || 'Customer'}`,
@@ -535,23 +673,29 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     }
 
     const groups: SelectOptionGroup[] = [];
-    if (matchingCurrentCustomer.length > 0) {
-      groups.push({
-        title: selectedCustomer
-          ? `Purchase Orders for ${selectedCustomer.companyName} (Available Stock)`
-          : 'Purchase Orders For Selected Company (Available Stock)',
-        isHighlighted: true,
-        options: matchingCurrentCustomer
-      });
-    }
-
-    if (otherCustomers.length > 0) {
-      groups.push({
-        title: selectedCustomerId
-          ? 'Purchase Orders From Other Companies (Auto-Switches Company)'
-          : 'All Available Purchase Orders (With Available Inward Stock)',
-        options: otherCustomers
-      });
+    if (selectedCustomerId) {
+      if (matchingCurrentCustomer.length > 0) {
+        groups.push({
+          title: selectedCustomer
+            ? `Purchase Orders for ${selectedCustomer.companyName} (Available Stock)`
+            : 'Purchase Orders For Selected Company (Available Stock)',
+          isHighlighted: true,
+          options: matchingCurrentCustomer
+        });
+      }
+      if (otherCustomers.length > 0) {
+        groups.push({
+          title: 'Other Available Purchase Orders',
+          options: otherCustomers
+        });
+      }
+    } else {
+      if (matchingCurrentCustomer.length > 0 || otherCustomers.length > 0) {
+        groups.push({
+          title: `All Available Style Numbers / Purchase Orders (${eligiblePos.length})`,
+          options: [...matchingCurrentCustomer, ...otherCustomers]
+        });
+      }
     }
 
     return groups;
@@ -644,46 +788,91 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
     };
   }, [activePo, balances, dispatchQtyMap]);
 
-  // Prepare payload
-  const preparePayload = () => {
+  // Prepare payload & validation
+  const validateForm = () => {
+    const errors: string[] = [];
+
     if (!selectedCustomerId) {
-      throw new Error('Please select a Customer / Company.');
+      errors.push('Customer / Company selection is required.');
     }
     if (!selectedPoId || !activePo) {
-      throw new Error('Please select an eligible Purchase Order.');
+      errors.push('Purchase Order selection is required.');
     }
     if (!outwardDate) {
-      throw new Error('Please enter the Outward Dispatch Date.');
+      errors.push('Outward Dispatch Date is required.');
     }
-    if (!ourDcNo.trim()) {
-      throw new Error('Please enter Our Delivery Challan Number.');
+    if (!ourDcNo || !ourDcNo.trim()) {
+      errors.push('Our Delivery Challan (DC) Number is required.');
     }
-    if (!vehicleNumber.trim()) {
-      throw new Error('Please enter the Vehicle Number.');
+    if (!effectiveVehicleNumber) {
+      errors.push(
+        selectedVehicleOption === 'others'
+          ? 'Vehicle Number is required (custom vehicle).'
+          : 'Vehicle Number selection is required.'
+      );
     }
-    if (!driverName.trim()) {
-      throw new Error('Please enter the Driver Name.');
+    if (!driverName || !driverName.trim()) {
+      errors.push('Driver Name is required.');
     }
     if (!transporterVendorId) {
-      throw new Error('Please select a Transporter / Logistics Vendor.');
+      errors.push('Transporter / Logistics Vendor selection is required.');
     }
-    if (!destination.trim()) {
-      throw new Error('Please enter the Dispatch Destination.');
+    if (!destination || !destination.trim()) {
+      errors.push('Dispatch Destination is required.');
     }
 
-    const lines = (activePo.lines || []).map((poLine) => {
-      const lineBal = balances?.lines[poLine.lineId];
+    if (activePo) {
+      const hasPositive = (activePo.lines || []).some((l) => (Number(dispatchQtyMap[l.lineId]) || 0) > 0);
+      if (!hasPositive) {
+        errors.push('At least one colour line must have a dispatch quantity greater than 0 before posting.');
+      }
+
+      // Rule: Cannot exceed available inward balance
+      if (balances) {
+        for (const poLine of activePo.lines || []) {
+          const lineBal = balances.lines[poLine.lineId];
+          const cumInw = lineBal ? lineBal.cumulativeInwardQty : 0;
+          const prevOut = lineBal ? lineBal.cumulativeOutwardQty : 0;
+          const avail = Math.max(0, cumInw - prevOut);
+          const disp = Number(dispatchQtyMap[poLine.lineId]) || 0;
+          if (disp > avail) {
+            errors.push(
+              `Cannot dispatch ${disp} ${poLine.unit || 'piece'} for "${poLine.colourName}". Available received balance is only ${avail} ${poLine.unit || 'piece'}.`
+            );
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      setToastErrors(errors);
+      setShowToast(true);
+      setValidationError(errors[0]);
+      return false;
+    }
+
+    setToastErrors([]);
+    setShowToast(false);
+    setValidationError(null);
+    return true;
+  };
+
+  const preparePayload = () => {
+    const poLines = (activePo?.colourLines || activePo?.lines || []);
+    const lines = poLines.map((poLine) => {
+      const lineId = poLine.lineId || (poLine as any).id;
+      const lineBal = balances?.lines[lineId];
       const cumInw = lineBal ? lineBal.cumulativeInwardQty : 0;
       const prevOut = lineBal ? lineBal.cumulativeOutwardQty : 0;
       const avail = Math.max(0, cumInw - prevOut);
-      const disp = Number(dispatchQtyMap[poLine.lineId]) || 0;
+      const disp = Number(dispatchQtyMap[lineId]) || 0;
       const rem = Math.max(0, avail - disp);
 
       return {
-        poLineId: poLine.lineId,
+        poLineId: lineId,
         colourNameSnapshot: poLine.colourName,
         colourCodeSnapshot: poLine.colourCode || null,
-        itemNameSnapshot: activePo.itemName || 'Garments',
+        itemNameSnapshot: activePo!.itemName || 'Garments',
         washTypeSnapshot: poLine.processType || 'Standard Wash',
         orderedQtySnapshot: Number(poLine.quantity) || 0,
         unit: poLine.unit || 'piece',
@@ -701,7 +890,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       poId: selectedPoId,
       outwardDate,
       ourDcNo: ourDcNo.trim(),
-      vehicleNumber: vehicleNumber.trim(),
+      vehicleNumber: effectiveVehicleNumber,
       driverName: driverName.trim(),
       transporterVendorId: transporterVendorId === 'in_house' ? null : transporterVendorId,
       destination: destination.trim(),
@@ -711,65 +900,49 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   };
 
   const handlePostClick = async () => {
+    if (!validateForm()) return;
     try {
       setValidationError(null);
       const data = preparePayload();
-
-      // Rule 1: Positive dispatch check
-      const hasPositive = data.lines.some((l) => l.dispatchQty > 0);
-      if (!hasPositive) {
-        throw new Error('At least one colour line must have a dispatch quantity greater than 0 before posting.');
-      }
-
-      // Rule 2: Cannot exceed available inward balance
-      for (const line of data.lines) {
-        if (line.dispatchQty > line.availableForDispatchSnapshot) {
-          throw new Error(
-            `Cannot dispatch ${line.dispatchQty} ${line.unit} for "${line.colourNameSnapshot}". Available received balance is only ${line.availableForDispatchSnapshot} ${line.unit}.`
-          );
-        }
-      }
-
       await onPostOutward(data);
     } catch (err: any) {
-      setValidationError(err.message || 'Failed to post outward entry.');
+      const msg = err.message || 'Failed to post outward entry.';
+      setToastErrors([msg]);
+      setShowToast(true);
+      setValidationError(msg);
     }
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Toast Notification for Unfilled / Compulsory Missing Fields */}
+      <ValidationToast
+        isOpen={showToast}
+        onClose={() => setShowToast(false)}
+        title="Cannot Post Outward Dispatch"
+        subtitle="Please fill all compulsory fields to submit:"
+        errors={toastErrors}
+      />
+
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex items-center justify-between bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={onCancel}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Back to Outward List"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">
+            <h2 className="text-xl font-bold text-[#1F4E79]">
               {initialOutward ? `Edit Outward Dispatch (${initialOutward.outwardNo})` : 'New Outward Dispatch Entry'}
             </h2>
             <p className="text-xs text-slate-500">
               Record colour-wise dispatches validated against posted received inward balance
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handlePostClick}
-            disabled={isSaving}
-            className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs flex items-center gap-1.5 font-semibold shadow-xs cursor-pointer"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
-          </Button>
         </div>
       </div>
 
@@ -799,8 +972,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             label="Customer / Company"
             required
             value={selectedCustomerId}
-            placeholder="Select customer company..."
-            searchPlaceholder="Search customer by name or code..."
+            placeholder=""
+            searchPlaceholder=""
             groups={customerOptionGroups}
             onSelect={handleSelectCustomer}
             helperText="Shows companies with available inward stock ready for outward dispatch"
@@ -816,7 +989,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
               onChange={(e) => setSelectedSubcontractorId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
             >
-              <option value="">Direct Dispatch to Customer</option>
+              <option value=""></option>
+              <option value="direct">Direct Dispatch to Customer</option>
               {eligibleSubcontractors.map((sub) => (
                 <option key={sub.id} value={sub.id}>
                   {sub.companyName} {sub.vendorCategory ? `(${sub.vendorCategory})` : ''}
@@ -835,8 +1009,8 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             label="Purchase Order"
             required
             value={selectedPoId}
-            placeholder="Select purchase order..."
-            searchPlaceholder="Search by PO Number or Style No..."
+            placeholder=""
+            searchPlaceholder=""
             groups={poOptionGroups}
             onSelect={handleSelectPO}
             formatTriggerLabel={(opt) => {
@@ -844,16 +1018,14 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
               if (p) {
                 const sNo = p.styleNo || p.styleNumber || '—';
                 return (
-                  <span className="truncate flex items-center gap-1.5">
-                    <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="text-xs text-slate-900 font-bold">Style: {sNo}</span>
                     <span className="text-slate-300 font-light">—</span>
-                    <span className="text-xs text-slate-900 truncate">
-                      Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
-                    </span>
+                    <span className="text-xs text-slate-600 font-mono font-medium">{p.poNumber}</span>
                   </span>
                 );
               }
-              return <span className="truncate">{opt.primaryText}</span>;
+              return <span className="whitespace-nowrap">{opt.primaryText}</span>;
             }}
             helperText={
               selectedCustomerId
@@ -914,12 +1086,24 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
           {/* Our DC Number */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Our DC Number <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                Our DC Number <span className="text-rose-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={async () => {
+                  const dc = await OutwardService.generateOurDcNumber(outwardDate);
+                  setOurDcNo(dc);
+                }}
+                className="text-[10px] font-semibold text-[#1F4E79] hover:underline cursor-pointer"
+              >
+                Auto-generate DC #
+              </button>
+            </div>
             <input
               type="text"
-              placeholder="e.g. DC-PERLA-1041"
+              placeholder=""
               value={ourDcNo}
               onChange={(e) => setOurDcNo(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
@@ -927,21 +1111,48 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             <p className="text-[11px] text-slate-400 mt-1">Internal Delivery Challan Reference</p>
           </div>
 
-          {/* Vehicle Number */}
+          {/* Vehicle Number Selection */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Vehicle Number <span className="text-rose-500">*</span>
             </label>
-            <input
-              type="text"
+            <select
               required
-              placeholder="e.g. TN-22-BA-4512"
-              value={vehicleNumber}
-              onChange={(e) => setVehicleNumber(e.target.value)}
+              value={selectedVehicleOption}
+              onChange={(e) => handleVehicleOptionChange(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-            />
+            >
+              <option value=""></option>
+              {vehiclesList.map((v) => (
+                <option key={v.id || v.vehicleNo} value={v.vehicleNo}>
+                  {v.vehicleNo} {v.typeOfVehicle ? `(${v.typeOfVehicle})` : ''} {v.modelMake ? `— ${v.modelMake}` : ''}
+                </option>
+              ))}
+              <option value="others">Others</option>
+            </select>
             <p className="text-[11px] text-slate-400 mt-1">Vehicle used for transport</p>
           </div>
+
+          {/* If Others is selected: Custom Vehicle Number Input */}
+          {selectedVehicleOption === 'others' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Enter Vehicle Number <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder=""
+                value={customVehicleNumber}
+                onChange={(e) => setCustomVehicleNumber(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79] font-medium text-slate-900"
+                autoFocus
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Custom vehicle for this dispatch (not added to Vehicle Master)
+              </p>
+            </div>
+          )}
 
           {/* Driver Name */}
           <div>
@@ -951,7 +1162,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             <input
               type="text"
               required
-              placeholder="e.g. Murugan K."
+              placeholder=""
               value={driverName}
               onChange={(e) => setDriverName(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
@@ -969,7 +1180,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
               onChange={(e) => setTransporterVendorId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
             >
-              <option value="">Select Transporter / Vendor...</option>
+              <option value=""></option>
               <option value="in_house">In-House / Customer Logistics</option>
               {eligibleTransporters.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -987,7 +1198,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             <input
               type="text"
               required
-              placeholder="e.g. Thirumudivakkam to Ambattur"
+              placeholder=""
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
@@ -1002,7 +1213,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           </label>
           <textarea
             rows={2}
-            placeholder="Add any specific delivery instructions, carton count, or inspection remarks..."
+            placeholder=""
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
@@ -1042,7 +1253,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           </div>
         ) : isLoadingBalances ? (
           <div className="p-8 text-center text-xs text-slate-400">Loading inward & outward balances...</div>
-        ) : !activePo.lines || activePo.lines.length === 0 ? (
+        ) : !((activePo.colourLines && activePo.colourLines.length > 0) || (activePo.lines && activePo.lines.length > 0)) ? (
           <div className="p-8 text-center text-xs text-slate-400">
             No colour lines found on Purchase Order {activePo.poNumber}.
           </div>
@@ -1064,20 +1275,21 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {activePo.lines.map((poLine, idx) => {
-                  const lineBal = balances?.lines[poLine.lineId];
+                {(activePo.colourLines || activePo.lines || []).map((poLine, idx) => {
+                  const lineId = poLine.lineId || (poLine as any).id;
+                  const lineBal = balances?.lines[lineId];
                   const orderedQty = Number(poLine.quantity) || 0;
                   const cumInward = lineBal ? lineBal.cumulativeInwardQty : 0;
                   const prevOutward = lineBal ? lineBal.cumulativeOutwardQty : 0;
                   const available = Math.max(0, cumInward - prevOutward);
 
-                  const dispatchQty = Number(dispatchQtyMap[poLine.lineId]) || 0;
+                  const dispatchQty = Number(dispatchQtyMap[lineId]) || 0;
                   const remaining = Math.max(0, available - dispatchQty);
                   const isOverDispatch = dispatchQty > available;
 
                   return (
                     <tr
-                      key={poLine.lineId}
+                      key={lineId}
                       className={`hover:bg-slate-50/60 transition-colors ${
                         isOverDispatch ? 'bg-rose-50/40' : ''
                       }`}
@@ -1136,11 +1348,11 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
                           step={poLine.unit === 'kg' ? '0.01' : '1'}
                           placeholder=""
                           value={
-                            dispatchQtyMap[poLine.lineId] === 0
+                            dispatchQtyMap[lineId] === 0
                               ? ''
-                              : (dispatchQtyMap[poLine.lineId] ?? '')
+                              : (dispatchQtyMap[lineId] ?? '')
                           }
-                          onChange={(e) => handleDispatchQtyChange(poLine.lineId, e.target.value)}
+                          onChange={(e) => handleDispatchQtyChange(lineId, e.target.value)}
                           disabled={available <= 0}
                           className={`w-full text-right p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-1 ${
                             isOverDispatch
@@ -1177,20 +1389,28 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
       </div>
 
       {/* Bottom Action Buttons */}
-      <div className="flex justify-end items-center gap-3 pt-2">
+      <div className="flex justify-end items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <Button variant="outline" size="sm" onClick={onCancel} disabled={isSaving} className="text-xs">
           Cancel
         </Button>
         <Button
+          type="button"
           size="sm"
           onClick={handlePostClick}
-          disabled={isSaving}
-          className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs flex items-center gap-1.5 font-semibold shadow-xs cursor-pointer"
+          icon={<CheckCircle2 className="w-4 h-4" />}
+          loading={isSaving}
+          loadingText="Posting Dispatch..."
+          className="bg-black hover:bg-slate-900 text-white border-black text-xs font-semibold shadow-xs cursor-pointer"
         >
-          <CheckCircle2 className="w-4 h-4" />
-          {isSaving ? 'Posting...' : 'Post Outward Dispatch'}
+          Post Outward Dispatch
         </Button>
       </div>
+
+      <LoadingOverlay
+        isOpen={isSaving}
+        title="Posting Outward Dispatch..."
+        message="Generating Delivery Challan, validating quantities, and updating dispatch balances..."
+      />
     </div>
   );
 };

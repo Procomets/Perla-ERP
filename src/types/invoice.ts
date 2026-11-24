@@ -117,6 +117,7 @@ export interface Invoice {
   paymentTerms?: string;
   isWithoutGst?: boolean;
   gstType?: 'with_gst' | 'without_gst';
+  isFirebaseOnly?: boolean;
   status: InvoiceStatus;
   pdfPath?: string;
   pdfStoragePath?: string;
@@ -225,4 +226,52 @@ export interface InvoiceAuditLog {
   timestamp: string;
   summary: string;
   details?: Record<string, any>;
+}
+
+export interface InvoiceReadinessLine {
+  poId: string;
+  poNumber: string;
+  customerPoNumber?: string | null;
+  styleNo: string;
+  itemName: string;
+  companyId: string;
+  companyName: string;
+  poLineId: string;
+  colour: string;
+  colourCode?: string | null;
+  processType: string;
+  unit: string;
+  orderedQty: number;
+  rate: number;
+  rateBasis?: RateBasis;
+  hsnNo?: string;
+  cumulativeInward: number;
+  orderedVsInwardDiff: number;
+  cumulativeOutward: number;
+  balanceQty: number; // inward - outward diff
+  isReadyForInvoice: boolean;
+  isApprovedForInvoice: boolean;
+  isInvoiced: boolean;
+  isUnfinished: boolean;
+  approvalId?: string;
+  approvedAt?: string;
+  approvedByName?: string;
+  invoiceId?: string;
+  invoiceNo?: string;
+}
+
+export interface InvoiceReadinessPOGroup {
+  poId: string;
+  poNumber: string;
+  customerPoNumber?: string | null;
+  styleNo: string;
+  itemName: string;
+  companyId: string;
+  companyName: string;
+  lines: InvoiceReadinessLine[];
+  eligibleLines: InvoiceReadinessLine[];
+  approvedLines: InvoiceReadinessLine[];
+  unfinishedLines: InvoiceReadinessLine[];
+  hasMultipleColours: boolean;
+  latestActivityAt?: string;
 }

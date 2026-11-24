@@ -21,6 +21,8 @@ import {
 } from '../../../schemas/vendorSchema';
 import { VendorService } from '../../../services/vendorService';
 import { Button } from '../../../components/ui/Button';
+import { ValidationToast } from '../../../components/ui/ValidationToast';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
 
 interface VendorFormProps {
   initialVendor?: Vendor | null;
@@ -170,6 +172,8 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
   // Validation Errors & Duplicate Alerts
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toastErrors, setToastErrors] = useState<string[]>([]);
+  const [showToast, setShowToast] = useState<boolean>(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -277,13 +281,18 @@ export const VendorForm: React.FC<VendorFormProps> = ({
     });
 
     if (Object.keys(errs).length > 0) {
-      const messages = Object.values(errs).slice(0, 3).join(' • ');
+      const errorList = Object.values(errs);
+      setToastErrors(errorList);
+      setShowToast(true);
+      const messages = errorList.slice(0, 3).join(' • ');
       errs.submit = `Please fill required fields: ${messages}`;
       setErrors(errs);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return false;
     }
 
+    setToastErrors([]);
+    setShowToast(false);
     setErrors({});
     return true;
   };
@@ -375,6 +384,15 @@ export const VendorForm: React.FC<VendorFormProps> = ({
 
   return (
     <form onSubmit={(e) => handleSubmit(e, false)} noValidate className="space-y-6 pb-12">
+      {/* Toast Notification for Unfilled / Compulsory Missing Fields */}
+      <ValidationToast
+        isOpen={showToast}
+        onClose={() => setShowToast(false)}
+        title="Cannot Save Vendor Profile"
+        subtitle="Please fill all compulsory fields to submit:"
+        errors={toastErrors}
+      />
+
       {/* Header Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div>
@@ -387,11 +405,11 @@ export const VendorForm: React.FC<VendorFormProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Save Vendor Master'}
+          <Button type="submit" variant="primary" loading={isSubmitting} loadingText="Saving...">
+            Save Vendor Master
           </Button>
         </div>
       </div>
@@ -1290,11 +1308,22 @@ export const VendorForm: React.FC<VendorFormProps> = ({
             </button>
           )}
 
-          <Button type="submit" variant="primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving Vendor...' : isEditMode ? 'Update Vendor' : 'Save Vendor Master'}
+          <Button
+            type="submit"
+            variant="primary"
+            loading={isSubmitting}
+            loadingText={isEditMode ? 'Updating Vendor...' : 'Saving Vendor...'}
+          >
+            {isEditMode ? 'Update Vendor' : 'Save Vendor Master'}
           </Button>
         </div>
       </div>
+
+      <LoadingOverlay
+        isOpen={isSubmitting}
+        title={isEditMode ? 'Updating Vendor Master...' : 'Saving Vendor Master...'}
+        message="Validating GST, contact addresses, and saving vendor master profile..."
+      />
     </form>
   );
 };

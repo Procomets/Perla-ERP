@@ -6,6 +6,7 @@ import {
 } from '../../../types/statement';
 import { formatDate } from '../../../utils/formatters';
 import { StatementPdfService } from '../../../services/statementPdfService';
+import { PdfExportButton, ExcelExportButton } from '../../../components/ui/ExportButtons';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -31,6 +32,7 @@ interface StatementLedgerTableProps {
   styleNo?: string;
   poNumber?: string;
   itemName?: string;
+  onExportCsv?: () => void;
 }
 
 export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
@@ -40,7 +42,8 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
   companyName,
   styleNo,
   poNumber,
-  itemName
+  itemName,
+  onExportCsv
 }) => {
   // Section-specific filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -413,6 +416,37 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
     });
   };
 
+  // Export Excel / CSV Handler
+  const handleExportCsvAction = () => {
+    if (onExportCsv) {
+      onExportCsv();
+      return;
+    }
+    const csvRows: string[] = [];
+    csvRows.push(`PERLA TEXTILES PROCESSOR — RECONCILIATION STATEMENT`);
+    csvRows.push(`Company Name:,"${companyName}"`);
+    csvRows.push(`Style No:,"${styleNo || 'All Styles'}"`);
+    csvRows.push(`PO Number:,"${poNumber || 'All POs'}"`);
+    csvRows.push(`Item Name:,"${itemName || 'All Items'}"`);
+    csvRows.push(`Statement Date:,"${statementDate}"`);
+    csvRows.push('');
+    csvRows.push('Type,DC No,Date,Colour,Quantity,Unit');
+    filteredInwards.forEach((inw) => {
+      csvRows.push(`"Inward","${inw.dcNo || inw.inwardNo}","${inw.date}","${inw.colour}",${inw.qtyReceived},"${inw.unit}"`);
+    });
+    filteredOutwards.forEach((outw) => {
+      csvRows.push(`"Outward","${outw.dcNo || outw.outwardNo}","${outw.date}","${outw.colour}",${outw.qtyDispatched},"${outw.unit}"`);
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Statement_${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_${statementDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Colour button label computation
   const colourButtonLabel = useMemo(() => {
     if (availableColours.length === 0) return 'No Colours';
@@ -467,17 +501,22 @@ export const StatementLedgerTable: React.FC<StatementLedgerTableProps> = ({
             />
           </div>
 
-          {/* PDF Download Button */}
-          <button
-            type="button"
+          {/* PDF Download Button & Excel Export Button (Red & Green) */}
+          <PdfExportButton
+            size="sm"
             onClick={handleDownloadPdf}
             disabled={filteredInwards.length === 0 && filteredOutwards.length === 0}
-            className="flex items-center gap-1.5 px-3.5 h-8 bg-black hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-2xs transition disabled:opacity-50 cursor-pointer whitespace-nowrap"
-            title="Download Reconciliation Statement PDF (exact format with colour breakdown & subtotals)"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download PDF</span>
-          </button>
+            label="Download Statement (PDF)"
+            title="Download reconciliation statement PDF matching delivery statement format"
+          />
+
+          <ExcelExportButton
+            size="sm"
+            onClick={handleExportCsvAction}
+            disabled={filteredInwards.length === 0 && filteredOutwards.length === 0}
+            label="Export Excel"
+            title="Export statement to Excel / CSV"
+          />
         </div>
       </div>
 

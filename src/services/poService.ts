@@ -996,26 +996,47 @@ export class POService {
     const userRole = (user as any)?.role?.toLowerCase() || '';
     const isUserAdmin = userRole === 'admin' || (user as any)?.isAdmin === true;
 
+    // Check if PO is locked due to all colour lines being completely invoiced (use fast cache)
+    const lockMap = await POLockService.getLockedPOMap(isDemo, false);
+    const poLockStatus = POLockService.getPOStatus(existing.po, lockMap);
+    if (poLockStatus?.isFullyLocked) {
+      throw new Error(
+        poLockStatus.reason || 'Cannot edit Purchase Order: All colour lines have been invoiced completely.'
+      );
+    }
+    if (poLockStatus && (poLockStatus.invoicedLinesCount > 0 || poLockStatus.approvedLinesCount > 0)) {
+      const origLines = existing.po.colourLines || existing.po.lines || [];
+      const updatedLines = updates.colourLines || updates.lines || [];
+      for (const orig of origLines) {
+        if (POLockService.isLineLocked(existing.po, orig, lockMap)) {
+          const match = updatedLines.find(
+            (l: any) =>
+              (l.id && l.id === orig.id) ||
+              (orig.lineId && l.lineId === orig.lineId) ||
+              (l.colourName && l.colourName.trim().toLowerCase() === orig.colourName.trim().toLowerCase())
+          );
+          if (!match) {
+            throw new Error(`Cannot remove colour line '${orig.colourName}': It has already been invoiced.`);
+          }
+          if (Number(match.quantity) !== Number(orig.quantity)) {
+            throw new Error(`Cannot change quantity for colour line '${orig.colourName}': It has already been invoiced.`);
+          }
+          if (Number(match.rate) !== Number(orig.rate)) {
+            throw new Error(`Cannot change rate for colour line '${orig.colourName}': It has already been invoiced.`);
+          }
+          if (match.unit !== orig.unit) {
+            throw new Error(`Cannot change unit for colour line '${orig.colourName}': It has already been invoiced.`);
+          }
+        }
+      }
+    }
+
     const hasInwardEntries = await this.checkHasInward(
       poId,
       existing.po.poNumber,
       isDemo
     );
     const hasInward = hasInwardEntries;
-
-    if (hasInward) {
-      if (!isUserAdmin) {
-        throw new Error(
-          'This Purchase Order has inward entries and can only be edited by an Administrator.'
-        );
-      }
-    } else {
-      if (!isUserAdmin && existing.po.status !== 'draft' && existing.po.status !== 'Draft') {
-        throw new Error(
-          `Cannot edit Purchase Order in '${existing.po.status}' status. Only draft POs can be edited directly.`
-        );
-      }
-    }
 
     const now = new Date().toISOString();
 
@@ -1176,13 +1197,13 @@ export class POService {
         ...merged,
         customerPoDate: merged.customerPoDate ? toFirestoreTimestamp(merged.customerPoDate) : null
       };
-      await updateDoc(doc(db, 'purchase_orders', poId), cleanFirestoreData(firestoreUpdateData) as any);
-      try {
-        const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
-        await setDoc(auditRef, cleanFirestoreData(auditEntry));
-      } catch (auditErr) {
-        console.warn('Could not write PO update audit log:', auditErr);
-      }
+      const auditRef = doc(collection(db, 'purchase_order_audit_logs'));
+      await Promise.all([
+        updateDoc(doc(db, 'purchase_orders', poId), cleanFirestoreData(firestoreUpdateData) as any),
+        setDoc(auditRef, cleanFirestoreData(auditEntry)).catch((auditErr) =>
+          console.warn('Could not write PO update audit log:', auditErr)
+        )
+      ]);
     } catch (err) {
       console.warn('Firestore updatePurchaseOrder fallback:', err);
     }

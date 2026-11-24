@@ -10,6 +10,7 @@ import {
 import { VehicleService } from '../../services/vehicleService';
 import { DailyExpenseMonitorSection } from './DailyExpenseMonitorSection';
 import { Modal } from '../../components/ui/Modal';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import {
   Truck,
   Plus,
@@ -1544,6 +1545,12 @@ export const VehicleMasterPage: React.FC = () => {
             </button>
           </div>
         </form>
+
+        <LoadingOverlay
+          isOpen={formSubmitting}
+          title={isEditMode ? 'Updating Vehicle Details...' : 'Registering Vehicle Master...'}
+          message="Saving vehicle registration, maintenance cycle, and transport logs..."
+        />
       </Modal>
         </>
       )}
