@@ -50,7 +50,7 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
 
       <div className="flex min-h-full items-center justify-center p-4 print:p-0">
         <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 print:my-0 print:border-none print:shadow-none print:rounded-none">
-          
+
           {/* Header Action Bar (Hidden during print) */}
           <div className="flex items-center justify-between px-8 sm:px-10 py-4 bg-white border-b border-slate-200 print:hidden">
             <div>
@@ -86,7 +86,7 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
 
           {/* Printable Document Body */}
           <div className="p-8 sm:p-10 space-y-6 printable-area bg-white text-slate-900 text-xs">
-            
+
             {/* Document Header */}
             <div className="border-b border-slate-200 pb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
@@ -163,8 +163,8 @@ export const EmployeePdfModal: React.FC<EmployeePdfModalProps> = ({
                     {employee.dailyWages && employee.dailyWages.trim() && employee.dailyWages !== '0' && employee.dailyWages !== '0000'
                       ? `INR ${Number(employee.dailyWages.replace(/,/g, '')).toLocaleString('en-IN')} / Day`
                       : employee.monthlyIncome && employee.monthlyIncome.trim() && employee.monthlyIncome !== '0'
-                      ? `INR ${Number(employee.monthlyIncome.replace(/,/g, '')).toLocaleString('en-IN')} / Month`
-                      : '-'}
+                        ? `INR ${Number(employee.monthlyIncome.replace(/,/g, '')).toLocaleString('en-IN')} / Month`
+                        : '-'}
                   </span>
                 </div>
 

@@ -26,6 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { useTableControls, TableColumnConfig } from '../../../hooks/useTableControls';
+import { TableMaximizeWrapper } from '../../../components/ui/TableMaximizeWrapper';
 
 export interface FlattenedPOLine {
   id: string;
@@ -594,8 +595,9 @@ export const POReport: React.FC<POReportProps> = ({
           <button
             type="button"
             onClick={onBack}
+            data-back-button="true"
             className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
-            title="Back to Purchase Orders"
+            title="Back to Purchase Orders (Esc)"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -1135,95 +1137,109 @@ export const POReport: React.FC<POReportProps> = ({
         </div>
       ) : (
         /* --- VIEW 2: CONSOLIDATED DETAILED TABLE WITH TABLE CONTROLS --- */
-        <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
-          {/* Table Controls Bar */}
-          <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
-            {/* Search Bar with Column Selector */}
-            <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
-              <div className="relative">
-                <select
-                  value={poTableControls.searchColumn}
-                  onChange={(e) => poTableControls.setSearchColumn(e.target.value)}
-                  className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
-                >
-                  <option value="ALL">All Columns</option>
-                  {PO_REPORT_TABLE_COLUMNS.map((col) => (
-                    <option key={col.key} value={col.key}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+        <TableMaximizeWrapper
+          title="Purchase Orders Detailed Report"
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {poTableControls.filteredCount} Lines
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <div className={`bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden flex flex-col ${isMaximized ? 'flex-1 min-h-0' : ''}`}>
+              {/* Table Controls Bar */}
+              <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+                {/* Search Bar with Column Selector */}
+                <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
+                  <div className="relative">
+                    <select
+                      value={poTableControls.searchColumn}
+                      onChange={(e) => poTableControls.setSearchColumn(e.target.value)}
+                      className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="ALL">All Columns</option>
+                      {PO_REPORT_TABLE_COLUMNS.map((col) => (
+                        <option key={col.key} value={col.key}>
+                          {col.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
 
-              <div className="relative flex-1 flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={
-                    poTableControls.searchColumn === 'ALL'
-                      ? 'PO #, Style, Customer, Item, Colour...'
-                      : `Search by ${PO_REPORT_TABLE_COLUMNS.find((c) => c.key === poTableControls.searchColumn)?.label}...`
-                  }
-                  value={poTableControls.searchQuery}
-                  onChange={(e) => poTableControls.setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
-                />
-                {poTableControls.searchQuery && (
+                  <div className="relative flex-1 flex items-center">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder={
+                        poTableControls.searchColumn === 'ALL'
+                          ? 'PO #, Style, Customer, Item, Colour...'
+                          : `Search by ${PO_REPORT_TABLE_COLUMNS.find((c) => c.key === poTableControls.searchColumn)?.label}...`
+                      }
+                      value={poTableControls.searchQuery}
+                      onChange={(e) => poTableControls.setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+                    />
+                    {poTableControls.searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => poTableControls.setSearchQuery('')}
+                        className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Controls: Toggle Inline Column Filters Button & Reset */}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => poTableControls.setSearchQuery('')}
-                    className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                    title="Clear search"
+                    onClick={() => poTableControls.setShowColumnFilters(!poTableControls.showColumnFilters)}
+                    className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      poTableControls.showColumnFilters || Object.values(poTableControls.columnFilters).some((v) => (v || '').trim() !== '')
+                        ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                    title="Toggle column-wise search inputs on table header"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Column Filters</span>
+                    {Object.values(poTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                      <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                        {Object.values(poTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
+                      </span>
+                    )}
                   </button>
-                )}
+
+                  {poTableControls.isAnyFilterActive && (
+                    <button
+                      type="button"
+                      onClick={poTableControls.handleResetFilters}
+                      className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                      title="Reset table search, column filters, and sorting"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Controls: Toggle Inline Column Filters Button & Reset */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => poTableControls.setShowColumnFilters(!poTableControls.showColumnFilters)}
-                className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                  poTableControls.showColumnFilters || Object.values(poTableControls.columnFilters).some((v) => (v || '').trim() !== '')
-                    ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-                title="Toggle column-wise search inputs on table header"
+              {/* Table Container with Sticky Headers */}
+              <div
+                data-table-scroll="true"
+                className={`overflow-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Column Filters</span>
-                {Object.values(poTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
-                  <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                    {Object.values(poTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
-                  </span>
-                )}
-              </button>
-
-              {poTableControls.isAnyFilterActive && (
-                <button
-                  type="button"
-                  onClick={poTableControls.handleResetFilters}
-                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                  title="Reset table search, column filters, and sorting"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Table Container with Sticky Headers */}
-          <div className="max-h-[620px] overflow-auto relative">
             <table className="w-full min-w-max text-left text-xs border-collapse">
-              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                <tr className="bg-[#1F4E79] text-white font-bold text-[11px] uppercase tracking-wider">
+              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider">
                   <th
                     onClick={() => poTableControls.handleSort('poNumber')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'poNumber' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>PO Number</span>
@@ -1232,7 +1248,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('orderDate')}
-                    className="py-2.5 px-3 border-r border-white/20 text-center whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-center whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'orderDate' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>Date</span>
@@ -1241,7 +1259,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('customerName')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'customerName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Customer</span>
@@ -1250,7 +1270,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('customerPoNumber')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'customerPoNumber' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Cust PO</span>
@@ -1259,7 +1281,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('styleNo')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'styleNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Style No</span>
@@ -1268,7 +1292,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('itemName')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'itemName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Item Description</span>
@@ -1277,7 +1303,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('processCategory')}
-                    className="py-2.5 px-3 border-r border-white/20 text-center whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-center whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'processCategory' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>Process</span>
@@ -1286,7 +1314,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('colourName')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'colourName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Colour Name</span>
@@ -1295,7 +1325,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('processType')}
-                    className="py-2.5 px-3 border-r border-white/20 text-left whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-left whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'processType' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span>Wash / Treatment</span>
@@ -1304,7 +1336,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('quantity')}
-                    className="py-2.5 px-3 border-r border-white/20 text-right whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-right whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'quantity' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-end gap-1">
                       <span>Qty</span>
@@ -1313,7 +1347,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('unit')}
-                    className="py-2.5 px-3 border-r border-white/20 text-center whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-center whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'unit' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>Unit</span>
@@ -1322,7 +1358,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('rate')}
-                    className="py-2.5 px-3 border-r border-white/20 text-right whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-right whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'rate' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-end gap-1">
                       <span>Rate (₹)</span>
@@ -1331,7 +1369,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('amount')}
-                    className="py-2.5 px-3 border-r border-white/20 text-right whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 border-r border-slate-300 text-right whitespace-nowrap align-middle cursor-pointer select-none group transition-colors ${
+                      poTableControls.sortField === 'amount' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-end gap-1">
                       <span>Amount (₹)</span>
@@ -1340,7 +1380,9 @@ export const POReport: React.FC<POReportProps> = ({
                   </th>
                   <th
                     onClick={() => poTableControls.handleSort('status')}
-                    className="py-2.5 px-3 text-center whitespace-nowrap align-middle cursor-pointer select-none group"
+                    className={`py-2.5 px-3 text-center whitespace-nowrap align-middle cursor-pointer select-none group transition-colors pr-12 min-w-[130px] ${
+                      poTableControls.sortField === 'status' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                    }`}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>Status</span>
@@ -1658,6 +1700,8 @@ export const POReport: React.FC<POReportProps> = ({
             </span>
           </div>
         </div>
+        )}
+      </TableMaximizeWrapper>
       )}
     </div>
   );

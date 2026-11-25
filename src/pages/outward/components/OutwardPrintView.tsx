@@ -434,7 +434,14 @@ export const OutwardPrintView: React.FC<OutwardPrintViewProps> = ({ outward, inw
       {/* Top Action Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button variant="outline" size="sm" onClick={onBack} className="flex items-center gap-1.5 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBack}
+            data-back-button="true"
+            title="Back to Outward Details (Esc)"
+            className="flex items-center gap-1.5 text-xs"
+          >
             <ArrowLeft className="w-4 h-4" />
             Back to Outward Details
           </Button>

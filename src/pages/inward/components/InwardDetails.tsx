@@ -105,6 +105,8 @@ export const InwardDetails: React.FC<InwardDetailsProps> = ({
         <div>
           <button
             onClick={onBack}
+            data-back-button="true"
+            title="Back to Inward List (Esc)"
             className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 mb-1.5 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Inward List

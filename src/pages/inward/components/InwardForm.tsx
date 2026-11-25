@@ -625,8 +625,9 @@ export const InwardForm: React.FC<InwardFormProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            data-back-button="true"
             className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Back to Inward List"
+            title="Back to Inward List (Esc)"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>

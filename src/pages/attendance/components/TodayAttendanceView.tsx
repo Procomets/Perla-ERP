@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EmployeeMaster } from '../../../types/employee';
 import { AttendanceRecord, AttendanceStatus } from '../../../types/attendance';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 import {
   calculateWorkingHours,
   formatWorkingHours,
@@ -109,8 +110,8 @@ export const TodayAttendanceView: React.FC<TodayAttendanceViewProps> = ({
   const stats = useMemo(() => {
     let clockedIn = 0;
     let clockedOut = 0;
-    const activeStaff = categoryFilter === 'All' 
-      ? employees 
+    const activeStaff = categoryFilter === 'All'
+      ? employees
       : employees.filter((e) => e.employeeType === categoryFilter);
 
     activeStaff.forEach((emp) => {
@@ -382,11 +383,10 @@ export const TodayAttendanceView: React.FC<TodayAttendanceViewProps> = ({
                 key={tab}
                 type="button"
                 onClick={() => setCategoryFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                  categoryFilter === tab
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${categoryFilter === tab
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+                  }`}
               >
                 <span>{label}</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono">
@@ -424,290 +424,306 @@ export const TodayAttendanceView: React.FC<TodayAttendanceViewProps> = ({
       </div>
 
       {/* Employee Attendance Table */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px]">
-              <tr>
-                <th className="py-2.5 px-4 w-12 text-center">#</th>
-                <th className="py-2.5 px-4 min-w-[200px]">Employee Details</th>
-                <th className="py-2.5 px-4 w-32 text-center">Status</th>
-                <th className="py-2.5 px-4 w-52 text-center">Time In</th>
-                <th className="py-2.5 px-4 w-52 text-center">Time Out</th>
-                <th className="py-2.5 px-4 w-36 text-center">Working Hours</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredEmployees.length === 0 ? (
+      <TableMaximizeWrapper
+        title={`Daily Attendance Check-in (${targetDate})`}
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredEmployees.length} Staff
+          </span>
+        }
+      >
+        <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
+          <div data-table-scroll="true" className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse border border-slate-300">
+              <thead className="bg-[#EEF5FB] border-b-2 border-slate-300 text-[#1F4E79] font-bold uppercase text-[11px]">
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
-                    No active employees found matching the selected filter.
-                  </td>
+                  <th className="py-2.5 px-4 w-12 text-center border-r border-slate-300 bg-[#EEF5FB]">#</th>
+                  <th className="py-2.5 px-4 min-w-[200px] border-r border-slate-300 bg-[#EEF5FB]">Employee Details</th>
+                  <th className="py-2.5 px-4 w-32 text-center border-r border-slate-300 bg-[#EEF5FB]">Status</th>
+                  <th className="py-2.5 px-4 w-52 text-center border-r border-slate-300 bg-[#EEF5FB]">Time In</th>
+                  <th className="py-2.5 px-4 w-52 text-center border-r border-slate-300 bg-[#EEF5FB]">Time Out</th>
+                  <th className="py-2.5 px-4 min-w-[140px] pr-12 text-center bg-[#EEF5FB]">Working Hours</th>
                 </tr>
-              ) : (
-                filteredEmployees.map((emp, index) => {
-                  const record = dateRecordsMap.get(emp.employeeId);
-                  const hasTimeIn = Boolean(record?.timeIn);
-                  const hasTimeOut = Boolean(record?.timeOut);
-                  const isSaving = savingEmpId === emp.employeeId;
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployees.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
+                      No active employees found matching the selected filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEmployees.map((emp, index) => {
+                    const record = dateRecordsMap.get(emp.employeeId);
+                    const hasTimeIn = Boolean(record?.timeIn);
+                    const hasTimeOut = Boolean(record?.timeOut);
+                    const isSaving = savingEmpId === emp.employeeId;
 
-                  // Compute working hours dynamically
-                  const workingHours =
-                    record?.workingHours !== undefined && record.workingHours > 0
-                      ? record.workingHours
-                      : hasTimeIn && hasTimeOut
-                      ? calculateWorkingHours(record?.timeIn, record?.timeOut)
-                      : 0;
+                    // Compute working hours dynamically
+                    const workingHours =
+                      record?.workingHours !== undefined && record.workingHours > 0
+                        ? record.workingHours
+                        : hasTimeIn && hasTimeOut
+                          ? calculateWorkingHours(record?.timeIn, record?.timeOut)
+                          : 0;
 
-                  const isEditingIn = editingField === `${emp.employeeId}_timeIn`;
-                  const isEditingOut = editingField === `${emp.employeeId}_timeOut`;
+                    const isEditingIn = editingField === `${emp.employeeId}_timeIn`;
+                    const isEditingOut = editingField === `${emp.employeeId}_timeOut`;
 
-                  return (
-                    <tr key={emp.employeeId} className="hover:bg-slate-50/70 transition-colors">
-                      {/* S.No */}
-                      <td className="py-3 px-4 text-center text-slate-400 font-mono text-xs">
-                        {index + 1}
-                      </td>
+                    return (
+                      <tr key={emp.employeeId} className="hover:bg-slate-50/70 transition-colors">
+                        {/* S.No */}
+                        <td className="py-3 px-4 text-center text-slate-400 font-mono text-xs">
+                          {index + 1}
+                        </td>
 
-                      {/* Employee Details */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs shrink-0">
-                            {emp.fullName?.charAt(0) || 'E'}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
-                              <span>{emp.fullName}</span>
-                              <span
-                                className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
-                                  emp.employeeType === 'Labour'
+                        {/* Employee Details */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs shrink-0">
+                              {emp.fullName?.charAt(0) || 'E'}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                <span>{emp.fullName}</span>
+                                <span
+                                  className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${emp.employeeType === 'Labour'
                                     ? 'bg-amber-100 text-amber-800'
                                     : 'bg-blue-100 text-blue-800'
-                                }`}
-                              >
-                                {emp.employeeType}
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 mt-0.5">
-                              <span>{emp.employeeId}</span>
-                              {emp.department && (
-                                <>
-                                  <span className="text-slate-300">•</span>
-                                  <span className="truncate text-slate-400">{emp.department}</span>
-                                </>
-                              )}
+                                    }`}
+                                >
+                                  {emp.employeeType}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 mt-0.5">
+                                <span>{emp.employeeId}</span>
+                                {emp.department && (
+                                  <>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="truncate text-slate-400">{emp.department}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Status - Auto-calculated Shift (Day / Night / Double) */}
-                      <td className="py-3 px-4 text-center">
-                        {hasTimeIn ? (
-                          (() => {
-                            const calculated = calculateShiftStatus(record?.timeIn, record?.timeOut, workingHours);
-                            const shift = record?.status && record.status !== 'Absent' ? record.status : calculated;
+                        {/* Status - Auto-calculated Shift (Day / Night / Double) */}
+                        <td className="py-3 px-4 text-center">
+                          {hasTimeIn ? (
+                            (() => {
+                              const calculated = calculateShiftStatus(record?.timeIn, record?.timeOut, workingHours);
+                              const shift = record?.status && record.status !== 'Absent' ? record.status : calculated;
 
-                            if (shift === 'P/N') {
+                              if (shift === 'P/N') {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCycleShift(emp.employeeId, shift)}
+                                    className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900 transition cursor-pointer"
+                                    title="Double Shift (Day + Night, 2 shifts). Click to change."
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    <span>Double Shift</span>
+                                  </button>
+                                );
+                              }
+                              if (shift === 'N') {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCycleShift(emp.employeeId, shift)}
+                                    className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-purple-700 hover:text-purple-900 transition cursor-pointer"
+                                    title="Night Shift (N). Click to change."
+                                  >
+                                    <Moon className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                                    <span>Night Shift</span>
+                                  </button>
+                                );
+                              }
                               return (
                                 <button
                                   type="button"
                                   onClick={() => handleCycleShift(emp.employeeId, shift)}
-                                  className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900 transition cursor-pointer"
-                                  title="Double Shift (Day + Night, 2 shifts). Click to change."
+                                  className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 transition cursor-pointer"
+                                  title="Day Shift (Present). Click to change."
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                  <span>Double Shift</span>
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>Day Shift</span>
                                 </button>
                               );
-                            }
-                            if (shift === 'N') {
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCycleShift(emp.employeeId, shift)}
-                                  className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-purple-700 hover:text-purple-900 transition cursor-pointer"
-                                  title="Night Shift (N). Click to change."
-                                >
-                                  <Moon className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                                  <span>Night Shift</span>
-                                </button>
-                              );
-                            }
-                            return (
+                            })()
+                          ) : (
+                            <span className="text-xs text-slate-400 font-medium">
+                              Not In
+                            </span>
+                          )}
+                        </td>
+
+                        {/* TIME IN */}
+                        <td className="py-3 px-4 text-center">
+                          {!hasTimeIn && !isEditingIn ? (
+                            /* Button visible only when time is not noted */
+                            <button
+                              type="button"
+                              onClick={() => handleClockIn(emp.employeeId)}
+                              disabled={isSaving}
+                              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-50"
+                              title="Click to clock in with current system time"
+                            >
+                              <span>Time In</span>
+                            </button>
+                          ) : isEditingIn ? (
+                            /* Editable input when editing */
+                            <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
+                              <input
+                                type="time"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleCycleShift(emp.employeeId, shift)}
-                                className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 transition cursor-pointer"
-                                title="Day Shift (Present). Click to change."
+                                onClick={() => handleSaveEdit(emp.employeeId, 'timeIn')}
+                                disabled={isSaving}
+                                className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
+                                title="Save Time In"
                               >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Day Shift</span>
+                                <Check className="w-3.5 h-3.5" />
                               </button>
-                            );
-                          })()
-                        ) : (
-                          <span className="text-xs text-slate-400 font-medium">
-                            Not In
-                          </span>
-                        )}
-                      </td>
+                              <button
+                                type="button"
+                                onClick={() => setEditingField(null)}
+                                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            /* Time noted: Button disappears, shows recorded time with edit access */
+                            <div className="inline-flex items-center justify-center gap-1.5">
+                              <span className="font-mono font-bold text-xs text-slate-800">
+                                {formatTime24To12(record?.timeIn)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(emp.employeeId, 'timeIn', record?.timeIn)}
+                                className="p-1 text-slate-400 hover:text-slate-800 transition cursor-pointer"
+                                title="Edit Time In"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClearTime(emp.employeeId, 'timeIn')}
+                                className="p-1 text-slate-300 hover:text-rose-600 transition cursor-pointer"
+                                title="Clear Time In"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
 
-                      {/* TIME IN */}
-                      <td className="py-3 px-4 text-center">
-                        {!hasTimeIn && !isEditingIn ? (
-                          /* Button visible only when time is not noted */
-                          <button
-                            type="button"
-                            onClick={() => handleClockIn(emp.employeeId)}
-                            disabled={isSaving}
-                            className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-50"
-                            title="Click to clock in with current system time"
-                          >
-                            <span>Time In</span>
-                          </button>
-                        ) : isEditingIn ? (
-                          /* Editable input when editing */
-                          <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
-                            <input
-                              type="time"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none"
-                            />
+                        {/* TIME OUT */}
+                        <td className="py-3 px-4 text-center">
+                          {!hasTimeOut && !isEditingOut ? (
+                            /* Button visible only when time out is not noted */
                             <button
                               type="button"
-                              onClick={() => handleSaveEdit(emp.employeeId, 'timeIn')}
+                              onClick={() => handleClockOut(emp.employeeId)}
                               disabled={isSaving}
-                              className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
-                              title="Save Time In"
+                              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-50"
+                              title="Click to clock out with current system time"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <span>Time Out</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingField(null)}
-                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                              title="Cancel"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          /* Time noted: Button disappears, shows recorded time with edit access */
-                          <div className="inline-flex items-center justify-center gap-1.5">
-                            <span className="font-mono font-bold text-xs text-slate-800">
-                              {formatTime24To12(record?.timeIn)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleStartEdit(emp.employeeId, 'timeIn', record?.timeIn)}
-                              className="p-1 text-slate-400 hover:text-slate-800 transition cursor-pointer"
-                              title="Edit Time In"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleClearTime(emp.employeeId, 'timeIn')}
-                              className="p-1 text-slate-300 hover:text-rose-600 transition cursor-pointer"
-                              title="Clear Time In"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
+                          ) : isEditingOut ? (
+                            /* Editable input when editing */
+                            <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
+                              <input
+                                type="time"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(emp.employeeId, 'timeOut')}
+                                disabled={isSaving}
+                                className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
+                                title="Save Time Out"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingField(null)}
+                                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            /* Time noted: Button disappears, shows recorded time with edit access */
+                            <div className="inline-flex items-center justify-center gap-1.5">
+                              <span className="font-mono font-bold text-xs text-slate-800">
+                                {formatTime24To12(record?.timeOut)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(emp.employeeId, 'timeOut', record?.timeOut)}
+                                className="p-1 text-slate-400 hover:text-slate-800 transition cursor-pointer"
+                                title="Edit Time Out"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClearTime(emp.employeeId, 'timeOut')}
+                                className="p-1 text-slate-300 hover:text-rose-600 transition cursor-pointer"
+                                title="Clear Time Out"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
 
-                      {/* TIME OUT */}
-                      <td className="py-3 px-4 text-center">
-                        {!hasTimeOut && !isEditingOut ? (
-                          /* Button visible only when time out is not noted */
-                          <button
-                            type="button"
-                            onClick={() => handleClockOut(emp.employeeId)}
-                            disabled={isSaving}
-                            className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-50"
-                            title="Click to clock out with current system time"
-                          >
-                            <span>Time Out</span>
-                          </button>
-                        ) : isEditingOut ? (
-                          /* Editable input when editing */
-                          <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
-                            <input
-                              type="time"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveEdit(emp.employeeId, 'timeOut')}
-                              disabled={isSaving}
-                              className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
-                              title="Save Time Out"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingField(null)}
-                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                              title="Cancel"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          /* Time noted: Button disappears, shows recorded time with edit access */
-                          <div className="inline-flex items-center justify-center gap-1.5">
+                        {/* WORKING HOURS */}
+                        <td className="py-3 px-4 text-center">
+                          {hasTimeIn && hasTimeOut ? (
                             <span className="font-mono font-bold text-xs text-slate-800">
-                              {formatTime24To12(record?.timeOut)}
+                              {formatWorkingHours(workingHours)}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleStartEdit(emp.employeeId, 'timeOut', record?.timeOut)}
-                              className="p-1 text-slate-400 hover:text-slate-800 transition cursor-pointer"
-                              title="Edit Time Out"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleClearTime(emp.employeeId, 'timeOut')}
-                              className="p-1 text-slate-300 hover:text-rose-600 transition cursor-pointer"
-                              title="Clear Time Out"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* WORKING HOURS */}
-                      <td className="py-3 px-4 text-center">
-                        {hasTimeIn && hasTimeOut ? (
-                          <span className="font-mono font-bold text-xs text-slate-800">
-                            {formatWorkingHours(workingHours)}
-                          </span>
-                        ) : hasTimeIn ? (
-                          <span className="inline-flex items-center justify-center gap-1 text-[11px] text-amber-600 font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                            <span>In Progress</span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 font-mono">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                          ) : hasTimeIn ? (
+                            <span className="inline-flex items-center justify-center gap-1 text-[11px] text-amber-600 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              <span>In Progress</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              <TableTotalsFooter
+                cells={[
+                  {
+                    colSpan: 6,
+                    label: `TOTAL (${filteredEmployees.length} staff: ${stats.clockedIn} clocked in, ${stats.clockedOut} clocked out, ${stats.pendingIn} pending)`
+                  }
+                ]}
+              />
+            </table>
+          </div>
         </div>
-      </div>
+      </TableMaximizeWrapper>
     </div>
   );
 };

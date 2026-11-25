@@ -136,6 +136,8 @@ export const POPrintView: React.FC<POPrintViewProps> = ({
           <button
             type="button"
             onClick={onBack}
+            data-back-button="true"
+            title="Back to Purchase Order (Esc)"
             className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />

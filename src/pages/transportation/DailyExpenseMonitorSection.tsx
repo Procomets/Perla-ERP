@@ -14,6 +14,7 @@ import {
 import { VehicleService } from '../../services/vehicleService';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import {
   Plus,
@@ -791,7 +792,15 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
       {tabsSlot}
 
       {/* Main Grid Table Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <TableMaximizeWrapper
+        title="Transportation Daily Expense & Trip Monitor"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredEntries.length} Trips
+          </span>
+        }
+      >
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Filters Header Toolbar */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
           {/* Left: Search with Column Selector, Column Filters Toggle & Reset */}
@@ -978,19 +987,19 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
         )}
 
         {/* Grid Table Container with Sticky Header */}
-        <div className="max-h-[620px] overflow-auto relative">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
-              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+        <div data-table-scroll="true" className="max-h-[620px] overflow-auto relative border border-slate-300 rounded-b-2xl">
+          <table className="w-full text-left text-xs border-collapse border border-slate-300">
+            <thead className="sticky top-0 z-20 bg-[#EEF5FB] shadow-xs">
+              <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px]">
                 {/* S.NO */}
-                <th className="py-3 px-3 border-r border-slate-200 text-center whitespace-nowrap w-12 bg-slate-50">
+                <th className="py-3 px-3 border-r border-slate-300 text-center whitespace-nowrap w-12 bg-[#EEF5FB] text-[#1F4E79]">
                   S.NO
                 </th>
 
                 {/* DATE */}
                 <th
                   onClick={() => handleSort('date', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>DATE</span>
@@ -1001,7 +1010,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* VEHICLE NO & FUEL */}
                 <th
                   onClick={() => handleSort('vehicleNo')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>VEHICLE NO</span>
@@ -1012,7 +1021,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* START KM & TIME */}
                 <th
                   onClick={() => handleSort('startKm', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>START KM &amp; TIME</span>
@@ -1023,7 +1032,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* END KM & TIME */}
                 <th
                   onClick={() => handleSort('endKm', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>END KM &amp; TIME</span>
@@ -1034,7 +1043,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* TOTAL DISTANCE */}
                 <th
                   onClick={() => handleSort('totalDistance', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-right bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end gap-1.5">
                     <span>DISTANCE</span>
@@ -1045,7 +1054,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* TIME TAKEN */}
                 <th
                   onClick={() => handleSort('timeTaken')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition text-center whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition text-center whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>TIME TAKEN</span>
@@ -1056,7 +1065,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* MILEAGE */}
                 <th
                   onClick={() => handleSort('mileage', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition text-center whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition text-center whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>MILEAGE</span>
@@ -1067,7 +1076,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* AMOUNT SPENT */}
                 <th
                   onClick={() => handleSort('amountSpent', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-right bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-right bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end gap-1.5">
                     <span>AMOUNT SPENT</span>
@@ -1078,7 +1087,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 {/* DRIVER NAME */}
                 <th
                   onClick={() => handleSort('driverName')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>DRIVER NAME</span>
@@ -1087,7 +1096,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 </th>
 
                 {/* ACTIONS */}
-                <th className="py-3 px-3.5 text-center whitespace-nowrap bg-slate-50">ACTIONS</th>
+                <th className="py-3 px-3.5 text-center whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] min-w-[130px] pr-12">ACTIONS</th>
               </tr>
 
               {/* Sticky Column Filter Input Row */}
@@ -1198,7 +1207,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                   </th>
 
                   {/* ACTIONS CLEAR */}
-                  <th className="p-1.5 text-center">
+                  <th className="p-1.5 text-center min-w-[130px] pr-12">
                     {activeColumnFilterCount > 0 && (
                       <button
                         type="button"
@@ -1370,6 +1379,17 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
                 ))
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 5, label: `TOTAL (${filteredEntries.length} trips)` },
+                { value: `${metrics.totalDistanceCovered.toLocaleString('en-IN')} km`, isTotal: true },
+                { align: 'center' },
+                { align: 'center' },
+                { currency: metrics.totalAmountSpent, isTotal: true },
+                { align: 'center' },
+                { align: 'center' }
+              ]}
+            />
           </table>
         </div>
 
@@ -1386,6 +1406,7 @@ export const DailyExpenseMonitorSection: React.FC<DailyExpenseMonitorSectionProp
           </span>
         </div>
       </div>
+      </TableMaximizeWrapper>
 
       {/* MODAL: Add / Edit Daily Entry */}
       <Modal

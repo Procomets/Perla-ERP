@@ -25,6 +25,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { Card } from '../../../components/ui/Card';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 
 export type MachineSortField =
   | 'machineId'
@@ -637,9 +638,21 @@ export const MachineMasterSettings: React.FC<MachineMasterSettingsProps> = ({
       )}
 
       {/* Persistent Sticky Table Container */}
-      <Card className="overflow-hidden border border-slate-300 shadow-2xs bg-white">
-        <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
-          <table className="w-full text-left border-collapse text-xs border border-slate-200">
+      <TableMaximizeWrapper
+        title="Machine Master Directory"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {sortedMachines.length} Machines
+          </span>
+        }
+      >
+        {(isMaximized) => (
+          <Card className={`overflow-hidden border border-slate-300 shadow-2xs bg-white ${isMaximized ? 'flex-1 flex flex-col min-h-0' : ''}`}>
+            <div
+              data-table-scroll="true"
+              className={`overflow-x-auto relative overflow-y-auto ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+            >
+              <table className="w-full text-left border-collapse text-xs border border-slate-200">
             <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
               <tr>
                 {/* 1. Unique Machine ID */}
@@ -732,7 +745,7 @@ export const MachineMasterSettings: React.FC<MachineMasterSettingsProps> = ({
                 </th>
 
                 {/* 8. Actions */}
-                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] w-28">
+                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] w-28 pr-12 min-w-[130px]">
                   Actions
                 </th>
               </tr>
@@ -949,9 +962,16 @@ export const MachineMasterSettings: React.FC<MachineMasterSettingsProps> = ({
                 ))
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 8, label: `TOTAL (${sortedMachines.length} machines)` }
+              ]}
+            />
           </table>
         </div>
       </Card>
+      )}
+      </TableMaximizeWrapper>
 
       {/* Add Machine Modal */}
       <Modal

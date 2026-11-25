@@ -231,6 +231,8 @@ export const QuickOutwardView: React.FC<QuickOutwardViewProps> = ({
             size="sm"
             icon={<ArrowLeft className="w-4 h-4" />}
             onClick={onBackToTable}
+            data-back-button="true"
+            title="Back to Outward Dispatches (Esc)"
           >
             Back to Outward Dispatches
           </Button>

@@ -3,6 +3,7 @@ import { Save } from 'lucide-react';
 import type { EmployeeMaster } from '../../../types/employee';
 import type { AttendanceRecord } from '../../../types/attendance';
 import type { SalaryRecord } from '../types/salarySheet';
+import { TableMaximizeWrapper } from '../../../components/ui/TableMaximizeWrapper';
 import { exportMonthlySalaryToExcel } from '../utils/salarySheetExport';
 import { exportMonthlySalaryToPdf } from '../utils/salarySheetPdfExport';
 import { getDaysInMonth, getSundaysCount, getMonthName } from '../utils/salaryDateUtils';
@@ -115,57 +116,65 @@ export const MonthlySalaryTable = React.forwardRef<SalaryTableRef, MonthlySalary
   let totalNet = 0;
 
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-xs max-h-[75vh]">
-      <table className="w-full text-xs text-left border-collapse select-none">
-        <thead className="sticky top-0 z-20">
-          {/* Main Title Row */}
-          <tr>
-            <th
-              colSpan={26}
-              className="py-2.5 px-4 text-center font-bold text-sm text-slate-800 tracking-wider bg-white border-b border-slate-200"
-            >
-              PERLA TEXTILES PROCESSOR
-            </th>
-          </tr>
-          {/* Subtitle Row */}
-          <tr>
-            <th
-              colSpan={26}
-              className="py-1.5 px-4 text-center font-semibold text-xs text-slate-500 bg-slate-50 border-b border-slate-200"
-            >
-              Salary Sheet For The Month Of {monthName} {currentYear} • (Total Working Days: {noOfDays})
-            </th>
-          </tr>
-          {/* Column Header Row */}
-          <tr className="bg-slate-50 text-slate-700 text-[11px] font-bold tracking-tight border-b border-slate-200">
-            <th className="py-2 px-2 text-center border-r border-slate-200 min-w-[40px] bg-slate-50">S NO</th>
-            <th className="py-2 px-3 text-left border-r border-slate-200 min-w-[170px] bg-slate-50">Name</th>
-            <th className="py-2 px-2 text-left border-r border-slate-200 min-w-[120px] bg-slate-50">Designation</th>
-            <th className="py-2 px-2 text-center border-r border-slate-200 min-w-[85px] bg-slate-50">DOJ</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[65px] bg-slate-50">Hike</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[75px] bg-emerald-50/50 text-emerald-900">Salary</th>
-            <th className="py-2 px-1 text-center border-r border-slate-200 min-w-[50px] bg-slate-50">No Of<br />Days</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[65px] bg-slate-50">Per day<br />Pay</th>
-            <th className="py-2 px-1 text-center border-r border-slate-200 min-w-[50px] bg-slate-50">No Of<br />Present</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[75px] bg-emerald-50/50 text-emerald-900">Gross<br />Salary</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[65px] bg-slate-50">Basic<br />50%</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[60px] bg-slate-50">HRA<br />20%</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[60px] bg-slate-50">SA<br />20%</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[55px] bg-slate-50">MA<br />4%</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[55px] bg-slate-50">CA<br />6%</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[60px] bg-slate-50">PF</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[60px] bg-slate-50">ESI</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[65px] bg-slate-50">Salary<br />Advance</th>
-            <th className="py-2 px-1 text-center border-r border-slate-200 min-w-[50px] bg-slate-50">No Of<br />Leave</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[60px] bg-slate-50">LOP</th>
-            <th className="py-2 px-2 text-right border-r border-slate-200 min-w-[80px] bg-blue-50/60 text-blue-900">Net<br />Salary</th>
-            <th className="py-2 px-2 text-left border-r border-slate-200 min-w-[130px] bg-slate-50">A/c No</th>
-            <th className="py-2 px-2 text-left border-r border-slate-200 min-w-[100px] bg-slate-50">IFSC Code</th>
-            <th className="py-2 px-2 text-left border-r border-slate-200 min-w-[110px] bg-slate-50">Branch</th>
-            <th className="py-2 px-2 text-left border-r border-slate-200 min-w-[130px] bg-slate-50">Remark</th>
-            <th className="py-2 px-2 text-center min-w-[60px] bg-slate-50">Action</th>
-          </tr>
-        </thead>
+    <TableMaximizeWrapper
+      title={`Monthly Salary Register - ${monthName} ${currentYear}`}
+      badge={
+        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+          {employees.length} Staff
+        </span>
+      }
+    >
+      <div data-table-scroll="true" className="overflow-x-auto border border-slate-300 rounded-xl bg-white shadow-xs max-h-[75vh]">
+        <table className="w-full text-xs text-left border-collapse select-none border border-slate-300">
+          <thead className="sticky top-0 z-20">
+            {/* Main Title Row */}
+            <tr>
+              <th
+                colSpan={26}
+                className="py-2.5 px-4 text-center font-bold text-sm text-[#1F4E79] tracking-wider bg-[#EEF5FB] border-b-2 border-slate-300"
+              >
+                PERLA TEXTILES PROCESSOR
+              </th>
+            </tr>
+            {/* Subtitle Row */}
+            <tr>
+              <th
+                colSpan={26}
+                className="py-1.5 px-4 text-center font-semibold text-xs text-[#1F4E79] bg-[#EEF5FB] border-b-2 border-slate-300"
+              >
+                Salary Sheet For The Month Of {monthName} {currentYear} • (Total Working Days: {noOfDays})
+              </th>
+            </tr>
+            {/* Column Header Row */}
+            <tr className="bg-[#EEF5FB] text-[#1F4E79] text-[11px] font-bold tracking-tight border-b-2 border-slate-300">
+              <th className="py-2 px-2 text-center border-r border-slate-300 min-w-[40px] bg-[#EEF5FB] text-[#1F4E79]">S NO</th>
+              <th className="py-2 px-3 text-left border-r border-slate-300 min-w-[170px] bg-[#EEF5FB] text-[#1F4E79]">Name</th>
+              <th className="py-2 px-2 text-left border-r border-slate-300 min-w-[120px] bg-[#EEF5FB] text-[#1F4E79]">Designation</th>
+              <th className="py-2 px-2 text-center border-r border-slate-300 min-w-[85px] bg-[#EEF5FB] text-[#1F4E79]">DOJ</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[65px] bg-[#EEF5FB] text-[#1F4E79]">Hike</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[75px] bg-[#EEF5FB] text-[#1F4E79]">Salary</th>
+              <th className="py-2 px-1 text-center border-r border-slate-300 min-w-[50px] bg-[#EEF5FB] text-[#1F4E79]">No Of<br />Days</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[65px] bg-[#EEF5FB] text-[#1F4E79]">Per day<br />Pay</th>
+              <th className="py-2 px-1 text-center border-r border-slate-300 min-w-[50px] bg-[#EEF5FB] text-[#1F4E79]">No Of<br />Present</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[75px] bg-[#EEF5FB] text-[#1F4E79]">Gross<br />Salary</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[65px] bg-[#EEF5FB] text-[#1F4E79]">Basic<br />50%</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[60px] bg-[#EEF5FB] text-[#1F4E79]">HRA<br />20%</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[60px] bg-[#EEF5FB] text-[#1F4E79]">SA<br />20%</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[55px] bg-[#EEF5FB] text-[#1F4E79]">MA<br />4%</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[55px] bg-[#EEF5FB] text-[#1F4E79]">CA<br />6%</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[60px] bg-[#EEF5FB] text-[#1F4E79]">PF</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[60px] bg-[#EEF5FB] text-[#1F4E79]">ESI</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[65px] bg-[#EEF5FB] text-[#1F4E79]">Salary<br />Advance</th>
+              <th className="py-2 px-1 text-center border-r border-slate-300 min-w-[50px] bg-[#EEF5FB] text-[#1F4E79]">No Of<br />Leave</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[60px] bg-[#EEF5FB] text-[#1F4E79]">LOP</th>
+              <th className="py-2 px-2 text-right border-r border-slate-300 min-w-[80px] bg-[#EEF5FB] text-[#1F4E79]">Net<br />Salary</th>
+              <th className="py-2 px-2 text-left border-r border-slate-300 min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">A/c No</th>
+              <th className="py-2 px-2 text-left border-r border-slate-300 min-w-[100px] bg-[#EEF5FB] text-[#1F4E79]">IFSC Code</th>
+              <th className="py-2 px-2 text-left border-r border-slate-300 min-w-[110px] bg-[#EEF5FB] text-[#1F4E79]">Branch</th>
+              <th className="py-2 px-2 text-left border-r border-slate-300 min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">Remark</th>
+              <th className="py-2 px-2 pr-12 text-center min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">Action</th>
+            </tr>
+          </thead>
         <tbody className="divide-y divide-slate-100">
           {employees.length === 0 ? (
             <tr>
@@ -372,55 +381,56 @@ export const MonthlySalaryTable = React.forwardRef<SalaryTableRef, MonthlySalary
 
           {/* TOTALS FOOTER ROW */}
           {employees.length > 0 && (
-            <tr className="bg-slate-50 text-slate-800 font-bold text-xs sticky bottom-0 border-t-2 border-slate-300 shadow-xs">
-              <td colSpan={5} className="py-2.5 px-3 text-center border-r border-slate-200 text-slate-700">
+            <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold text-xs sticky bottom-0 z-20 border-t-2 border-slate-300 shadow-xs">
+              <td colSpan={5} className="py-2.5 px-3 text-center border-r border-slate-300 font-bold">
                 TOTAL
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-emerald-800 bg-emerald-50/40 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono font-bold bg-blue-100/60">
                 {Math.round(totalSalary).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-1 text-center border-r border-slate-200"></td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200"></td>
-              <td className="py-2.5 px-1 text-center border-r border-slate-200"></td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-emerald-800 bg-emerald-50/40 font-mono">
+              <td className="py-2.5 px-1 text-center border-r border-slate-300"></td>
+              <td className="py-2.5 px-2 text-right border-r border-slate-300"></td>
+              <td className="py-2.5 px-1 text-center border-r border-slate-300"></td>
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono font-bold bg-blue-100/60">
                 {Math.round(totalGross).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalBasic).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalHRA).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalSA).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalMA).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalCA).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalPF).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalESI).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalAdvance).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-1 text-center border-r border-slate-200"></td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-slate-700 font-mono">
+              <td className="py-2.5 px-1 text-center border-r border-slate-300"></td>
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 font-mono">
                 {Math.round(totalLOP).toLocaleString('en-IN')}
               </td>
-              <td className="py-2.5 px-2 text-right border-r border-slate-200 text-blue-900 bg-blue-50/50 font-mono">
+              <td className="py-2.5 px-2 text-right border-r border-slate-300 text-[#1F4E79] bg-blue-100/60 font-mono font-bold">
                 {Math.round(totalNet).toLocaleString('en-IN')}
               </td>
-              <td colSpan={5} className="bg-slate-50"></td>
+              <td colSpan={5} className="bg-[#EEF5FB] pr-12"></td>
             </tr>
           )}
         </tbody>
       </table>
     </div>
+    </TableMaximizeWrapper>
   );
 });

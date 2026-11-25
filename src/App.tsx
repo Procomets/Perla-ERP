@@ -8,6 +8,7 @@ import { Modal } from './components/ui/Modal';
 import { Lock } from 'lucide-react';
 import { getFirstAccessibleModule } from './utils/permissions';
 import { useEnterNavigation } from './hooks/useEnterNavigation';
+import { useGlobalEscBack } from './hooks/useEscBack';
 
 // Pages
 import { LandingPage } from './pages/landing/LandingPage';
@@ -240,6 +241,9 @@ const AppContent: React.FC = () => {
 
   // Enable global Enter key navigation across all ERP forms
   useEnterNavigation();
+
+  // Enable global Esc key navigation across all ERP back buttons
+  useGlobalEscBack();
   
   // Application Operational Data State - Loads instantly from local cache on first frame, then syncs from Firestore
   const [pos, setPos] = useState<PurchaseOrder[]>(() => isDemoMode ? [] : loadCache<PurchaseOrder>('perla_erp_purchase_orders'));

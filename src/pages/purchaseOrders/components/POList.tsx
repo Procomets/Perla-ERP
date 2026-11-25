@@ -40,6 +40,11 @@ import { InwardEntry } from '../../../types/inwardOutward';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Button } from '../../../components/ui/Button';
 import {
+  TableMaximizeWrapper,
+  TableMaximizeButton,
+  TableTotalsFooter
+} from '../../../components/ui/TableMaximizeWrapper';
+import {
   formatCurrency,
   formatQuantity,
   formatDate
@@ -108,6 +113,7 @@ export const POList: React.FC<POListProps> = ({
 }) => {
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+  const [isTableMaximized, setIsTableMaximized] = useState(false);
 
   // Active drawer filter count (Processes, Statuses, Customers, Dates)
   const activeDrawerFilterCount = useMemo(() => {
@@ -388,6 +394,49 @@ export const POList: React.FC<POListProps> = ({
       }
     });
   }, [filteredPOs, sortField, sortDirection]);
+
+  const getPoQuantities = (po: PurchaseOrder): { piece: number; kg: number } => {
+    let piece = Number(po.totalQtyByUnit?.piece) || 0;
+    let kg = Number(po.totalQtyByUnit?.kg) || 0;
+
+    if (piece === 0 && kg === 0) {
+      const lines = po.colourLines || po.lines || [];
+      if (lines.length > 0) {
+        for (const l of lines) {
+          const q = Number(l.quantity) || 0;
+          if (l.unit === 'kg') {
+            kg += q;
+          } else {
+            piece += q;
+          }
+        }
+      } else {
+        const q = Number(po.totalQuantity) || 0;
+        const fallbackUnit = po.colourLines?.[0]?.unit || 'piece';
+        if (fallbackUnit === 'kg') {
+          kg += q;
+        } else {
+          piece += q;
+        }
+      }
+    }
+
+    return { piece, kg };
+  };
+
+  // Totals for sticky table footer
+  const { totalPcsSum, totalKgSum, totalValueSum } = useMemo(() => {
+    return sortedPOs.reduce(
+      (acc, po) => {
+        const { piece, kg } = getPoQuantities(po);
+        acc.totalPcsSum += piece;
+        acc.totalKgSum += kg;
+        acc.totalValueSum += Number(po.totalAmount) || 0;
+        return acc;
+      },
+      { totalPcsSum: 0, totalKgSum: 0, totalValueSum: 0 }
+    );
+  }, [sortedPOs]);
 
   const renderSortIcon = (field: POSortField) => {
     if (sortField === field) {
@@ -743,15 +792,49 @@ export const POList: React.FC<POListProps> = ({
       )}
 
       {/* Purchase Orders Table - Actual Grid with Vertical & Horizontal Borders */}
-      <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
-          <table className="w-full border-collapse text-xs border border-slate-200">
+      <TableMaximizeWrapper
+        title="Purchase Orders"
+        badge={
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-[#1F4E79] border border-blue-200">
+            {sortedPOs.length} {sortedPOs.length === 1 ? 'order' : 'orders'}
+          </span>
+        }
+        isMaximized={isTableMaximized}
+        onToggleMaximize={setIsTableMaximized}
+        extraHeaderActions={
+          <button
+            type="button"
+            onClick={() => setShowColumnFilters(!showColumnFilters)}
+            className={`h-8 px-2.5 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+              showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+            }`}
+            title="Toggle column-wise search inputs on table header"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Column Filters</span>
+            {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+              <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+              </span>
+            )}
+          </button>
+        }
+      >
+        {(isMaximized) => (
+          <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
+            <div
+              data-table-scroll="true"
+              className={`overflow-x-auto overflow-y-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+            >
+              <table className="w-full border-collapse text-xs border border-slate-200">
             <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-              <tr className="bg-slate-100/90 text-slate-700 uppercase tracking-wider font-bold text-[11px] border-b-2 border-slate-300">
+              <tr className="bg-[#EEF5FB] text-[#1F4E79] uppercase tracking-wider font-bold text-[11px] border-b-2 border-slate-300">
                 {/* 1. PO Number - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'poNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'poNumber' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('poNumber')}
                   title={getSortTooltip('poNumber', 'PO Number')}
@@ -764,8 +847,8 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 2. Order Date - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'orderDate' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'orderDate' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('orderDate')}
                   title={getSortTooltip('orderDate', 'Order Date')}
@@ -778,8 +861,8 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 3. Customer - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'customerName' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'customerName' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('customerName')}
                   title={getSortTooltip('customerName', 'Customer')}
@@ -792,8 +875,8 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 4. Cust PO - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'customerPoNumber' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'customerPoNumber' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('customerPoNumber')}
                   title={getSortTooltip('customerPoNumber', 'Customer PO')}
@@ -806,8 +889,8 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 5. Process - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'processCategory' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'processCategory' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('processCategory')}
                   title={getSortTooltip('processCategory', 'Process Category')}
@@ -820,8 +903,8 @@ export const POList: React.FC<POListProps> = ({
 
                 {/* 6. Style & Item - Left */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'styleNo' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-left cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'styleNo' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('styleNo')}
                   title={getSortTooltip('styleNo', 'Style & Item')}
@@ -832,10 +915,10 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 6. Total Qty - Right */}
+                {/* 7. Total Qty - Right */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'totalQuantity' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'totalQuantity' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('totalQuantity')}
                   title={getSortTooltip('totalQuantity', 'Total Quantity')}
@@ -846,10 +929,10 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 7. Value - Right */}
+                {/* 8. Total Amount (Value) - Right */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'totalAmount' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'totalAmount' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('totalAmount')}
                   title={getSortTooltip('totalAmount', 'Value')}
@@ -860,10 +943,10 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 8. Status - Center */}
+                {/* 9. Status - Center */}
                 <th
-                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-slate-100 ${
-                    sortField === 'status' ? 'bg-[#EEF5FB] text-[#1F4E79]' : 'hover:bg-slate-200/80'
+                  className={`py-3 px-3.5 border-r border-b-2 border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 ${
+                    sortField === 'status' ? 'bg-[#DCE9F5] text-[#1F4E79]' : 'bg-[#EEF5FB] text-[#1F4E79] hover:bg-[#DCE9F5]'
                   }`}
                   onClick={() => handleSort('status')}
                   title={getSortTooltip('status', 'Status')}
@@ -874,8 +957,8 @@ export const POList: React.FC<POListProps> = ({
                   </div>
                 </th>
 
-                {/* 9. Actions - Left */}
-                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-left whitespace-nowrap bg-slate-100/90 text-slate-700 sticky top-0 z-20">
+                {/* 10. Actions - Left */}
+                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-left whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] sticky top-0 z-20 min-w-[130px] pr-12">
                   <div className="flex items-center justify-start">
                     <span>Actions</span>
                   </div>
@@ -884,8 +967,8 @@ export const POList: React.FC<POListProps> = ({
 
               {/* Inline Column Filter Inputs Row */}
               {showColumnFilters && (
-                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                <tr className="bg-[#F5F9FD] border-b-2 border-slate-300">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter PO..."
@@ -894,7 +977,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter date..."
@@ -903,7 +986,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter customer..."
@@ -912,7 +995,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter cust PO..."
@@ -921,7 +1004,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter process..."
@@ -930,7 +1013,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter style/item..."
@@ -939,7 +1022,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter qty..."
@@ -948,7 +1031,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter amt..."
@@ -957,7 +1040,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
                     />
                   </th>
-                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100">
+                  <th className="p-1.5 border-r border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
                     <input
                       type="text"
                       placeholder="Filter status..."
@@ -966,7 +1049,7 @@ export const POList: React.FC<POListProps> = ({
                       className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
                     />
                   </th>
-                  <th className="p-1.5 border-b-2 border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
+                  <th className="p-1.5 border-b-2 border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD] text-center">
                     {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
                       <button
                         type="button"
@@ -1275,6 +1358,17 @@ export const POList: React.FC<POListProps> = ({
                 })
               )}
             </tbody>
+
+            {/* Sticky Totals Footer - Modular Component */}
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 6, label: `Total (${sortedPOs.length} ${sortedPOs.length === 1 ? 'order' : 'orders'})` },
+                { pieces: totalPcsSum, kgs: totalKgSum, isTotal: true },
+                { currency: totalValueSum, isTotal: true },
+                { align: 'center' },
+                { align: 'center' }
+              ]}
+            />
           </table>
         </div>
 
@@ -1295,11 +1389,13 @@ export const POList: React.FC<POListProps> = ({
           </span>
         </div>
       </div>
+        )}
+      </TableMaximizeWrapper>
 
-      {/* Delete Confirmation Popup Card */}
+      {/* Delete Confirmation Popup Card - z-[120] to render over maximized modal */}
       {poToDelete && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setPoToDelete(null)}
         >
           <div

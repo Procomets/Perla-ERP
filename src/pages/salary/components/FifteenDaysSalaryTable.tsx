@@ -3,6 +3,7 @@ import { Save } from 'lucide-react';
 import type { EmployeeMaster } from '../../../types/employee';
 import type { AttendanceRecord } from '../../../types/attendance';
 import type { SalaryRecord, Period } from '../types/salarySheet';
+import { TableMaximizeWrapper } from '../../../components/ui/TableMaximizeWrapper';
 import { exportFifteenDaysSalaryToExcel } from '../utils/salarySheetExport';
 import { exportFifteenDaysSalaryToPdf } from '../utils/salarySheetPdfExport';
 import {
@@ -243,38 +244,46 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
       </div>
 
       {/* Main Table Container */}
-      <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-xs max-h-[75vh]">
-        <table className="w-full text-xs text-left border-collapse select-none">
-          <thead className="sticky top-0 z-20">
-            {/* Header Banner */}
-            <tr>
-              <th
-                colSpan={dates.length + 7}
-                className="py-2.5 px-4 text-center font-bold text-sm text-slate-800 tracking-wider bg-white border-b border-slate-200"
-              >
-                LABOUR WAGES {startDateStr} To {endDateStr}
-              </th>
-            </tr>
-            {/* Column Headers */}
-            <tr className="bg-slate-50 text-slate-700 text-[11px] font-bold tracking-tight border-b border-slate-200">
-              <th className="py-2.5 px-2 text-center border-r border-slate-200 min-w-[45px] bg-slate-50">S.NO.</th>
-              <th className="py-2.5 px-3 text-left border-r border-slate-200 min-w-[170px] bg-slate-50">NAME</th>
-              {dates.map((day) => (
+      <TableMaximizeWrapper
+        title={`Labour Wages (${period === 'first15' ? '1-15' : '16-End'}) - ${startDateStr} to ${endDateStr}`}
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {employees.length} Workers
+          </span>
+        }
+      >
+        <div data-table-scroll="true" className="overflow-x-auto border border-slate-300 rounded-xl bg-white shadow-xs max-h-[75vh]">
+          <table className="w-full text-xs text-left border-collapse select-none border border-slate-300">
+            <thead className="sticky top-0 z-20">
+              {/* Header Banner */}
+              <tr>
                 <th
-                  key={day}
-                  className="py-2.5 px-1 text-center border-r border-slate-200 min-w-[50px] bg-slate-50"
+                  colSpan={dates.length + 7}
+                  className="py-2.5 px-4 text-center font-bold text-sm text-[#1F4E79] tracking-wider bg-[#EEF5FB] border-b-2 border-slate-300"
                 >
-                  {formatDateDDMMYY(currentYear, currentMonth, day)}
+                  LABOUR WAGES {startDateStr} To {endDateStr}
                 </th>
-              ))}
-              <th className="py-2.5 px-2 text-right border-r border-slate-200 min-w-[70px] bg-slate-50">WAGES<br />PER</th>
-              <th className="py-2.5 px-1 text-center border-r border-slate-200 min-w-[65px] bg-slate-50">WORKING<br />DAYS</th>
-              <th className="py-2.5 px-2 text-right border-r border-slate-200 min-w-[85px] bg-emerald-50/50 text-emerald-900">NET<br />AMOUNT</th>
-              <th className="py-2.5 px-2 text-right border-r border-slate-200 min-w-[75px] bg-slate-50">HOLDING<br />AMOUNT</th>
-              <th className="py-2.5 px-2 text-right border-r border-slate-200 min-w-[90px] bg-blue-50/60 text-blue-900">PAYABLE<br />AMOUNT</th>
-              <th className="py-2.5 px-2 text-center min-w-[60px] bg-slate-50">ACTION</th>
-            </tr>
-          </thead>
+              </tr>
+              {/* Column Headers */}
+              <tr className="bg-[#EEF5FB] text-[#1F4E79] text-[11px] font-bold tracking-tight border-b-2 border-slate-300">
+                <th className="py-2.5 px-2 text-center border-r border-slate-300 min-w-[45px] bg-[#EEF5FB] text-[#1F4E79]">S.NO.</th>
+                <th className="py-2.5 px-3 text-left border-r border-slate-300 min-w-[170px] bg-[#EEF5FB] text-[#1F4E79]">NAME</th>
+                {dates.map((day) => (
+                  <th
+                    key={day}
+                    className="py-2.5 px-1 text-center border-r border-slate-300 min-w-[50px] bg-[#EEF5FB] text-[#1F4E79]"
+                  >
+                    {formatDateDDMMYY(currentYear, currentMonth, day)}
+                  </th>
+                ))}
+                <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[70px] bg-[#EEF5FB] text-[#1F4E79]">WAGES<br />PER</th>
+                <th className="py-2.5 px-1 text-center border-r border-slate-300 min-w-[65px] bg-[#EEF5FB] text-[#1F4E79]">WORKING<br />DAYS</th>
+                <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[85px] bg-[#EEF5FB] text-[#1F4E79]">NET<br />AMOUNT</th>
+                <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[75px] bg-[#EEF5FB] text-[#1F4E79]">HOLDING<br />AMOUNT</th>
+                <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[90px] bg-[#EEF5FB] text-[#1F4E79]">PAYABLE<br />AMOUNT</th>
+                <th className="py-2.5 px-2 pr-12 text-center min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">ACTION</th>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-slate-100">
             {employees.length === 0 ? (
               <tr>
@@ -395,58 +404,58 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
             {/* Footer Row 1: NO.OF.P */}
             {employees.length > 0 && (
               <>
-                <tr className="bg-slate-50 text-slate-800 font-bold text-xs sticky bottom-0 border-t-2 border-slate-300 shadow-xs">
+                <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold text-xs sticky bottom-0 z-20 border-t-2 border-slate-300 shadow-xs">
                   <td
                     colSpan={2}
-                    className="py-2.5 px-3 text-center text-slate-700 border-r border-slate-200"
+                    className="py-2.5 px-3 text-center text-[#1F4E79] border-r border-slate-300 font-bold"
                   >
                     NO.OF.P
                   </td>
                   {dailyPresentCount.map((count, i) => (
                     <td
                       key={i}
-                      className="py-2.5 px-1 text-center text-slate-700 border-r border-slate-200 font-mono"
+                      className="py-2.5 px-1 text-center text-[#1F4E79] border-r border-slate-300 font-mono font-bold"
                     >
                       {count > 0 ? count : ''}
                     </td>
                   ))}
-                  <td className="py-2.5 px-2 border-r border-slate-200"></td>
+                  <td className="py-2.5 px-2 border-r border-slate-300"></td>
                   <td
-                    className="py-2.5 px-1 text-center text-slate-900 border-r border-slate-200 font-mono text-sm"
+                    className="py-2.5 px-1 text-center text-[#1F4E79] border-r border-slate-300 font-mono text-sm font-extrabold bg-blue-100/60"
                   >
                     {totalOverallPresent}
                   </td>
                   <td
-                    className="py-2.5 px-2 text-right font-bold text-emerald-800 bg-emerald-50/40 border-r border-slate-200 font-mono text-sm"
+                    className="py-2.5 px-2 text-right font-bold text-emerald-800 bg-emerald-50/40 border-r border-slate-300 font-mono text-sm"
                   >
                     {totalNetAmount.toFixed(2)}
                   </td>
                   <td
-                    className="py-2.5 px-2 text-center text-slate-700 border-r border-slate-200"
+                    className="py-2.5 px-2 text-center text-[#1F4E79] border-r border-slate-300 font-bold"
                   >
                     TOTAL
                   </td>
                   <td
-                    className="py-2.5 px-2 text-right text-blue-900 bg-blue-50/40 font-mono text-sm border-r border-slate-200"
+                    className="py-2.5 px-2 text-right text-blue-900 bg-blue-50/40 font-mono text-sm font-bold border-r border-slate-300"
                   >
                     {totalPayableAmount.toFixed(2)}
                   </td>
-                  <td className="bg-slate-50"></td>
+                  <td className="bg-[#EEF5FB] pr-12 min-w-[130px]"></td>
                 </tr>
 
                 {/* Footer Row 2: Commission */}
-                <tr className="bg-slate-50 font-bold text-xs border-t border-slate-200">
-                  <td colSpan={dates.length + 5} className="py-2 px-4 text-right text-slate-700">
+                <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold text-xs border-t border-slate-300">
+                  <td colSpan={dates.length + 5} className="py-2 px-4 text-right text-[#1F4E79]">
                     Commission (@ ₹{commissionRate}/day)
                   </td>
-                  <td className="py-2 px-2 text-right font-mono text-slate-900 border-l border-slate-200">
+                  <td className="py-2 px-2 text-right font-mono text-[#1F4E79] font-bold border-l border-slate-300">
                     {(totalOverallPresent * commissionRate).toFixed(2)}
                   </td>
-                  <td></td>
+                  <td className="pr-12 min-w-[130px]"></td>
                 </tr>
 
                 {/* Footer Row 3: Grand Total Payable */}
-                <tr className="font-bold text-sm border-t-2 border-slate-300">
+                <tr className="bg-[#EEF5FB] font-bold text-sm border-t-2 border-slate-300">
                   <td colSpan={dates.length + 5} className="py-2.5 px-4 text-right text-slate-900 font-black">
                     TOTAL PAYABLE
                   </td>
@@ -456,13 +465,14 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
                   >
                     {(totalPayableAmount + totalOverallPresent * commissionRate).toFixed(2)}
                   </td>
-                  <td></td>
+                  <td className="pr-12 min-w-[130px]"></td>
                 </tr>
               </>
             )}
           </tbody>
         </table>
       </div>
+      </TableMaximizeWrapper>
     </div>
   );
 });

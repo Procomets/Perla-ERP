@@ -546,11 +546,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
       {/* Floating Notification Banner: Bright & Highly Visible */}
       {toast && (
         <div
-          className={`fixed top-6 right-6 sm:right-1/2 sm:translate-x-1/2 z-50 px-5 py-3.5 rounded-xl shadow-2xl border-2 flex items-center gap-3 text-sm font-bold animate-in fade-in slide-in-from-top-4 duration-200 ${
-            toast.type === 'error'
-              ? 'bg-rose-600 text-white border-rose-800 shadow-rose-600/30'
-              : 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-600/40'
-          }`}
+          className={`fixed top-6 right-6 sm:right-1/2 sm:translate-x-1/2 z-50 px-5 py-3.5 rounded-xl shadow-2xl border-2 flex items-center gap-3 text-sm font-bold animate-in fade-in slide-in-from-top-4 duration-200 ${toast.type === 'error'
+            ? 'bg-rose-600 text-white border-rose-800 shadow-rose-600/30'
+            : 'bg-emerald-600 text-white border-emerald-400 shadow-emerald-600/40'
+            }`}
         >
           {toast.type === 'error' ? (
             <AlertCircle className="w-5 h-5 text-white shrink-0" />
@@ -623,17 +622,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('eligible')}
-          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeTab === 'eligible'
-              ? 'border-black text-black'
-              : 'border-transparent text-slate-600 hover:text-black'
-          }`}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${activeTab === 'eligible'
+            ? 'border-black text-black'
+            : 'border-transparent text-slate-600 hover:text-black'
+            }`}
         >
           <span>Invoice-Eligible Items</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-              activeTab === 'eligible' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
-            }`}
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === 'eligible' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+              }`}
           >
             {totalPendingLinesCount}
           </span>
@@ -643,17 +640,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('generation')}
-          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeTab === 'generation'
-              ? 'border-black text-black'
-              : 'border-transparent text-slate-600 hover:text-black'
-          }`}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${activeTab === 'generation'
+            ? 'border-black text-black'
+            : 'border-transparent text-slate-600 hover:text-black'
+            }`}
         >
           <span>Invoice Generation</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-              activeTab === 'generation' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
-            }`}
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === 'generation' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+              }`}
           >
             {totalApprovedLinesCount}
           </span>
@@ -663,17 +658,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('history')}
-          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-            activeTab === 'history'
-              ? 'border-black text-black'
-              : 'border-transparent text-slate-600 hover:text-black'
-          }`}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${activeTab === 'history'
+            ? 'border-black text-black'
+            : 'border-transparent text-slate-600 hover:text-black'
+            }`}
         >
           <span>Generated Invoices History</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-              activeTab === 'history' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
-            }`}
+            className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === 'history' ? 'bg-black text-white shadow-2xs' : 'bg-slate-200 text-slate-700'
+              }`}
           >
             {filteredInvoices.length}
           </span>

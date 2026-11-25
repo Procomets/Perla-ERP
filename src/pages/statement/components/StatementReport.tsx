@@ -12,6 +12,10 @@ import { StatementReportExcelService } from '../../../services/statementReportEx
 import { PdfExportButton, ExcelExportButton } from '../../../components/ui/ExportButtons';
 import { useTableControls, TableColumnConfig } from '../../../hooks/useTableControls';
 import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../../components/ui/TableMaximizeWrapper';
+import {
   Search,
   Filter,
   RotateCcw,
@@ -29,7 +33,8 @@ import {
   FileDown,
   Scale,
   Package,
-  Boxes
+  Boxes,
+  ArrowLeft
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
@@ -696,6 +701,17 @@ export const StatementReport: React.FC<StatementReportProps> = ({
         {/* Top Filter Controls Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                data-back-button="true"
+                title="Back to Reconciliation Ledger (Esc)"
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer mr-0.5 border border-slate-200 shadow-2xs"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
             <Filter className="w-4 h-4 text-[#1F4E79]" />
             <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
               Report Criteria & Filters
@@ -936,11 +952,10 @@ export const StatementReport: React.FC<StatementReportProps> = ({
                 }
                 tableControls.setShowColumnFilters(!tableControls.showColumnFilters);
               }}
-              className={`text-xs flex items-center gap-1.5 whitespace-nowrap py-2 ${
-                tableControls.showColumnFilters
-                  ? 'bg-blue-50 text-[#1F4E79] border-blue-300 font-bold'
-                  : 'text-slate-700'
-              }`}
+              className={`text-xs flex items-center gap-1.5 whitespace-nowrap py-2 ${tableControls.showColumnFilters
+                ? 'bg-blue-50 text-[#1F4E79] border-blue-300 font-bold'
+                : 'text-slate-700'
+                }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Column Filters
@@ -977,6 +992,28 @@ export const StatementReport: React.FC<StatementReportProps> = ({
                 <span>Detailed Table</span>
               </button>
             </div>
+
+            {/* Expand All / Collapse All Buttons Next to View Modes */}
+            {viewMode === 'grouped' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAllAccordion(true)}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Expand All</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllAccordion(false)}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Collapse All</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1000,800 +1037,793 @@ export const StatementReport: React.FC<StatementReportProps> = ({
             Reset Filters
           </Button>
         </div>
-      ) : viewMode === 'grouped' ? (
-        /* ================= VIEW 1: GROUPED ACCORDION WITH SUBROWS ================= */
-        <div className="space-y-4">
-          {/* Group controls */}
-          <div className="flex justify-between items-center text-xs text-slate-500 px-1">
-            <span>
-              Showing <strong>{effectiveGroups.length}</strong> purchase orders
+      ) : (
+        <TableMaximizeWrapper
+          title="Statement & Reconciliation Report"
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {viewMode === 'grouped' ? `${effectiveGroups.length} POs` : `${tableControls.processedData.length} records`}
             </span>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setAllAccordion(true)}
-                className="hover:text-slate-900 font-semibold underline cursor-pointer"
-              >
-                Expand All
-              </button>
-              <span className="text-slate-300">|</span>
-              <button
-                type="button"
-                onClick={() => setAllAccordion(false)}
-                className="hover:text-slate-900 font-semibold underline cursor-pointer"
-              >
-                Collapse All
-              </button>
-            </div>
-          </div>
-
-          {effectiveGroups.map((group) => {
-            const isExpanded = expandedPOs[group.poId] !== false; // default open
-            return (
+          }
+        >
+          {(isMaximized) =>
+            viewMode === 'grouped' ? (
+              /* ================= VIEW 1: GROUPED ACCORDION WITH SUBROWS ================= */
               <div
-                key={group.id}
-                className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition-all"
+                data-table-scroll="true"
+                className={`space-y-4 overflow-y-auto ${isMaximized ? 'flex-1 max-h-none p-1' : ''}`}
               >
-                {/* PO Main Row Header */}
-                <div
-                  onClick={() => togglePoExpand(group.poId)}
-                  className="p-3.5 bg-slate-50/80 hover:bg-slate-100/80 border-b border-slate-200 cursor-pointer flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 transition"
-                >
-                  {/* Left: Company & Style & PO Info */}
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="p-1 rounded bg-white border border-slate-200 text-slate-500 hover:text-slate-800 transition"
+                {effectiveGroups.map((group) => {
+                  const isExpanded = expandedPOs[group.poId] !== false; // default open
+                  return (
+                    <div
+                      key={group.id}
+                      className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition-all"
                     >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-slate-900">{group.companyName}</span>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#1F4E79] text-white">
-                          PO #{group.poNumber}
-                        </span>
-                        {group.styleNo && (
-                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-200 text-slate-800">
-                            Style: {group.styleNo}
-                          </span>
-                        )}
-                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                          {group.lines.length} Colours
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Item: <span className="font-semibold text-slate-700">{group.itemName}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subrows: Colours Table for this PO */}
-                {isExpanded && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left border-collapse border border-slate-300">
-                      <thead
-                        className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider border-b border-slate-300"
-                        style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                      {/* PO Main Row Header */}
+                      <div
+                        onClick={() => togglePoExpand(group.poId)}
+                        className="p-3.5 bg-slate-50/80 hover:bg-slate-100/80 border-b border-slate-200 cursor-pointer flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 transition"
                       >
-                        <tr>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 pl-6 border border-slate-300 text-left whitespace-nowrap">Colour Name</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-left whitespace-nowrap">Wash / Process</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Unit</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Order Qty</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Received Qty (Inward)</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Qty</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Balance</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Receive Balance</th>
-                          <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Reconciliation Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {group.lines.map((line) => (
-                          <tr
-                            key={line.id}
-                            className={`hover:bg-blue-50/40 transition-colors ${
-                              line.isAllThreeEqual ? 'bg-emerald-50/30' : ''
-                            }`}
+                        {/* Left: Company & Style & PO Info */}
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            className="p-1 rounded bg-white border border-slate-200 text-slate-500 hover:text-slate-800 transition"
                           >
-                            <td className="py-2.5 px-3 pl-6 border border-slate-200 font-bold text-slate-800 text-left whitespace-nowrap flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-[#1F4E79]"></span>
-                              <span>{line.colourName}</span>
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-slate-600 font-medium text-left whitespace-nowrap">
-                              {line.process}
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-center uppercase font-bold text-[10px] text-slate-500 whitespace-nowrap">
-                              {line.unit}
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-right font-semibold text-slate-800 tabular-nums whitespace-nowrap">
-                              {line.orderQty.toLocaleString()}
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-right font-bold text-blue-700 tabular-nums whitespace-nowrap">
-                              {line.receivedQty.toLocaleString()}
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-right font-bold text-emerald-700 tabular-nums whitespace-nowrap">
-                              {line.dispatchQty.toLocaleString()}
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
-                              <span
-                                className={
-                                  line.dispatchBalance === 0
-                                    ? 'text-emerald-700 font-bold'
-                                    : 'text-amber-700 font-bold'
-                                }
-                              >
-                                {line.dispatchBalance.toLocaleString()}
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-slate-900">{group.companyName}</span>
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#1F4E79] text-white">
+                                PO #{group.poNumber}
                               </span>
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
-                              <span
-                                className={
-                                  line.receiveBalance === 0
-                                    ? 'text-emerald-700 font-bold'
-                                    : 'text-orange-700 font-bold'
-                                }
-                              >
-                                {line.receiveBalance.toLocaleString()}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 border border-slate-200 text-center whitespace-nowrap">
-                              {line.isAllThreeEqual ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  Equal ({line.orderQty} / {line.receivedQty} / {line.dispatchQty})
-                                </span>
-                              ) : line.dispatchBalance === 0 && line.receiveBalance === 0 ? (
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  Completed
-                                </span>
-                              ) : line.dispatchBalance > 0 ? (
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                  Pending Dispatch ({line.dispatchBalance})
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
-                                  Pending Inward ({line.receiveBalance})
+                              {group.styleNo && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-200 text-slate-800">
+                                  Style: {group.styleNo}
                                 </span>
                               )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        /* ================= VIEW 2: DETAILED FLAT TABLE WITH SORTING & FILTERS ================= */
-        <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse border border-slate-300">
-              <thead
-                className="select-none bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300"
-                style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-              >
-                {/* Row 1: Header Titles with 3-State Sort */}
-                <tr
-                  className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[11px] tracking-wider border-b border-slate-300"
-                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                >
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('companyName')}
-                    className="p-2.5 border border-slate-300 text-left min-w-[170px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-start gap-1.5">
-                      <span>Company Name</span>
-                      {tableControls.renderSortIcon('companyName')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('styleNo')}
-                    className="p-2.5 border border-slate-300 text-left min-w-[130px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-start gap-1.5">
-                      <span>Style No</span>
-                      {tableControls.renderSortIcon('styleNo')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('poNumber')}
-                    className="p-2.5 border border-slate-300 text-center min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-center gap-1.5">
-                      <span>PO Number</span>
-                      {tableControls.renderSortIcon('poNumber')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('colourName')}
-                    className="p-2.5 border border-slate-300 text-left min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-start gap-1.5">
-                      <span>Colour</span>
-                      {tableControls.renderSortIcon('colourName')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('process')}
-                    className="p-2.5 border border-slate-300 text-left min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-start gap-1.5">
-                      <span>Wash / Process</span>
-                      {tableControls.renderSortIcon('process')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('orderQty')}
-                    className="p-2.5 border border-slate-300 text-right min-w-[95px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Order Qty</span>
-                      {tableControls.renderSortIcon('orderQty')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('receivedQty')}
-                    className="p-2.5 border border-slate-300 text-right min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Received Qty</span>
-                      {tableControls.renderSortIcon('receivedQty')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('dispatchQty')}
-                    className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Dispatch Qty</span>
-                      {tableControls.renderSortIcon('dispatchQty')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('dispatchBalance')}
-                    className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Dispatch Bal</span>
-                      {tableControls.renderSortIcon('dispatchBalance')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    onClick={() => tableControls.handleSort('receiveBalance')}
-                    className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition"
-                  >
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span>Receive Bal</span>
-                      {tableControls.renderSortIcon('receiveBalance')}
-                    </div>
-                  </th>
-
-                  <th
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    className="p-2.5 border border-slate-300 text-center min-w-[140px] whitespace-nowrap"
-                  >
-                    Status
-                  </th>
-                </tr>
-
-                {/* Row 2: In-Table Column Filter Row inside <thead> */}
-                {tableControls.showColumnFilters && (
-                  <tr className="bg-slate-100/90 border-b-2 border-slate-300">
-                    {/* 1. Company Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Filter company..."
-                          value={tableControls.columnFilters['companyName'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              companyName: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
-                        />
-                        {tableControls.columnFilters['companyName'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['companyName'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                {group.lines.length} Colours
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              Item: <span className="font-semibold text-slate-700">{group.itemName}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </th>
 
-                    {/* 2. Style No Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Filter style..."
-                          value={tableControls.columnFilters['styleNo'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              styleNo: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
-                        />
-                        {tableControls.columnFilters['styleNo'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['styleNo'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 3. PO Number Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Filter PO..."
-                          value={tableControls.columnFilters['poNumber'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              poNumber: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
-                        />
-                        {tableControls.columnFilters['poNumber'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['poNumber'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 4. Colour Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Filter colour..."
-                          value={tableControls.columnFilters['colourName'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              colourName: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
-                        />
-                        {tableControls.columnFilters['colourName'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['colourName'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 5. Wash / Process Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Filter process..."
-                          value={tableControls.columnFilters['process'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              process: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
-                        />
-                        {tableControls.columnFilters['process'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['process'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 6. Order Qty Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Qty..."
-                          value={tableControls.columnFilters['orderQty'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              orderQty: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
-                        />
-                        {tableControls.columnFilters['orderQty'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['orderQty'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 7. Received Qty (Inward) Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Inward..."
-                          value={tableControls.columnFilters['receivedQty'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              receivedQty: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
-                        />
-                        {tableControls.columnFilters['receivedQty'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['receivedQty'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 8. Dispatch Qty Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Dispatch..."
-                          value={tableControls.columnFilters['dispatchQty'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              dispatchQty: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
-                        />
-                        {tableControls.columnFilters['dispatchQty'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['dispatchQty'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 9. Dispatch Balance Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Disp Bal..."
-                          value={tableControls.columnFilters['dispatchBalance'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              dispatchBalance: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
-                        />
-                        {tableControls.columnFilters['dispatchBalance'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['dispatchBalance'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 10. Receive Balance Filter */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          placeholder="Recv Bal..."
-                          value={tableControls.columnFilters['receiveBalance'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              receiveBalance: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
-                        />
-                        {tableControls.columnFilters['receiveBalance'] && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              tableControls.setColumnFilters((prev) => {
-                                const next = { ...prev };
-                                delete next['receiveBalance'];
-                                return next;
-                              })
-                            }
-                            className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                            title="Clear filter"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-
-                    {/* 11. Status Filter & Master Clear Action */}
-                    <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input
-                          type="text"
-                          placeholder="Status..."
-                          value={tableControls.columnFilters['status'] || ''}
-                          onChange={(e) =>
-                            tableControls.setColumnFilters((prev) => ({
-                              ...prev,
-                              status: e.target.value
-                            }))
-                          }
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
-                        />
-                        {Object.values(tableControls.columnFilters).some((v) => (v || '').trim() !== '') && (
-                          <button
-                            type="button"
-                            onClick={() => tableControls.setColumnFilters({})}
-                            className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded cursor-pointer transition shrink-0"
-                            title="Clear all column filters"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-                  </tr>
-                )}
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {tableControls.processedData.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`hover:bg-blue-50/40 transition-colors ${
-                      row.isAllThreeEqual ? 'bg-emerald-50/20' : ''
-                    }`}
-                  >
-                    <td className="p-2.5 border border-slate-200 font-semibold text-slate-900 text-left whitespace-nowrap">
-                      {row.companyName}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-slate-700 font-medium text-left whitespace-nowrap">
-                      {row.styleNo}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                        {row.poNumber}
-                      </span>
-                    </td>
-                    <td className="p-2.5 border border-slate-200 font-bold text-slate-800 text-left whitespace-nowrap">
-                      {row.colourName}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-slate-600 text-left whitespace-nowrap">
-                      {row.process}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-right font-medium text-slate-800 tabular-nums whitespace-nowrap">
-                      {row.orderQty.toLocaleString()}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-right font-bold text-blue-700 tabular-nums whitespace-nowrap">
-                      {row.receivedQty.toLocaleString()}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-right font-bold text-emerald-700 tabular-nums whitespace-nowrap">
-                      {row.dispatchQty.toLocaleString()}
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
-                      <span className={row.dispatchBalance === 0 ? 'text-emerald-700' : 'text-amber-700'}>
-                        {row.dispatchBalance.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
-                      <span className={row.receiveBalance === 0 ? 'text-emerald-700' : 'text-orange-700'}>
-                        {row.receiveBalance.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                      {row.isAllThreeEqual ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          Equal ({row.orderQty} / {row.receivedQty} / {row.dispatchQty})
-                        </span>
-                      ) : row.dispatchBalance === 0 && row.receiveBalance === 0 ? (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Completed
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                          In Progress
-                        </span>
+                      {/* Subrows: Colours Table for this PO */}
+                      {isExpanded && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs text-left border-collapse border border-slate-300">
+                            <thead
+                              className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider border-b border-slate-300"
+                              style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                            >
+                              <tr>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 pl-6 border border-slate-300 text-left whitespace-nowrap">Colour Name</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-left whitespace-nowrap">Wash / Process</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Unit</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Order Qty</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Received Qty (Inward)</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Qty</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Balance</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Receive Balance</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Reconciliation Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {group.lines.map((line) => (
+                                <tr
+                                  key={line.id}
+                                  className={`hover:bg-blue-50/40 transition-colors ${line.isAllThreeEqual ? 'bg-emerald-50/30' : ''
+                                    }`}
+                                >
+                                  <td className="py-2.5 px-3 pl-6 border border-slate-200 font-bold text-slate-800 text-left whitespace-nowrap flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-[#1F4E79]"></span>
+                                    <span>{line.colourName}</span>
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-slate-600 font-medium text-left whitespace-nowrap">
+                                    {line.process}
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-center uppercase font-bold text-[10px] text-slate-500 whitespace-nowrap">
+                                    {line.unit}
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-right font-semibold text-slate-800 tabular-nums whitespace-nowrap">
+                                    {line.orderQty.toLocaleString()}
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-right font-bold text-blue-700 tabular-nums whitespace-nowrap">
+                                    {line.receivedQty.toLocaleString()}
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-right font-bold text-emerald-700 tabular-nums whitespace-nowrap">
+                                    {line.dispatchQty.toLocaleString()}
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
+                                    <span
+                                      className={
+                                        line.dispatchBalance === 0
+                                          ? 'text-emerald-700 font-bold'
+                                          : 'text-amber-700 font-bold'
+                                      }
+                                    >
+                                      {line.dispatchBalance.toLocaleString()}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
+                                    <span
+                                      className={
+                                        line.receiveBalance === 0
+                                          ? 'text-emerald-700 font-bold'
+                                          : 'text-orange-700 font-bold'
+                                      }
+                                    >
+                                      {line.receiveBalance.toLocaleString()}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 border border-slate-200 text-center whitespace-nowrap">
+                                    {line.isAllThreeEqual ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        Equal ({line.orderQty} / {line.receivedQty} / {line.dispatchQty})
+                                      </span>
+                                    ) : line.dispatchBalance === 0 && line.receiveBalance === 0 ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Completed
+                                      </span>
+                                    ) : line.dispatchBalance > 0 ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Pending Dispatch ({line.dispatchBalance})
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                                        Pending Inward ({line.receiveBalance})
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-
-              {/* Grand Total Footer */}
-              <tfoot
-                className="bg-[#EEF5FB] font-bold border-t-2 border-slate-400 text-[#1F4E79]"
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+      /* ================= VIEW 2: DETAILED FLAT TABLE WITH SORTING & FILTERS ================= */
+      <div className="bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
+        <div
+          data-table-scroll="true"
+          className={`overflow-x-auto overflow-y-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+        >
+          <table className="w-full text-xs text-left border-collapse border border-slate-300">
+            <thead
+              className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] select-none bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300"
+              style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+            >
+              {/* Row 1: Header Titles with 3-State Sort */}
+              <tr
+                className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[11px] tracking-wider border-b border-slate-300"
                 style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
               >
-                <tr>
-                  <td
-                    colSpan={5}
-                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
-                    className="p-2.5 border border-slate-300 text-center uppercase tracking-wider text-xs whitespace-nowrap"
-                  >
-                    Grand Totals ({tableControls.processedData.length} Lines)
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-right text-slate-900 tabular-nums whitespace-nowrap"
-                  >
-                    {tableControls.processedData.reduce((s, r) => s + r.orderQty, 0).toLocaleString()}
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-right text-blue-700 tabular-nums whitespace-nowrap"
-                  >
-                    {tableControls.processedData.reduce((s, r) => s + r.receivedQty, 0).toLocaleString()}
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-right text-emerald-700 tabular-nums whitespace-nowrap"
-                  >
-                    {tableControls.processedData.reduce((s, r) => s + r.dispatchQty, 0).toLocaleString()}
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-right text-amber-700 tabular-nums whitespace-nowrap"
-                  >
-                    {tableControls.processedData.reduce((s, r) => s + r.dispatchBalance, 0).toLocaleString()}
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-right text-orange-700 tabular-nums whitespace-nowrap"
-                  >
-                    {tableControls.processedData.reduce((s, r) => s + r.receiveBalance, 0).toLocaleString()}
-                  </td>
-                  <td
-                    style={{ backgroundColor: '#EEF5FB' }}
-                    className="p-2.5 border border-slate-300 text-center whitespace-nowrap"
-                  >
-                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-800">
-                      Summary
-                    </span>
-                  </td>
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('companyName')}
+                  className="p-2.5 border border-slate-300 text-left min-w-[170px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-start gap-1.5">
+                    <span>Company Name</span>
+                    {tableControls.renderSortIcon('companyName')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('styleNo')}
+                  className="p-2.5 border border-slate-300 text-left min-w-[130px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-start gap-1.5">
+                    <span>Style No</span>
+                    {tableControls.renderSortIcon('styleNo')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('poNumber')}
+                  className="p-2.5 border border-slate-300 text-center min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>PO Number</span>
+                    {tableControls.renderSortIcon('poNumber')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('colourName')}
+                  className="p-2.5 border border-slate-300 text-left min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-start gap-1.5">
+                    <span>Colour</span>
+                    {tableControls.renderSortIcon('colourName')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('process')}
+                  className="p-2.5 border border-slate-300 text-left min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-start gap-1.5">
+                    <span>Wash / Process</span>
+                    {tableControls.renderSortIcon('process')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('orderQty')}
+                  className="p-2.5 border border-slate-300 text-right min-w-[95px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Order Qty</span>
+                    {tableControls.renderSortIcon('orderQty')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('receivedQty')}
+                  className="p-2.5 border border-slate-300 text-right min-w-[110px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Received Qty</span>
+                    {tableControls.renderSortIcon('receivedQty')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('dispatchQty')}
+                  className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Dispatch Qty</span>
+                    {tableControls.renderSortIcon('dispatchQty')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('dispatchBalance')}
+                  className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Dispatch Bal</span>
+                    {tableControls.renderSortIcon('dispatchBalance')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  onClick={() => tableControls.handleSort('receiveBalance')}
+                  className="p-2.5 border border-slate-300 text-right min-w-[105px] whitespace-nowrap cursor-pointer hover:bg-[#DCEBF8] transition sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Receive Bal</span>
+                    {tableControls.renderSortIcon('receiveBalance')}
+                  </div>
+                </th>
+
+                <th
+                  style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  className="p-2.5 pr-12 border border-slate-300 text-center min-w-[140px] whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]"
+                >
+                  Status
+                </th>
+              </tr>
+
+              {/* Row 2: In-Table Column Filter Row inside <thead> */}
+              {tableControls.showColumnFilters && (
+                <tr className="bg-slate-100/90 border-b-2 border-slate-300">
+                  {/* 1. Company Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Filter company..."
+                        value={tableControls.columnFilters['companyName'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            companyName: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
+                      />
+                      {tableControls.columnFilters['companyName'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['companyName'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 2. Style No Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Filter style..."
+                        value={tableControls.columnFilters['styleNo'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            styleNo: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
+                      />
+                      {tableControls.columnFilters['styleNo'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['styleNo'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 3. PO Number Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Filter PO..."
+                        value={tableControls.columnFilters['poNumber'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            poNumber: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
+                      />
+                      {tableControls.columnFilters['poNumber'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['poNumber'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 4. Colour Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Filter colour..."
+                        value={tableControls.columnFilters['colourName'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            colourName: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
+                      />
+                      {tableControls.columnFilters['colourName'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['colourName'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 5. Wash / Process Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Filter process..."
+                        value={tableControls.columnFilters['process'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            process: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-left"
+                      />
+                      {tableControls.columnFilters['process'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['process'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 6. Order Qty Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Qty..."
+                        value={tableControls.columnFilters['orderQty'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            orderQty: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
+                      />
+                      {tableControls.columnFilters['orderQty'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['orderQty'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 7. Received Qty (Inward) Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Inward..."
+                        value={tableControls.columnFilters['receivedQty'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            receivedQty: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
+                      />
+                      {tableControls.columnFilters['receivedQty'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['receivedQty'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 8. Dispatch Qty Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Dispatch..."
+                        value={tableControls.columnFilters['dispatchQty'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            dispatchQty: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
+                      />
+                      {tableControls.columnFilters['dispatchQty'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['dispatchQty'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 9. Dispatch Balance Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Disp Bal..."
+                        value={tableControls.columnFilters['dispatchBalance'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            dispatchBalance: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
+                      />
+                      {tableControls.columnFilters['dispatchBalance'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['dispatchBalance'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 10. Receive Balance Filter */}
+                  <th className="p-1.5 border border-slate-300 bg-slate-100 font-normal sticky top-[41px] z-20">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Recv Bal..."
+                        value={tableControls.columnFilters['receiveBalance'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            receiveBalance: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-right tabular-nums"
+                      />
+                      {tableControls.columnFilters['receiveBalance'] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            tableControls.setColumnFilters((prev) => {
+                              const next = { ...prev };
+                              delete next['receiveBalance'];
+                              return next;
+                            })
+                          }
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Clear filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  {/* 11. Status Filter & Master Clear Action */}
+                  <th className="p-1.5 pr-12 border border-slate-300 bg-slate-100 font-normal text-center sticky top-[41px] z-20">
+                    <div className="flex items-center justify-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Status..."
+                        value={tableControls.columnFilters['status'] || ''}
+                        onChange={(e) =>
+                          tableControls.setColumnFilters((prev) => ({
+                            ...prev,
+                            status: e.target.value
+                          }))
+                        }
+                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
+                      />
+                      {Object.values(tableControls.columnFilters).some((v) => (v || '').trim() !== '') && (
+                        <button
+                          type="button"
+                          onClick={() => tableControls.setColumnFilters({})}
+                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded cursor-pointer transition shrink-0"
+                          title="Clear all column filters"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </th>
                 </tr>
-              </tfoot>
-            </table>
+              )}
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {tableControls.processedData.map((row) => (
+                <tr
+                  key={row.id}
+                  className={`hover:bg-blue-50/40 transition-colors ${row.isAllThreeEqual ? 'bg-emerald-50/20' : ''
+                    }`}
+                >
+                  <td className="p-2.5 border border-slate-200 font-semibold text-slate-900 text-left whitespace-nowrap">
+                          {row.companyName}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-slate-700 font-medium text-left whitespace-nowrap">
+                          {row.styleNo}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                            {row.poNumber}
+                          </span>
+                        </td>
+                        <td className="p-2.5 border border-slate-200 font-bold text-slate-800 text-left whitespace-nowrap">
+                          {row.colourName}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-slate-600 text-left whitespace-nowrap">
+                          {row.process}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right font-medium text-slate-800 tabular-nums whitespace-nowrap">
+                          {row.orderQty.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right font-bold text-blue-700 tabular-nums whitespace-nowrap">
+                          {row.receivedQty.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right font-bold text-emerald-700 tabular-nums whitespace-nowrap">
+                          {row.dispatchQty.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
+                          <span className={row.dispatchBalance === 0 ? 'text-emerald-700' : 'text-amber-700'}>
+                            {row.dispatchBalance.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-right font-bold tabular-nums whitespace-nowrap">
+                          <span className={row.receiveBalance === 0 ? 'text-emerald-700' : 'text-orange-700'}>
+                            {row.receiveBalance.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                          {row.isAllThreeEqual ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Equal ({row.orderQty} / {row.receivedQty} / {row.dispatchQty})
+                            </span>
+                          ) : row.dispatchBalance === 0 && row.receiveBalance === 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Completed
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                              In Progress
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  {/* Grand Total Footer */}
+                  <tfoot
+                    className="sticky bottom-0 z-20 bg-[#EEF5FB] font-bold border-t-2 border-slate-400 text-[#1F4E79] shadow-[0_-2px_4px_rgba(0,0,0,0.06)]"
+                    style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                  >
+                    <tr>
+                      <td
+                        colSpan={5}
+                        style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }}
+                        className="p-2.5 border border-slate-300 text-center uppercase tracking-wider text-xs whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        Grand Totals ({tableControls.processedData.length} Lines)
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 border border-slate-300 text-right text-slate-900 tabular-nums whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        {tableControls.processedData.reduce((s, r) => s + r.orderQty, 0).toLocaleString()}
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 border border-slate-300 text-right text-blue-700 tabular-nums whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        {tableControls.processedData.reduce((s, r) => s + r.receivedQty, 0).toLocaleString()}
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 border border-slate-300 text-right text-emerald-700 tabular-nums whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        {tableControls.processedData.reduce((s, r) => s + r.dispatchQty, 0).toLocaleString()}
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 border border-slate-300 text-right text-amber-700 tabular-nums whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        {tableControls.processedData.reduce((s, r) => s + r.dispatchBalance, 0).toLocaleString()}
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 border border-slate-300 text-right text-orange-700 tabular-nums whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        {tableControls.processedData.reduce((s, r) => s + r.receiveBalance, 0).toLocaleString()}
+                      </td>
+                      <td
+                        style={{ backgroundColor: '#EEF5FB' }}
+                        className="p-2.5 pr-12 border border-slate-300 text-center whitespace-nowrap sticky bottom-0 z-20 bg-[#EEF5FB]"
+                      >
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-800">
+                          Summary
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
           </div>
         </div>
+        )
+          }
+      </TableMaximizeWrapper>
       )}
     </div>
   );

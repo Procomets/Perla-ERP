@@ -20,6 +20,10 @@ import {
 import { Vendor, VendorFilterOptions, VendorPagination } from '../../../types/vendor';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Button } from '../../../components/ui/Button';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../../components/ui/TableMaximizeWrapper';
 
 interface VendorListProps {
   vendors: Vendor[];
@@ -515,11 +519,23 @@ export const VendorList: React.FC<VendorListProps> = ({
       </div>
 
       {/* Main Vendor Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="max-h-[620px] overflow-auto relative">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
-              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+      <TableMaximizeWrapper
+        title="Vendor Master & Customer Directory"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredVendors.length} Companies
+          </span>
+        }
+      >
+        {(isMaximized) => (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
+            <div
+              data-table-scroll="true"
+              className={`overflow-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+            >
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                  <tr className="border-b border-slate-300 text-[#1F4E79] bg-[#EEF5FB] font-bold uppercase tracking-wider text-[11px]">
                 {/* Vendor Code */}
                 <th
                   onClick={() => handleSort('vendorCode')}
@@ -631,7 +647,7 @@ export const VendorList: React.FC<VendorListProps> = ({
                 </th>
 
                 {/* Actions */}
-                <th className="p-3.5 whitespace-nowrap text-right bg-slate-50">Actions</th>
+                <th className="p-3.5 pr-12 whitespace-nowrap text-right bg-[#EEF5FB] min-w-[130px]">Actions</th>
               </tr>
 
               {/* Sticky Inline Column Filters Row */}
@@ -933,6 +949,12 @@ export const VendorList: React.FC<VendorListProps> = ({
                 ))
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 10, label: `Total (${filteredVendors.length} Companies / Vendors)`, isTotal: true },
+                { content: '—', align: 'right', className: 'pr-12' }
+              ]}
+            />
           </table>
         </div>
 
@@ -949,6 +971,8 @@ export const VendorList: React.FC<VendorListProps> = ({
           </span>
         </div>
       </div>
+        )}
+      </TableMaximizeWrapper>
     </div>
   );
 };

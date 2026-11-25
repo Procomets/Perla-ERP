@@ -9,6 +9,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { formatDate } from '../../../utils/formatters';
 import { Search, Filter, Plus, ArrowUp, ArrowDown, ArrowUpDown, Lock, Zap, ChevronRight, Package, Table, ChevronDown, ChevronUp, X, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { POLockStatus, POLockService } from '../../../services/poLockService';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 
 export type InwardSortField =
   | 'inwardNo'
@@ -412,6 +413,30 @@ export const InwardList: React.FC<InwardListProps> = ({
     });
   }, [filteredInwards, sortField, sortDirection]);
 
+  // Grand totals for sticky footer
+  const inwardTotals = useMemo(() => {
+    return sortedInwards.reduce(
+      (acc, row) => {
+        const q = getQuantitySummaries(row);
+        acc.ordered.piece += q.ordered.piece;
+        acc.ordered.kg += q.ordered.kg;
+        acc.prev.piece += q.prev.piece;
+        acc.prev.kg += q.prev.kg;
+        acc.received.piece += q.received.piece;
+        acc.received.kg += q.received.kg;
+        acc.balance.piece += q.balance.piece;
+        acc.balance.kg += q.balance.kg;
+        return acc;
+      },
+      {
+        ordered: { piece: 0, kg: 0 },
+        prev: { piece: 0, kg: 0 },
+        received: { piece: 0, kg: 0 },
+        balance: { piece: 0, kg: 0 }
+      }
+    );
+  }, [sortedInwards]);
+
   const renderSortIcon = (field: InwardSortField) => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
@@ -654,11 +679,10 @@ export const InwardList: React.FC<InwardListProps> = ({
             <button
               type="button"
               onClick={() => setShowColumnFilters(!showColumnFilters)}
-              className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
-                  ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                  : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'
-              }`}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'
+                }`}
               title="Toggle column-wise search inputs on table header"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -909,503 +933,520 @@ export const InwardList: React.FC<InwardListProps> = ({
         </div>
       ) : (
         /* Grid Table Container */
-        <Card className="overflow-hidden">
-          {/* Active Sort / Desort Banner */}
-          {sortField && sortDirection && (
-            <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">
-                  Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSortField(null);
-                  setSortDirection(null);
-                }}
-                className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
-                title="Reset to default order"
+        <TableMaximizeWrapper
+          title="Inward Receipts"
+          badge={
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-[#1F4E79] border border-blue-200">
+              {sortedInwards.length} {sortedInwards.length === 1 ? 'entry' : 'entries'}
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <Card className={`overflow-hidden flex-1 flex flex-col min-h-0 ${isMaximized ? 'rounded-xl border border-slate-300 shadow-2xs' : ''}`}>
+              {/* Active Sort / Desort Banner */}
+              {sortField && sortDirection && (
+                <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">
+                      Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSortField(null);
+                      setSortDirection(null);
+                    }}
+                    className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                    title="Reset to default order"
+                  >
+                    Clear / Desort
+                  </button>
+                </div>
+              )}
+
+              <div
+                data-table-scroll="true"
+                className={`overflow-x-auto overflow-y-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
               >
-                Clear / Desort
-              </button>
-            </div>
-          )}
-
-          <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
-            <table className="w-full text-left text-xs border-collapse border border-slate-300">
-              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
-                <tr>
-                  {/* 1. Inward Number */}
-                  <th
-                    className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'inwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('inwardNo')}
-                    title={getSortTooltip('inwardNo', 'Inward Number')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-start">
-                      <span>Inward Number</span>
-                      {renderSortIcon('inwardNo')}
-                    </div>
-                  </th>
-
-                  {/* 2. Receipt Date */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'inwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('inwardDate')}
-                    title={getSortTooltip('inwardDate', 'Receipt Date')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-center">
-                      <span>Receipt Date</span>
-                      {renderSortIcon('inwardDate')}
-                    </div>
-                  </th>
-
-                  {/* 3. Customer DC Number */}
-                  <th
-                    className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'customerDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('customerDcNo')}
-                    title={getSortTooltip('customerDcNo', 'Customer DC Number')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-start">
-                      <span>Customer DC Number</span>
-                      {renderSortIcon('customerDcNo')}
-                    </div>
-                  </th>
-
-                  {/* 4. Customer / Company */}
-                  <th
-                    className={`p-2.5 border border-slate-300 min-w-[260px] w-72 cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('customerName')}
-                    title={getSortTooltip('customerName', 'Customer / Company')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-start">
-                      <span>Customer / Company</span>
-                      {renderSortIcon('customerName')}
-                    </div>
-                  </th>
-
-                  {/* 5. Style No / PO No */}
-                  <th
-                    className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('poNumber')}
-                    title={getSortTooltip('poNumber', 'Style No / PO No')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-start">
-                      <span>Style No / PO No</span>
-                      {renderSortIcon('poNumber')}
-                    </div>
-                  </th>
-
-                  {/* 6. PO Order Qty */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'orderedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('orderedQty')}
-                    title={getSortTooltip('orderedQty', 'PO Order Qty')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span>PO Order Qty</span>
-                      {renderSortIcon('orderedQty')}
-                    </div>
-                  </th>
-
-                  {/* 7. Previous Received Qty */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'previousQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('previousQty')}
-                    title={getSortTooltip('previousQty', 'Previous Received Qty')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span>Previous Received Qty</span>
-                      {renderSortIcon('previousQty')}
-                    </div>
-                  </th>
-
-                  {/* 8. Received Qty */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'receivedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('receivedQty')}
-                    title={getSortTooltip('receivedQty', 'Received Qty')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span>Received Qty</span>
-                      {renderSortIcon('receivedQty')}
-                    </div>
-                  </th>
-
-                  {/* 9. Balance Qty */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'balanceQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('balanceQty')}
-                    title={getSortTooltip('balanceQty', 'Balance Qty')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span>Balance Qty</span>
-                      {renderSortIcon('balanceQty')}
-                    </div>
-                  </th>
-
-                  {/* 10. Status */}
-                  <th
-                    className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                      sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                    }`}
-                    onClick={() => handleSort('status')}
-                    title={getSortTooltip('status', 'Status')}
-                  >
-                    <div className="flex items-center gap-1.5 justify-center">
-                      <span>Status</span>
-                      {renderSortIcon('status')}
-                    </div>
-                  </th>
-
-                  {/* 11. Actions */}
-                  <th className="p-2.5 border border-slate-300 text-center w-36 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">Actions</th>
-                </tr>
-
-                {/* Inline Column Filter Inputs Row */}
-                {showColumnFilters && (
-                  <tr className="bg-slate-100/90 border-b-2 border-slate-300">
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter inward..."
-                        value={columnFilters.inwardNo || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, inwardNo: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter date..."
-                        value={columnFilters.inwardDate || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, inwardDate: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter DC no..."
-                        value={columnFilters.customerDcNo || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, customerDcNo: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter customer..."
-                        value={columnFilters.customerName || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter PO..."
-                        value={columnFilters.poNumber || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter order..."
-                        value={columnFilters.orderedQty || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, orderedQty: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter prev..."
-                        value={columnFilters.previousQty || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, previousQty: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter received..."
-                        value={columnFilters.receivedQty || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, receivedQty: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter bal..."
-                        value={columnFilters.balanceQty || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, balanceQty: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100">
-                      <input
-                        type="text"
-                        placeholder="Filter status..."
-                        value={columnFilters.status || ''}
-                        onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
-                        className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
-                      />
-                    </th>
-                    <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-slate-100 text-center">
-                      {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
-                        <button
-                          type="button"
-                          onClick={() => setColumnFilters({})}
-                          className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
-                          title="Clear column filters"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </th>
-                  </tr>
-                )}
-              </thead>
-              <tbody className="divide-y divide-slate-200 font-medium">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
-                      <p>Loading inward receipts from Firebase...</p>
-                    </td>
-                  </tr>
-                ) : sortedInwards.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
-                      <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                        <div className="p-3 rounded-full bg-slate-50 text-slate-400">
-                          <Package className="w-8 h-8 stroke-[1.5]" />
+                <table className="w-full text-left text-xs border-collapse border border-slate-300">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                    <tr>
+                      {/* 1. Inward Number */}
+                      <th
+                        className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'inwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('inwardNo')}
+                        title={getSortTooltip('inwardNo', 'Inward Number')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-start">
+                          <span>Inward Number</span>
+                          {renderSortIcon('inwardNo')}
                         </div>
-                        <div className="text-sm font-bold text-slate-700">No Matching Inward Receipts</div>
-                        <p className="text-slate-400 text-xs leading-relaxed">
-                          {hasActiveFilters
-                            ? 'No inward receipts match your current search, column filters, or filters.'
-                            : 'Click "New Inward Receipt" to record the first customer fabric or garment delivery.'}
-                        </p>
-                        {hasActiveFilters && (
-                          <button
-                            type="button"
-                            onClick={handleClearFilters}
-                            className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>Reset All Filters</span>
-                          </button>
-                        )}
-                        {!hasActiveFilters && canManage && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            icon={<Plus className="w-4 h-4" />}
-                            onClick={onNewInward}
-                            className="mt-2"
-                          >
-                            Create Inward Receipt
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  sortedInwards.map((row) => {
-                    const q = getQuantitySummaries(row);
+                      </th>
 
-                    return (
-                      <tr key={row.inwardId || row.id} className="hover:bg-slate-50 transition-colors">
-                        {/* 1. Inward Number ALONE (no icon, no ID underneath) */}
-                        <td className="p-2.5 border border-slate-200 font-bold text-[#1F4E79] whitespace-nowrap">
-                          <button
-                            onClick={() => onViewDetails(row.inwardId || row.id)}
-                            className="hover:underline text-left"
-                            title="View inward details"
-                          >
-                            {row.inwardNo || row.entryId || 'INW/PENDING'}
-                          </button>
+                      {/* 2. Receipt Date */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'inwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('inwardDate')}
+                        title={getSortTooltip('inwardDate', 'Receipt Date')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <span>Receipt Date</span>
+                          {renderSortIcon('inwardDate')}
+                        </div>
+                      </th>
+
+                      {/* 3. Customer DC Number */}
+                      <th
+                        className={`p-2.5 border border-slate-300 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'customerDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('customerDcNo')}
+                        title={getSortTooltip('customerDcNo', 'Customer DC Number')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-start">
+                          <span>Customer DC Number</span>
+                          {renderSortIcon('customerDcNo')}
+                        </div>
+                      </th>
+
+                      {/* 4. Customer / Company */}
+                      <th
+                        className={`p-2.5 border border-slate-300 min-w-[260px] w-72 cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('customerName')}
+                        title={getSortTooltip('customerName', 'Customer / Company')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-start">
+                          <span>Customer / Company</span>
+                          {renderSortIcon('customerName')}
+                        </div>
+                      </th>
+
+                      {/* 5. Style No / PO No */}
+                      <th
+                        className={`p-2.5 border border-slate-300 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('poNumber')}
+                        title={getSortTooltip('poNumber', 'Style No / PO No')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-start">
+                          <span>Style No / PO No</span>
+                          {renderSortIcon('poNumber')}
+                        </div>
+                      </th>
+
+                      {/* 6. PO Order Qty */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'orderedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('orderedQty')}
+                        title={getSortTooltip('orderedQty', 'PO Order Qty')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>PO Order Qty</span>
+                          {renderSortIcon('orderedQty')}
+                        </div>
+                      </th>
+
+                      {/* 7. Previous Received Qty */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'previousQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('previousQty')}
+                        title={getSortTooltip('previousQty', 'Previous Received Qty')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>Previous Received Qty</span>
+                          {renderSortIcon('previousQty')}
+                        </div>
+                      </th>
+
+                      {/* 8. Received Qty */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'receivedQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('receivedQty')}
+                        title={getSortTooltip('receivedQty', 'Received Qty')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>Received Qty</span>
+                          {renderSortIcon('receivedQty')}
+                        </div>
+                      </th>
+
+                      {/* 9. Balance Qty */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'balanceQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('balanceQty')}
+                        title={getSortTooltip('balanceQty', 'Balance Qty')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>Balance Qty</span>
+                          {renderSortIcon('balanceQty')}
+                        </div>
+                      </th>
+
+                      {/* 10. Status */}
+                      <th
+                        className={`p-2.5 border border-slate-300 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                          }`}
+                        onClick={() => handleSort('status')}
+                        title={getSortTooltip('status', 'Status')}
+                      >
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <span>Status</span>
+                          {renderSortIcon('status')}
+                        </div>
+                      </th>
+
+                      {/* 11. Actions */}
+                      <th className="p-2.5 border border-slate-300 text-center min-w-[130px] pr-12 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">Actions</th>
+                    </tr>
+
+                    {/* Inline Column Filter Inputs Row */}
+                    {showColumnFilters && (
+                      <tr className="bg-[#F5F9FD] border-b-2 border-slate-300">
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter inward..."
+                            value={columnFilters.inwardNo || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, inwardNo: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter date..."
+                            value={columnFilters.inwardDate || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, inwardDate: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter DC no..."
+                            value={columnFilters.customerDcNo || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, customerDcNo: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter customer..."
+                            value={columnFilters.customerName || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter PO..."
+                            value={columnFilters.poNumber || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter order..."
+                            value={columnFilters.orderedQty || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, orderedQty: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter prev..."
+                            value={columnFilters.previousQty || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, previousQty: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter received..."
+                            value={columnFilters.receivedQty || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, receivedQty: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter bal..."
+                            value={columnFilters.balanceQty || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, balanceQty: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                          <input
+                            type="text"
+                            placeholder="Filter status..."
+                            value={columnFilters.status || ''}
+                            onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                            className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                          />
+                        </th>
+                        <th className="p-1.5 border border-slate-300 sticky top-[41px] z-20 bg-[#F5F9FD] text-center">
+                          {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                            <button
+                              type="button"
+                              onClick={() => setColumnFilters({})}
+                              className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                              title="Clear column filters"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
+                          <p>Loading inward receipts from Firebase...</p>
                         </td>
-
-                        {/* 2. Receipt Date (Second Column) */}
-                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap text-slate-700 font-medium">
-                          {formatDate(row.inwardDate || row.customerDate)}
-                        </td>
-
-                        {/* 3. Customer DC Number (normal plain text, no box) */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900">{row.customerDcNo}</div>
-                          <div className="text-[11px] text-slate-500 font-normal">
-                            DC Date: {formatDate(row.customerDate)}
-                          </div>
-                        </td>
-
-                        {/* 4. Customer / Company (Increased Width + Hover Details) */}
-                        <td className="p-2.5 border border-slate-200 min-w-[260px]">
-                          <div
-                            onMouseEnter={(e) => handleMouseEnter(e, 'company', row)}
-                            onMouseLeave={handleMouseLeave}
-                            className="cursor-pointer group/comp inline-block"
-                          >
-                            <div className="font-semibold text-slate-900 group-hover/comp:text-[#1F4E79] group-hover/comp:underline transition-colors">
-                              {row.customerCompanyNameSnapshot || row.customerName || 'Customer'}
+                      </tr>
+                    ) : sortedInwards.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-14 text-center text-xs text-slate-400 bg-white">
+                          <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                            <div className="p-3 rounded-full bg-slate-50 text-slate-400">
+                              <Package className="w-8 h-8 stroke-[1.5]" />
                             </div>
-                            {row.subcontractorNameSnapshot && (
-                              <div className="text-[11px] text-slate-500 font-normal">
-                                Sub: {row.subcontractorNameSnapshot}
-                              </div>
+                            <div className="text-sm font-bold text-slate-700">No Matching Inward Receipts</div>
+                            <p className="text-slate-400 text-xs leading-relaxed">
+                              {hasActiveFilters
+                                ? 'No inward receipts match your current search, column filters, or filters.'
+                                : 'Click "New Inward Receipt" to record the first customer fabric or garment delivery.'}
+                            </p>
+                            {hasActiveFilters && (
+                              <button
+                                type="button"
+                                onClick={handleClearFilters}
+                                className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reset All Filters</span>
+                              </button>
+                            )}
+                            {!hasActiveFilters && canManage && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                icon={<Plus className="w-4 h-4" />}
+                                onClick={onNewInward}
+                                className="mt-2"
+                              >
+                                Create Inward Receipt
+                              </Button>
                             )}
                           </div>
                         </td>
-
-                        {/* 5. Style No & PO Number (Hover Details) */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">
-                          <div
-                            onMouseEnter={(e) => handleMouseEnter(e, 'po', row)}
-                            onMouseLeave={handleMouseLeave}
-                            className="cursor-pointer group/po inline-block"
-                          >
-                            <div className="font-bold text-slate-900 group-hover/po:text-[#1F4E79] group-hover/po:underline transition-colors text-xs">
-                              {row.styleNoSnapshot || row.styleNo || '—'}
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              {row.poNumberSnapshot || row.poNumber}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* 6. PO Order Quantity */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.ordered, 'text-slate-700')}
-                        </td>
-
-                        {/* 7. Previous Received Quantity */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.prev, 'text-slate-500')}
-                        </td>
-
-                        {/* 8. Received Quantity in This DC */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap bg-blue-50/20">
-                          {renderUnitQty(q.received, 'text-emerald-700')}
-                        </td>
-
-                        {/* 9. Balance Quantity After Receipt */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.balance, 'text-[#1F4E79]')}
-                        </td>
-
-                        {/* 10. Status */}
-                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                          {row.status === 'posted' && <StatusChip status="Posted" variant="green" />}
-                          {row.status === 'draft' && <StatusChip status="Draft" variant="slate" />}
-                          {row.status === 'reversed' && <StatusChip status="Reversed" variant="rose" />}
-                          {row.status === 'cancelled' && <StatusChip status="Cancelled" variant="rose" />}
-                          {!['posted', 'draft', 'reversed', 'cancelled'].includes(row.status) && (
-                            <StatusChip status={row.status} variant="amber" />
-                          )}
-                        </td>
-
-                        {/* 11. Actions: Clean Text Buttons, No Icons, Edit & Admin-only Delete */}
-                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => onViewDetails(row.inwardId || row.id)}
-                              className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
-                            >
-                              View
-                            </button>
-
-                            {canManage && (() => {
-                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
-                              if (lockStatus) {
-                                return (
-                                  <span
-                                    title={lockStatus.reason}
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
-                                    Edit
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button
-                                  onClick={() => onEdit(row.inwardId || row.id)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
-                                >
-                                  Edit
-                                </button>
-                              );
-                            })()}
-
-                            {isAdmin && (() => {
-                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
-                              if (lockStatus) {
-                                return (
-                                  <span
-                                    title={lockStatus.reason}
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
-                                    Delete
-                                  </span>
-                                );
-                              }
-                              const inwKey = row.inwardId || row.id;
-                              const isDeletable = deletableInwardMap ? deletableInwardMap[inwKey] !== false : true;
-                              if (!isDeletable) return null;
-                              return (
-                                <button
-                                  onClick={() => setDeleteTargetInward(row)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
-                                >
-                                  Delete
-                                </button>
-                              );
-                            })()}
-                          </div>
-                        </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              </table>
-            </div>
+                    ) : (
+                      sortedInwards.map((row) => {
+                        const q = getQuantitySummaries(row);
 
-            {/* All Records Summary Bar - One Stretch */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70">
-              <div>
-                Showing all <strong className="text-slate-900 font-bold">{sortedInwards.length}</strong> {sortedInwards.length === 1 ? 'entry' : 'entries'} in one stretch
-                {sortedInwards.length !== inwards.length && (
-                  <span className="text-slate-400 font-normal ml-1.5">(filtered from {inwards.length} total)</span>
-                )}
+                        return (
+                          <tr key={row.inwardId || row.id} className="hover:bg-slate-50 transition-colors">
+                            {/* 1. Inward Number ALONE (no icon, no ID underneath) */}
+                            <td className="p-2.5 border border-slate-200 font-bold text-[#1F4E79] whitespace-nowrap">
+                              <button
+                                onClick={() => onViewDetails(row.inwardId || row.id)}
+                                className="hover:underline text-left"
+                                title="View inward details"
+                              >
+                                {row.inwardNo || row.entryId || 'INW/PENDING'}
+                              </button>
+                            </td>
+
+                            {/* 2. Receipt Date (Second Column) */}
+                            <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap text-slate-700 font-medium">
+                              {formatDate(row.inwardDate || row.customerDate)}
+                            </td>
+
+                            {/* 3. Customer DC Number (normal plain text, no box) */}
+                            <td className="p-2.5 border border-slate-200 whitespace-nowrap">
+                              <div className="font-semibold text-slate-900">{row.customerDcNo}</div>
+                              <div className="text-[11px] text-slate-500 font-normal">
+                                DC Date: {formatDate(row.customerDate)}
+                              </div>
+                            </td>
+
+                            {/* 4. Customer / Company (Increased Width + Hover Details) */}
+                            <td className="p-2.5 border border-slate-200 min-w-[260px]">
+                              <div
+                                onMouseEnter={(e) => handleMouseEnter(e, 'company', row)}
+                                onMouseLeave={handleMouseLeave}
+                                className="cursor-pointer group/comp inline-block"
+                              >
+                                <div className="font-semibold text-slate-900 group-hover/comp:text-[#1F4E79] group-hover/comp:underline transition-colors">
+                                  {row.customerCompanyNameSnapshot || row.customerName || 'Customer'}
+                                </div>
+                                {row.subcontractorNameSnapshot && (
+                                  <div className="text-[11px] text-slate-500 font-normal">
+                                    Sub: {row.subcontractorNameSnapshot}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* 5. Style No & PO Number (Hover Details) */}
+                            <td className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">
+                              <div
+                                onMouseEnter={(e) => handleMouseEnter(e, 'po', row)}
+                                onMouseLeave={handleMouseLeave}
+                                className="cursor-pointer group/po inline-block"
+                              >
+                                <div className="font-bold text-slate-900 group-hover/po:text-[#1F4E79] group-hover/po:underline transition-colors text-xs">
+                                  {row.styleNoSnapshot || row.styleNo || '—'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                  {row.poNumberSnapshot || row.poNumber}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* 6. PO Order Quantity */}
+                            <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                              {renderUnitQty(q.ordered, 'text-slate-700')}
+                            </td>
+
+                            {/* 7. Previous Received Quantity */}
+                            <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                              {renderUnitQty(q.prev, 'text-slate-500')}
+                            </td>
+
+                            {/* 8. Received Quantity in This DC */}
+                            <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap bg-blue-50/20">
+                              {renderUnitQty(q.received, 'text-emerald-700')}
+                            </td>
+
+                            {/* 9. Balance Quantity After Receipt */}
+                            <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                              {renderUnitQty(q.balance, 'text-[#1F4E79]')}
+                            </td>
+
+                            {/* 10. Status */}
+                            <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                              {row.status === 'posted' && <StatusChip status="Posted" variant="green" />}
+                              {row.status === 'draft' && <StatusChip status="Draft" variant="slate" />}
+                              {row.status === 'reversed' && <StatusChip status="Reversed" variant="rose" />}
+                              {row.status === 'cancelled' && <StatusChip status="Cancelled" variant="rose" />}
+                              {!['posted', 'draft', 'reversed', 'cancelled'].includes(row.status) && (
+                                <StatusChip status={row.status} variant="amber" />
+                              )}
+                            </td>
+
+                            {/* 11. Actions: Clean Text Buttons, No Icons, Edit & Admin-only Delete */}
+                            <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => onViewDetails(row.inwardId || row.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
+                                >
+                                  View
+                                </button>
+
+                                {canManage && (() => {
+                                  const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                                  if (lockStatus) {
+                                    return (
+                                      <span
+                                        title={lockStatus.reason}
+                                        className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                      >
+                                        <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                        Edit
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      onClick={() => onEdit(row.inwardId || row.id)}
+                                      className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    >
+                                      Edit
+                                    </button>
+                                  );
+                                })()}
+
+                                {isAdmin && (() => {
+                                  const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                                  if (lockStatus) {
+                                    return (
+                                      <span
+                                        title={lockStatus.reason}
+                                        className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                      >
+                                        <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                        Delete
+                                      </span>
+                                    );
+                                  }
+                                  const inwKey = row.inwardId || row.id;
+                                  const isDeletable = deletableInwardMap ? deletableInwardMap[inwKey] !== false : true;
+                                  if (!isDeletable) return null;
+                                  return (
+                                    <button
+                                      onClick={() => setDeleteTargetInward(row)}
+                                      className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                                    >
+                                      Delete
+                                    </button>
+                                  );
+                                })()}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+
+                  {/* Sticky Totals Footer */}
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 5, label: `TOTAL (${sortedInwards.length} ${sortedInwards.length === 1 ? 'entry' : 'entries'})` },
+                      { pieces: inwardTotals.ordered.piece, kgs: inwardTotals.ordered.kg, isTotal: true },
+                      { pieces: inwardTotals.prev.piece, kgs: inwardTotals.prev.kg, isTotal: true },
+                      { pieces: inwardTotals.received.piece, kgs: inwardTotals.received.kg, isTotal: true },
+                      { pieces: inwardTotals.balance.piece, kgs: inwardTotals.balance.kg, isTotal: true },
+                      { align: 'center' },
+                      { align: 'center' }
+                    ]}
+                  />
+                </table>
               </div>
-              <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
-            </div>
-        </Card>
+
+              {/* All Records Summary Bar - One Stretch */}
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70 shrink-0">
+                <div>
+                  Showing all <strong className="text-slate-900 font-bold">{sortedInwards.length}</strong> {sortedInwards.length === 1 ? 'entry' : 'entries'} in one stretch
+                  {sortedInwards.length !== inwards.length && (
+                    <span className="text-slate-400 font-normal ml-1.5">(filtered from {inwards.length} total)</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
+              </div>
+            </Card>
+          )}
+        </TableMaximizeWrapper>
       )}
 
       {/* Admin Delete Confirmation Modal */}

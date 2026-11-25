@@ -12,6 +12,7 @@ import { POLockStatus, POLockService } from '../../../services/poLockService';
 import { InwardEntry } from '../../../types/inward';
 import { DeliveryChallanPdfService } from '../../../services/deliveryChallanPdfService';
 import { JoinedDcModal } from './JoinedDcModal';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 
 export type OutwardSortField =
   | 'outwardNo'
@@ -482,6 +483,33 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     });
   }, [filteredOutwards, sortField, sortDirection]);
 
+  // Grand totals for sticky footer
+  const outwardTotals = useMemo(() => {
+    return sortedOutwards.reduce(
+      (acc, row) => {
+        const q = getQuantitySummaries(row);
+        acc.ordered.piece += q.ordered.piece;
+        acc.ordered.kg += q.ordered.kg;
+        acc.inward.piece += q.inward.piece;
+        acc.inward.kg += q.inward.kg;
+        acc.prevOutward.piece += q.prevOutward.piece;
+        acc.prevOutward.kg += q.prevOutward.kg;
+        acc.dispatched.piece += (q.dispatched.piece || (!q.dispatched.kg ? Number(row.totalQuantity) || 0 : 0));
+        acc.dispatched.kg += q.dispatched.kg;
+        acc.balance.piece += q.remaining.piece;
+        acc.balance.kg += q.remaining.kg;
+        return acc;
+      },
+      {
+        ordered: { piece: 0, kg: 0 },
+        inward: { piece: 0, kg: 0 },
+        prevOutward: { piece: 0, kg: 0 },
+        dispatched: { piece: 0, kg: 0 },
+        balance: { piece: 0, kg: 0 }
+      }
+    );
+  }, [sortedOutwards]);
+
   const renderSortIcon = (field: OutwardSortField) => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
@@ -784,11 +812,10 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           <button
             type="button"
             onClick={() => setShowColumnFilters(!showColumnFilters)}
-            className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-              showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
-                ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-            }`}
+            className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+              ? 'bg-slate-900 text-white border-slate-900 font-bold'
+              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
             title="Toggle column-wise search inputs on table header"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -848,11 +875,10 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                 setIsJoiningMode(true);
               }
             }}
-            className={`flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto font-semibold cursor-pointer ${
-              isJoiningMode
-                ? 'bg-black text-white hover:bg-slate-900 border-black'
-                : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50'
-            }`}
+            className={`flex items-center gap-1.5 shrink-0 text-xs py-1.5 h-auto font-semibold cursor-pointer ${isJoiningMode
+              ? 'bg-black text-white hover:bg-slate-900 border-black'
+              : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50'
+              }`}
             title="Select multiple outward dispatches to combine into a single Delivery Challan"
           >
             <Layers className="w-3.5 h-3.5" />
@@ -1125,582 +1151,597 @@ export const OutwardList: React.FC<OutwardListProps> = ({
         </div>
       ) : (
         /* Main Table Card */
-        <Card className="border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="flex flex-col">
-            {/* Active Sort / Desort Banner */}
-            {sortField && sortDirection && (
-              <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">
-                    Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortField(null);
-                    setSortDirection(null);
-                  }}
-                  className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
-                  title="Reset to default order"
+        <TableMaximizeWrapper
+          title="Outward Dispatches"
+          badge={
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-[#1F4E79] border border-blue-200">
+              {sortedOutwards.length} {sortedOutwards.length === 1 ? 'entry' : 'entries'}
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <Card className={`border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0 ${isMaximized ? 'rounded-xl' : ''}`}>
+              <div className="flex flex-col flex-1 min-h-0">
+                {/* Active Sort / Desort Banner */}
+                {sortField && sortDirection && (
+                  <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50/90 border-b border-blue-200 text-xs text-[#1F4E79]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        Sorted by <strong className="font-bold underline">{getSortColumnLabel(sortField)}</strong> ({sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortField(null);
+                        setSortDirection(null);
+                      }}
+                      className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                      title="Reset to default order"
+                    >
+                      Clear / Desort
+                    </button>
+                  </div>
+                )}
+
+                <div
+                  data-table-scroll="true"
+                  className={`overflow-x-auto overflow-y-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
                 >
-                  Clear / Desort
-                </button>
-              </div>
-            )}
-
-            <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
-                  <tr>
-                    {/* Checkbox Column for Joined DC */}
-                    {isJoiningMode && (
-                      <th className="p-2.5 border border-slate-200 text-center w-12 bg-[#DCEBF8] whitespace-nowrap sticky top-0 z-20">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#163858]">Join</span>
-                      </th>
-                    )}
-
-                    {/* 1. Outward No */}
-                    <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'outwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('outwardNo')}
-                      title={getSortTooltip('outwardNo', 'Outward No')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Outward No</span>
-                        {renderSortIcon('outwardNo')}
-                      </div>
-                    </th>
-
-                    {/* 2. Dispatch Date */}
-                    <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'outwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('outwardDate')}
-                      title={getSortTooltip('outwardDate', 'Dispatch Date')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Dispatch Date</span>
-                        {renderSortIcon('outwardDate')}
-                      </div>
-                    </th>
-
-                    {/* 3. Our DC Number */}
-                    <th
-                      className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'ourDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('ourDcNo')}
-                      title={getSortTooltip('ourDcNo', 'Our DC Number')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Our DC Number</span>
-                        {renderSortIcon('ourDcNo')}
-                      </div>
-                    </th>
-
-                    {/* 4. Customer / Company */}
-                    <th
-                      className={`p-2.5 border border-slate-200 min-w-[240px] cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('customerName')}
-                      title={getSortTooltip('customerName', 'Customer / Company')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Customer / Company</span>
-                        {renderSortIcon('customerName')}
-                      </div>
-                    </th>
-
-                    {/* 5. Style No / PO No */}
-                    <th
-                      className={`p-2.5 border border-slate-200 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('poNumber')}
-                      title={getSortTooltip('poNumber', 'Style No / PO No')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-start">
-                        <span>Style No / PO No</span>
-                        {renderSortIcon('poNumber')}
-                      </div>
-                    </th>
-
-                    {/* 6. PO Qty */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'poQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('poQty')}
-                      title={getSortTooltip('poQty', 'PO Qty')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>PO Qty</span>
-                        {renderSortIcon('poQty')}
-                      </div>
-                    </th>
-
-                    {/* 7. Total Inward */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'totalInward' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('totalInward')}
-                      title={getSortTooltip('totalInward', 'Total Inward')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Total Inward</span>
-                        {renderSortIcon('totalInward')}
-                      </div>
-                    </th>
-
-                    {/* 8. Prev Dispatched */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'prevDispatched' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('prevDispatched')}
-                      title={getSortTooltip('prevDispatched', 'Prev Dispatched')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Prev Dispatched</span>
-                        {renderSortIcon('prevDispatched')}
-                      </div>
-                    </th>
-
-                    {/* 9. This DC Dispatch */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap bg-blue-50/40 text-blue-900 sticky top-0 z-20 ${
-                        sortField === 'thisDispatch' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('thisDispatch')}
-                      title={getSortTooltip('thisDispatch', 'This DC Dispatch')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>This DC Dispatch</span>
-                        {renderSortIcon('thisDispatch')}
-                      </div>
-                    </th>
-
-                    {/* 10. Balance After */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'balanceAfter' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('balanceAfter')}
-                      title={getSortTooltip('balanceAfter', 'Balance After')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span>Balance After</span>
-                        {renderSortIcon('balanceAfter')}
-                      </div>
-                    </th>
-
-                    {/* 11. Status */}
-                    <th
-                      className={`p-2.5 border border-slate-200 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${
-                        sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
-                      }`}
-                      onClick={() => handleSort('status')}
-                      title={getSortTooltip('status', 'Status')}
-                    >
-                      <div className="flex items-center gap-1.5 justify-center">
-                        <span>Status</span>
-                        {renderSortIcon('status')}
-                      </div>
-                    </th>
-
-                    {/* 12. Actions */}
-                    <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">Actions</th>
-                  </tr>
-
-                  {/* Inline Column Filter Inputs Row */}
-                  {showColumnFilters && (
-                    <tr className="bg-slate-100/90 border-b-2 border-slate-300">
-                      {isJoiningMode && (
-                        <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100" />
-                      )}
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter outward..."
-                          value={columnFilters.outwardNo || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, outwardNo: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter date..."
-                          value={columnFilters.outwardDate || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, outwardDate: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter DC..."
-                          value={columnFilters.ourDcNo || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, ourDcNo: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter customer..."
-                          value={columnFilters.customerName || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter PO/style..."
-                          value={columnFilters.poNumber || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter PO qty..."
-                          value={columnFilters.poQty || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, poQty: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter inward..."
-                          value={columnFilters.totalInward || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, totalInward: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter prev..."
-                          value={columnFilters.prevDispatched || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, prevDispatched: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter this DC..."
-                          value={columnFilters.thisDispatch || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, thisDispatch: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter bal..."
-                          value={columnFilters.balanceAfter || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, balanceAfter: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100">
-                        <input
-                          type="text"
-                          placeholder="Filter status..."
-                          value={columnFilters.status || ''}
-                          onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
-                          className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
-                        />
-                      </th>
-                      <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
-                        {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
-                          <button
-                            type="button"
-                            onClick={() => setColumnFilters({})}
-                            className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
-                            title="Clear column filters"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </th>
-                    </tr>
-                  )}
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
-                        <p>Loading Outward dispatches...</p>
-                      </td>
-                    </tr>
-                  ) : sortedOutwards.length === 0 ? (
-                    <tr>
-                      <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
-                        <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                          <div className="p-3 rounded-full bg-slate-50 text-slate-400">
-                            <Package className="w-8 h-8 stroke-[1.5]" />
-                          </div>
-                          <div className="text-sm font-bold text-slate-700">No Matching Outward Dispatches</div>
-                          <p className="text-slate-400 text-xs leading-relaxed">
-                            {hasActiveFilters
-                              ? 'No outward dispatches match your current search, column filters, or filters.'
-                              : 'No dispatches match the selected filter criteria or no outwards have been created yet.'}
-                          </p>
-                          {hasActiveFilters && (
-                            <button
-                              type="button"
-                              onClick={handleClearFilters}
-                              className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>Reset All Filters</span>
-                            </button>
-                          )}
-                          {!hasActiveFilters && canManage && (
-                            <Button
-                              onClick={onNewOutward}
-                              size="sm"
-                              className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs mt-2 shadow-xs cursor-pointer"
-                            >
-                              Create First Outward Entry
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedOutwards.map((row) => {
-                    const rowId = row.outwardId || row.id;
-                    const q = getQuantitySummaries(row);
-                    const isSelected = selectedOutwardIds.includes(rowId);
-                    const isSelectable = isRowSelectable(row);
-
-                    return (
-                      <tr
-                        key={rowId}
-                        className={`${
-                          isJoiningMode && !isSelectable
-                            ? 'opacity-40 bg-slate-50/50'
-                            : isSelected
-                            ? 'bg-blue-50/60 font-semibold'
-                            : 'hover:bg-slate-50/60'
-                        } transition-colors`}
-                      >
-                        {/* Checkbox for Joined DC */}
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold border-b-2 border-slate-300 uppercase tracking-wider text-[11px]">
+                      <tr>
+                        {/* Checkbox Column for Joined DC */}
                         {isJoiningMode && (
-                          <td className="p-2.5 border border-slate-200 text-center w-12">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={!isSelectable}
-                              onChange={() => handleToggleSelectRow(rowId)}
-                              title={
-                                !isSelectable
-                                  ? `Disabled: Must match PO (${targetPoAndStyle?.displayPo}) and Style (${targetPoAndStyle?.displayStyle})`
-                                  : isSelected
-                                  ? 'Deselect this dispatch'
-                                  : 'Select this dispatch to combine'
-                              }
-                              className={`w-4 h-4 rounded text-black focus:ring-black cursor-pointer ${
-                                !isSelectable ? 'opacity-30 cursor-not-allowed' : ''
-                              }`}
-                            />
-                          </td>
+                          <th className="p-2.5 border border-slate-200 text-center w-12 bg-[#DCEBF8] whitespace-nowrap sticky top-0 z-20">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#163858]">Join</span>
+                          </th>
                         )}
 
                         {/* 1. Outward No */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap">
-                          <button
-                            onClick={() => onViewDetails(row.outwardId || row.id)}
-                            className="font-bold text-[#1F4E79] hover:underline"
-                          >
-                            {row.outwardNo}
-                          </button>
-                        </td>
+                        <th
+                          className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'outwardNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('outwardNo')}
+                          title={getSortTooltip('outwardNo', 'Outward No')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <span>Outward No</span>
+                            {renderSortIcon('outwardNo')}
+                          </div>
+                        </th>
 
                         {/* 2. Dispatch Date */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap text-slate-600 font-medium">
-                          {formatDate(row.outwardDate)}
-                        </td>
-
-                        {/* 3. Our DC Number (normal plain text, no box) */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900">{row.ourDcNo}</div>
-                          {row.vehicleNumber && (
-                            <div className="text-[11px] text-slate-500 font-normal">
-                              Veh: {row.vehicleNumber}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* 4. Customer / Company (with Hover details) */}
-                        <td className="p-2.5 border border-slate-200 min-w-[240px]">
-                          <div
-                            onMouseEnter={(e) => handleMouseEnter(e, 'company', row)}
-                            onMouseLeave={handleMouseLeave}
-                            className="cursor-pointer group/comp inline-block"
-                          >
-                            <div className="font-semibold text-slate-900 group-hover/comp:text-[#1F4E79] group-hover/comp:underline transition-colors">
-                              {row.customerCompanyNameSnapshot || row.customerName || 'Customer'}
-                            </div>
-                            {row.subcontractorNameSnapshot && (
-                              <div className="text-[11px] text-slate-500 font-normal">
-                                Sub: {row.subcontractorNameSnapshot}
-                              </div>
-                            )}
+                        <th
+                          className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'outwardDate' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('outwardDate')}
+                          title={getSortTooltip('outwardDate', 'Dispatch Date')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <span>Dispatch Date</span>
+                            {renderSortIcon('outwardDate')}
                           </div>
-                        </td>
+                        </th>
 
-                        {/* 5. Style No & PO Number */}
-                        <td className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">
-                          <div
-                            onMouseEnter={(e) => handleMouseEnter(e, 'po', row)}
-                            onMouseLeave={handleMouseLeave}
-                            className="cursor-pointer group/po inline-block"
-                          >
-                            <div className="font-bold text-slate-900 group-hover/po:text-[#1F4E79] group-hover/po:underline transition-colors text-xs">
-                              {row.styleNoSnapshot || row.styleNo || '—'}
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              {row.poNumberSnapshot || row.poNumber}
-                            </div>
+                        {/* 3. Our DC Number */}
+                        <th
+                          className={`p-2.5 border border-slate-200 cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'ourDcNo' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('ourDcNo')}
+                          title={getSortTooltip('ourDcNo', 'Our DC Number')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <span>Our DC Number</span>
+                            {renderSortIcon('ourDcNo')}
                           </div>
-                        </td>
+                        </th>
 
-                        {/* 6. PO Order Quantity */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.ordered, 'text-slate-700')}
-                        </td>
+                        {/* 4. Customer / Company */}
+                        <th
+                          className={`p-2.5 border border-slate-200 min-w-[240px] cursor-pointer select-none transition-colors group sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'customerName' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('customerName')}
+                          title={getSortTooltip('customerName', 'Customer / Company')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <span>Customer / Company</span>
+                            {renderSortIcon('customerName')}
+                          </div>
+                        </th>
 
-                        {/* 7. Total Inward Received */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.inward, 'text-slate-600')}
-                        </td>
+                        {/* 5. Style No / PO No */}
+                        <th
+                          className={`p-2.5 border border-slate-200 min-w-[170px] cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'poNumber' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('poNumber')}
+                          title={getSortTooltip('poNumber', 'Style No / PO No')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <span>Style No / PO No</span>
+                            {renderSortIcon('poNumber')}
+                          </div>
+                        </th>
 
-                        {/* 8. Previous Dispatched Quantity */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.prevOutward, 'text-slate-500')}
-                        </td>
+                        {/* 6. PO Qty */}
+                        <th
+                          className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'poQty' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('poQty')}
+                          title={getSortTooltip('poQty', 'PO Qty')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span>PO Qty</span>
+                            {renderSortIcon('poQty')}
+                          </div>
+                        </th>
 
-                        {/* 9. This DC Dispatch Quantity */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap bg-blue-50/20">
-                          {renderUnitQty(q.dispatched, 'text-blue-700 font-bold')}
-                        </td>
+                        {/* 7. Total Inward */}
+                        <th
+                          className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'totalInward' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('totalInward')}
+                          title={getSortTooltip('totalInward', 'Total Inward')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span>Total Inward</span>
+                            {renderSortIcon('totalInward')}
+                          </div>
+                        </th>
 
-                        {/* 10. Balance Quantity After Dispatch */}
-                        <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
-                          {renderUnitQty(q.remaining, 'text-[#1F4E79]')}
-                        </td>
+                        {/* 8. Prev Dispatched */}
+                        <th
+                          className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'prevDispatched' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('prevDispatched')}
+                          title={getSortTooltip('prevDispatched', 'Prev Dispatched')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span>Prev Dispatched</span>
+                            {renderSortIcon('prevDispatched')}
+                          </div>
+                        </th>
+
+                        {/* 9. This DC Dispatch */}
+                        <th
+                          className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap bg-blue-50/40 text-blue-900 sticky top-0 z-20 ${sortField === 'thisDispatch' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('thisDispatch')}
+                          title={getSortTooltip('thisDispatch', 'This DC Dispatch')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span>This DC Dispatch</span>
+                            {renderSortIcon('thisDispatch')}
+                          </div>
+                        </th>
+
+                        {/* 10. Balance After */}
+                        <th
+                          className={`p-2.5 border border-slate-200 text-right cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'balanceAfter' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('balanceAfter')}
+                          title={getSortTooltip('balanceAfter', 'Balance After')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span>Balance After</span>
+                            {renderSortIcon('balanceAfter')}
+                          </div>
+                        </th>
 
                         {/* 11. Status */}
-                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                          {row.status === 'posted' && <StatusChip status="Posted" variant="green" />}
-                          {row.status === 'draft' && <StatusChip status="Draft" variant="slate" />}
-                          {row.status === 'reversed' && <StatusChip status="Reversed" variant="rose" />}
-                          {row.status === 'cancelled' && <StatusChip status="Cancelled" variant="rose" />}
-                          {!['posted', 'draft', 'reversed', 'cancelled'].includes(row.status) && (
-                            <StatusChip status={row.status} variant="amber" />
-                          )}
-                        </td>
-
-                        {/* 12. Actions: Clean text buttons matching Inward (View, Edit, Delete, Print) */}
-                        <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => onViewDetails(row.outwardId || row.id)}
-                              className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
-                            >
-                              View
-                            </button>
-
-                            {canManage && (() => {
-                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
-                              if (lockStatus) {
-                                return (
-                                  <span
-                                    title={lockStatus.reason}
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
-                                    Edit
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button
-                                  onClick={() => onEdit(row.outwardId || row.id)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
-                                >
-                                  Edit
-                                </button>
-                              );
-                            })()}
-
-                            {isAdmin && (() => {
-                              const lockStatus = POLockService.isLocked(row, lockedPOMap);
-                              if (lockStatus) {
-                                return (
-                                  <span
-                                    title={lockStatus.reason}
-                                    className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
-                                    Delete
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button
-                                  onClick={() => setDeleteTargetOutward(row)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
-                                >
-                                  Delete
-                                </button>
-                              );
-                            })()}
-
-                            <button
-                              onClick={() => onPrint(row.outwardId || row.id)}
-                              title="Generate Delivery Challan"
-                              className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:text-black bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                            >
-                              <FileText className="w-3 h-3 text-slate-600" />
-                              Generate Challan
-                            </button>
+                        <th
+                          className={`p-2.5 border border-slate-200 text-center cursor-pointer select-none transition-colors group whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] ${sortField === 'status' ? 'bg-[#DCEBF8] text-[#163858]' : 'hover:bg-slate-200/80'
+                            }`}
+                          onClick={() => handleSort('status')}
+                          title={getSortTooltip('status', 'Status')}
+                        >
+                          <div className="flex items-center gap-1.5 justify-center">
+                            <span>Status</span>
+                            {renderSortIcon('status')}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              </table>
-            </div>
+                        </th>
 
-            {/* All Records Summary Bar - One Stretch */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70">
-              <div>
-                Showing all <strong className="text-slate-900 font-bold">{sortedOutwards.length}</strong> {sortedOutwards.length === 1 ? 'entry' : 'entries'} in one stretch
-                {sortedOutwards.length !== outwards.length && (
-                  <span className="text-slate-400 font-normal ml-1.5">(filtered from {outwards.length} total)</span>
-                )}
+                        {/* 12. Actions */}
+                        <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] min-w-[130px] pr-12">Actions</th>
+                      </tr>
+
+                      {/* Inline Column Filter Inputs Row */}
+                      {showColumnFilters && (
+                        <tr className="bg-[#F5F9FD] border-b-2 border-slate-300">
+                          {isJoiningMode && (
+                            <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]" />
+                          )}
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter outward..."
+                              value={columnFilters.outwardNo || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, outwardNo: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter date..."
+                              value={columnFilters.outwardDate || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, outwardDate: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter DC..."
+                              value={columnFilters.ourDcNo || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, ourDcNo: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter customer..."
+                              value={columnFilters.customerName || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, customerName: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter PO/style..."
+                              value={columnFilters.poNumber || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, poNumber: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter PO qty..."
+                              value={columnFilters.poQty || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, poQty: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter inward..."
+                              value={columnFilters.totalInward || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, totalInward: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter prev..."
+                              value={columnFilters.prevDispatched || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, prevDispatched: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter this DC..."
+                              value={columnFilters.thisDispatch || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, thisDispatch: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter bal..."
+                              value={columnFilters.balanceAfter || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, balanceAfter: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-right"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD]">
+                            <input
+                              type="text"
+                              placeholder="Filter status..."
+                              value={columnFilters.status || ''}
+                              onChange={(e) => setColumnFilters({ ...columnFilters, status: e.target.value })}
+                              className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-slate-900 text-center"
+                            />
+                          </th>
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-[#F5F9FD] text-center">
+                            {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                              <button
+                                type="button"
+                                onClick={() => setColumnFilters({})}
+                                className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1.5 py-0.5 bg-rose-50 border border-rose-200 rounded cursor-pointer"
+                                title="Clear column filters"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </th>
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
+                            <p>Loading Outward dispatches...</p>
+                          </td>
+                        </tr>
+                      ) : sortedOutwards.length === 0 ? (
+                        <tr>
+                          <td colSpan={isJoiningMode ? 13 : 12} className="py-14 text-center text-xs text-slate-400 bg-white">
+                            <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                              <div className="p-3 rounded-full bg-slate-50 text-slate-400">
+                                <Package className="w-8 h-8 stroke-[1.5]" />
+                              </div>
+                              <div className="text-sm font-bold text-slate-700">No Matching Outward Dispatches</div>
+                              <p className="text-slate-400 text-xs leading-relaxed">
+                                {hasActiveFilters
+                                  ? 'No outward dispatches match your current search, column filters, or filters.'
+                                  : 'No dispatches match the selected filter criteria or no outwards have been created yet.'}
+                              </p>
+                              {hasActiveFilters && (
+                                <button
+                                  type="button"
+                                  onClick={handleClearFilters}
+                                  className="mt-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reset All Filters</span>
+                                </button>
+                              )}
+                              {!hasActiveFilters && canManage && (
+                                <Button
+                                  onClick={onNewOutward}
+                                  size="sm"
+                                  className="bg-[#1F4E79] hover:bg-[#163a5c] text-white border-[#1F4E79] text-xs mt-2 shadow-xs cursor-pointer"
+                                >
+                                  Create First Outward Entry
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        sortedOutwards.map((row) => {
+                          const rowId = row.outwardId || row.id;
+                          const q = getQuantitySummaries(row);
+                          const isSelected = selectedOutwardIds.includes(rowId);
+                          const isSelectable = isRowSelectable(row);
+
+                          return (
+                            <tr
+                              key={rowId}
+                              className={`${isJoiningMode && !isSelectable
+                                ? 'opacity-40 bg-slate-50/50'
+                                : isSelected
+                                  ? 'bg-blue-50/60 font-semibold'
+                                  : 'hover:bg-slate-50/60'
+                                } transition-colors`}
+                            >
+                              {/* Checkbox for Joined DC */}
+                              {isJoiningMode && (
+                                <td className="p-2.5 border border-slate-200 text-center w-12">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    disabled={!isSelectable}
+                                    onChange={() => handleToggleSelectRow(rowId)}
+                                    title={
+                                      !isSelectable
+                                        ? `Disabled: Must match PO (${targetPoAndStyle?.displayPo}) and Style (${targetPoAndStyle?.displayStyle})`
+                                        : isSelected
+                                          ? 'Deselect this dispatch'
+                                          : 'Select this dispatch to combine'
+                                    }
+                                    className={`w-4 h-4 rounded text-black focus:ring-black cursor-pointer ${!isSelectable ? 'opacity-30 cursor-not-allowed' : ''
+                                      }`}
+                                  />
+                                </td>
+                              )}
+
+                              {/* 1. Outward No */}
+                              <td className="p-2.5 border border-slate-200 whitespace-nowrap">
+                                <button
+                                  onClick={() => onViewDetails(row.outwardId || row.id)}
+                                  className="font-bold text-[#1F4E79] hover:underline"
+                                >
+                                  {row.outwardNo}
+                                </button>
+                              </td>
+
+                              {/* 2. Dispatch Date */}
+                              <td className="p-2.5 border border-slate-200 whitespace-nowrap text-slate-600 font-medium">
+                                {formatDate(row.outwardDate)}
+                              </td>
+
+                              {/* 3. Our DC Number (normal plain text, no box) */}
+                              <td className="p-2.5 border border-slate-200 whitespace-nowrap">
+                                <div className="font-semibold text-slate-900">{row.ourDcNo}</div>
+                                {row.vehicleNumber && (
+                                  <div className="text-[11px] text-slate-500 font-normal">
+                                    Veh: {row.vehicleNumber}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* 4. Customer / Company (with Hover details) */}
+                              <td className="p-2.5 border border-slate-200 min-w-[240px]">
+                                <div
+                                  onMouseEnter={(e) => handleMouseEnter(e, 'company', row)}
+                                  onMouseLeave={handleMouseLeave}
+                                  className="cursor-pointer group/comp inline-block"
+                                >
+                                  <div className="font-semibold text-slate-900 group-hover/comp:text-[#1F4E79] group-hover/comp:underline transition-colors">
+                                    {row.customerCompanyNameSnapshot || row.customerName || 'Customer'}
+                                  </div>
+                                  {row.subcontractorNameSnapshot && (
+                                    <div className="text-[11px] text-slate-500 font-normal">
+                                      Sub: {row.subcontractorNameSnapshot}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* 5. Style No & PO Number */}
+                              <td className="p-2.5 border border-slate-200 whitespace-nowrap min-w-[170px]">
+                                <div
+                                  onMouseEnter={(e) => handleMouseEnter(e, 'po', row)}
+                                  onMouseLeave={handleMouseLeave}
+                                  className="cursor-pointer group/po inline-block"
+                                >
+                                  <div className="font-bold text-slate-900 group-hover/po:text-[#1F4E79] group-hover/po:underline transition-colors text-xs">
+                                    {row.styleNoSnapshot || row.styleNo || '—'}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                    {row.poNumberSnapshot || row.poNumber}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* 6. PO Order Quantity */}
+                              <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                                {renderUnitQty(q.ordered, 'text-slate-700')}
+                              </td>
+
+                              {/* 7. Total Inward Received */}
+                              <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                                {renderUnitQty(q.inward, 'text-slate-600')}
+                              </td>
+
+                              {/* 8. Previous Dispatched Quantity */}
+                              <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                                {renderUnitQty(q.prevOutward, 'text-slate-500')}
+                              </td>
+
+                              {/* 9. This DC Dispatch Quantity */}
+                              <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap bg-blue-50/20">
+                                {renderUnitQty(q.dispatched, 'text-blue-700 font-bold')}
+                              </td>
+
+                              {/* 10. Balance Quantity After Dispatch */}
+                              <td className="p-2.5 border border-slate-200 text-right whitespace-nowrap">
+                                {renderUnitQty(q.remaining, 'text-[#1F4E79]')}
+                              </td>
+
+                              {/* 11. Status */}
+                              <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                                {row.status === 'posted' && <StatusChip status="Posted" variant="green" />}
+                                {row.status === 'draft' && <StatusChip status="Draft" variant="slate" />}
+                                {row.status === 'reversed' && <StatusChip status="Reversed" variant="rose" />}
+                                {row.status === 'cancelled' && <StatusChip status="Cancelled" variant="rose" />}
+                                {!['posted', 'draft', 'reversed', 'cancelled'].includes(row.status) && (
+                                  <StatusChip status={row.status} variant="amber" />
+                                )}
+                              </td>
+
+                              {/* 12. Actions: Clean text buttons matching Inward (View, Edit, Delete, Print) */}
+                              <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => onViewDetails(row.outwardId || row.id)}
+                                    className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
+                                  >
+                                    View
+                                  </button>
+
+                                  {canManage && (() => {
+                                    const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                                    if (lockStatus) {
+                                      return (
+                                        <span
+                                          title={lockStatus.reason}
+                                          className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                        >
+                                          <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                          Edit
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <button
+                                        onClick={() => onEdit(row.outwardId || row.id)}
+                                        className="px-2 py-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                      >
+                                        Edit
+                                      </button>
+                                    );
+                                  })()}
+
+                                  {isAdmin && (() => {
+                                    const lockStatus = POLockService.isLocked(row, lockedPOMap);
+                                    if (lockStatus) {
+                                      return (
+                                        <span
+                                          title={lockStatus.reason}
+                                          className="px-2 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 rounded cursor-not-allowed select-none inline-flex items-center gap-1"
+                                        >
+                                          <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                          Delete
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <button
+                                        onClick={() => setDeleteTargetOutward(row)}
+                                        className="px-2 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 rounded transition-colors"
+                                      >
+                                        Delete
+                                      </button>
+                                    );
+                                  })()}
+
+                                  <button
+                                    onClick={() => onPrint(row.outwardId || row.id)}
+                                    title="Generate Delivery Challan"
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:text-black bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                                  >
+                                    <FileText className="w-3 h-3 text-slate-600" />
+                                    Generate Challan
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+
+                    {/* Sticky Totals Footer */}
+                    <TableTotalsFooter
+                      cells={[
+                        { colSpan: isJoiningMode ? 6 : 5, label: `TOTAL (${sortedOutwards.length} ${sortedOutwards.length === 1 ? 'entry' : 'entries'})` },
+                        { pieces: outwardTotals.ordered.piece, kgs: outwardTotals.ordered.kg, isTotal: true },
+                        { pieces: outwardTotals.inward.piece, kgs: outwardTotals.inward.kg, isTotal: true },
+                        { pieces: outwardTotals.prevOutward.piece, kgs: outwardTotals.prevOutward.kg, isTotal: true },
+                        { pieces: outwardTotals.dispatched.piece, kgs: outwardTotals.dispatched.kg, isTotal: true },
+                        { pieces: outwardTotals.balance.piece, kgs: outwardTotals.balance.kg, isTotal: true },
+                        { align: 'center' },
+                        { align: 'center' }
+                      ]}
+                    />
+                  </table>
+                </div>
+
+                {/* All Records Summary Bar - One Stretch */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/70 shrink-0">
+                  <div>
+                    Showing all <strong className="text-slate-900 font-bold">{sortedOutwards.length}</strong> {sortedOutwards.length === 1 ? 'entry' : 'entries'} in one stretch
+                    {sortedOutwards.length !== outwards.length && (
+                      <span className="text-slate-400 font-normal ml-1.5">(filtered from {outwards.length} total)</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
+                </div>
               </div>
-              <span className="text-[11px] text-slate-400 font-medium">Full view · Header stays at top</span>
-            </div>
-          </div>
-        </Card>
+            </Card>
+          )}
+        </TableMaximizeWrapper>
       )}
 
       {/* Hover Floating Details Card */}

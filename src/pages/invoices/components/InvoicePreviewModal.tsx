@@ -302,6 +302,8 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             variant="outline"
             onClick={onClose}
             disabled={isSubmitting}
+            data-back-button="true"
+            title="Back / Cancel (Esc)"
             icon={<ArrowLeft className="w-4 h-4" />}
           >
             Back / Cancel

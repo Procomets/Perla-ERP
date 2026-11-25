@@ -49,7 +49,14 @@ export const InwardPrintView: React.FC<InwardPrintViewProps> = ({ inward, custom
     <div className="space-y-6">
       {/* Top action bar (hidden during print) */}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-2xs print:hidden">
-        <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={onBack}>
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<ArrowLeft className="w-4 h-4" />}
+          onClick={onBack}
+          data-back-button="true"
+          title="Back (Esc)"
+        >
           Back
         </Button>
         <Button variant="primary" size="sm" icon={<Printer className="w-4 h-4" />} onClick={handlePrint}>

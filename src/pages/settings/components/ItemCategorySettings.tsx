@@ -17,6 +17,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { Card } from '../../../components/ui/Card';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 
 interface ItemCategorySettingsProps {
   currentUserId: string;
@@ -346,113 +347,132 @@ export const ItemCategorySettings: React.FC<ItemCategorySettingsProps> = ({
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/80 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 px-4 w-12">#</th>
-                  <th className="py-3 px-4">Category Details</th>
-                  <th className="py-3 px-4">Code / Prefix</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Audit Info</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredCategories.map((cat, idx) => {
-                  const creatorName = getUserDisplayName(cat.createdBy);
-                  const updaterName = cat.updatedBy ? getUserDisplayName(cat.updatedBy) : null;
-
-                  return (
-                    <tr key={cat.id} className="hover:bg-slate-50/80 transition-colors">
-                      {/* Row Index */}
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
-                        {idx + 1}
-                      </td>
-
-                      {/* Category Name & Description */}
-                      <td className="py-3.5 px-4">
-                        <div className="space-y-0.5">
-                          <span className="font-bold text-slate-900 text-[13px] block">
-                            {cat.categoryName}
-                          </span>
-                          {cat.description && (
-                            <span className="text-[11px] text-slate-400 block line-clamp-1">
-                              {cat.description}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Code Badge */}
-                      <td className="py-3.5 px-4">
-                        <span className="font-mono font-bold text-xs bg-slate-100 text-[#1F4E79] px-2 py-0.5 rounded border border-slate-200">
-                          {cat.categoryCode}
-                        </span>
-                      </td>
-
-                      {/* Status Toggle */}
-                      <td className="py-3.5 px-4">
-                        <button
-                          onClick={() => handleToggleActive(cat)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
-                            cat.isActive
-                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
-                          }`}
-                          title="Click to toggle status"
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              cat.isActive ? 'bg-emerald-500' : 'bg-slate-400'
-                            }`}
-                          />
-                          <span>{cat.isActive ? 'Active' : 'Inactive'}</span>
-                        </button>
-                      </td>
-
-                      {/* Created / Updated Info */}
-                      <td className="py-3.5 px-4 text-slate-500">
-                        <div>
-                          <span className="text-[11px] text-slate-600 block">
-                            Added by <span className="font-medium text-slate-800">{creatorName}</span>
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono block">
-                            {formatDateTime(cat.createdAt)}
-                          </span>
-                          {cat.updatedAt && (
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
-                              Updated {updaterName ? `by ${updaterName}` : ''}: {formatDateTime(cat.updatedAt)}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleOpenEdit(cat)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 transition cursor-pointer"
-                            title="Edit category"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenDelete(cat)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Delete category"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
+          <TableMaximizeWrapper
+            title="Item Category Directory"
+            badge={
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+                {filteredCategories.length} Categories
+              </span>
+            }
+          >
+            {(isMaximized) => (
+              <div
+                data-table-scroll="true"
+                className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px] overflow-y-auto'}`}
+              >
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                    <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[11px] font-bold text-[#1F4E79] uppercase tracking-wider">
+                      <th className="py-3 px-4 w-12 border-r border-slate-200">#</th>
+                      <th className="py-3 px-4 border-r border-slate-200">Category Details</th>
+                      <th className="py-3 px-4 border-r border-slate-200">Code / Prefix</th>
+                      <th className="py-3 px-4 border-r border-slate-200">Status</th>
+                      <th className="py-3 px-4 border-r border-slate-200">Audit Info</th>
+                      <th className="py-3 px-4 text-right pr-12 min-w-[130px]">Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {filteredCategories.map((cat, idx) => {
+                      const creatorName = getUserDisplayName(cat.createdBy);
+                      const updaterName = cat.updatedBy ? getUserDisplayName(cat.updatedBy) : null;
+
+                      return (
+                        <tr key={cat.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* Row Index */}
+                          <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
+                            {idx + 1}
+                          </td>
+
+                          {/* Category Name & Description */}
+                          <td className="py-3.5 px-4">
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-slate-900 text-[13px] block">
+                                {cat.categoryName}
+                              </span>
+                              {cat.description && (
+                                <span className="text-[11px] text-slate-400 block line-clamp-1">
+                                  {cat.description}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Code Badge */}
+                          <td className="py-3.5 px-4">
+                            <span className="font-mono font-bold text-xs bg-slate-100 text-[#1F4E79] px-2 py-0.5 rounded border border-slate-200">
+                              {cat.categoryCode}
+                            </span>
+                          </td>
+
+                          {/* Status Toggle */}
+                          <td className="py-3.5 px-4">
+                            <button
+                              onClick={() => handleToggleActive(cat)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                                cat.isActive
+                                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                              }`}
+                              title="Click to toggle status"
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  cat.isActive ? 'bg-emerald-500' : 'bg-slate-400'
+                                }`}
+                              />
+                              <span>{cat.isActive ? 'Active' : 'Inactive'}</span>
+                            </button>
+                          </td>
+
+                          {/* Created / Updated Info */}
+                          <td className="py-3.5 px-4 text-slate-500">
+                            <div>
+                              <span className="text-[11px] text-slate-600 block">
+                                Added by <span className="font-medium text-slate-800">{creatorName}</span>
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono block">
+                                {formatDateTime(cat.createdAt)}
+                              </span>
+                              {cat.updatedAt && (
+                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                  Updated {updaterName ? `by ${updaterName}` : ''}: {formatDateTime(cat.updatedAt)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleOpenEdit(cat)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 transition cursor-pointer"
+                                title="Edit category"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenDelete(cat)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                title="Delete category"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 6, label: `TOTAL (${filteredCategories.length} categories)` }
+                    ]}
+                  />
+                </table>
+              </div>
+            )}
+          </TableMaximizeWrapper>
         )}
       </Card>
 

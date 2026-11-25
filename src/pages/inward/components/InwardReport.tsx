@@ -32,6 +32,7 @@ import {
   X
 } from 'lucide-react';
 import { useTableControls, TableColumnConfig } from '../../../hooks/useTableControls';
+import { TableMaximizeWrapper } from '../../../components/ui/TableMaximizeWrapper';
 
 export interface FlattenedInwardLine {
   id: string;
@@ -540,8 +541,9 @@ export const InwardReport: React.FC<InwardReportProps> = ({
           <button
             type="button"
             onClick={onBack}
+            data-back-button="true"
             className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
-            title="Back to Inward Receipts"
+            title="Back to Inward Receipts (Esc)"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -1130,202 +1132,238 @@ export const InwardReport: React.FC<InwardReportProps> = ({
         </div>
       ) : (
         /* --- VIEW MODE 2: Comprehensive Dense Data Table with Table Controls --- */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          {/* Table Controls Bar */}
-          <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
-            {/* Search Bar with Column Selector */}
-            <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
-              <div className="relative">
-                <select
-                  value={inwardTableControls.searchColumn}
-                  onChange={(e) => inwardTableControls.setSearchColumn(e.target.value)}
-                  className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
-                >
-                  <option value="ALL">All Columns</option>
-                  {INWARD_REPORT_TABLE_COLUMNS.map((col) => (
-                    <option key={col.key} value={col.key}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+        <TableMaximizeWrapper
+          title="Inward Receipt Detailed Report"
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {inwardTableControls.filteredCount} Lines
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <div className={`bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col ${isMaximized ? 'flex-1 min-h-0' : ''}`}>
+              {/* Table Controls Bar */}
+              <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+                {/* Search Bar with Column Selector */}
+                <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
+                  <div className="relative">
+                    <select
+                      value={inwardTableControls.searchColumn}
+                      onChange={(e) => inwardTableControls.setSearchColumn(e.target.value)}
+                      className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="ALL">All Columns</option>
+                      {INWARD_REPORT_TABLE_COLUMNS.map((col) => (
+                        <option key={col.key} value={col.key}>
+                          {col.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
 
-              <div className="relative flex-1 flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={
-                    inwardTableControls.searchColumn === 'ALL'
-                      ? 'Inward #, DC #, Style, PO, Colour...'
-                      : `Search by ${INWARD_REPORT_TABLE_COLUMNS.find((c) => c.key === inwardTableControls.searchColumn)?.label}...`
-                  }
-                  value={inwardTableControls.searchQuery}
-                  onChange={(e) => inwardTableControls.setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
-                />
-                {inwardTableControls.searchQuery && (
+                  <div className="relative flex-1 flex items-center">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder={
+                        inwardTableControls.searchColumn === 'ALL'
+                          ? 'Inward #, DC #, Style, PO, Colour...'
+                          : `Search by ${INWARD_REPORT_TABLE_COLUMNS.find((c) => c.key === inwardTableControls.searchColumn)?.label}...`
+                      }
+                      value={inwardTableControls.searchQuery}
+                      onChange={(e) => inwardTableControls.setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+                    />
+                    {inwardTableControls.searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => inwardTableControls.setSearchQuery('')}
+                        className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Controls: Toggle Inline Column Filters Button & Reset */}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => inwardTableControls.setSearchQuery('')}
-                    className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                    title="Clear search"
+                    onClick={() => inwardTableControls.setShowColumnFilters(!inwardTableControls.showColumnFilters)}
+                    className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      inwardTableControls.showColumnFilters || Object.values(inwardTableControls.columnFilters).some((v) => (v || '').trim() !== '')
+                        ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                    title="Toggle column-wise search inputs on table header"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Column Filters</span>
+                    {Object.values(inwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                      <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                        {Object.values(inwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
+                      </span>
+                    )}
                   </button>
-                )}
+
+                  {inwardTableControls.isAnyFilterActive && (
+                    <button
+                      type="button"
+                      onClick={inwardTableControls.handleResetFilters}
+                      className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                      title="Reset table search, column filters, and sorting"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Controls: Toggle Inline Column Filters Button & Reset */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => inwardTableControls.setShowColumnFilters(!inwardTableControls.showColumnFilters)}
-                className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                  inwardTableControls.showColumnFilters || Object.values(inwardTableControls.columnFilters).some((v) => (v || '').trim() !== '')
-                    ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-                title="Toggle column-wise search inputs on table header"
+              {/* Table Container with Sticky Headers */}
+              <div
+                data-table-scroll="true"
+                className={`overflow-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Column Filters</span>
-                {Object.values(inwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
-                  <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                    {Object.values(inwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
-                  </span>
-                )}
-              </button>
-
-              {inwardTableControls.isAnyFilterActive && (
-                <button
-                  type="button"
-                  onClick={inwardTableControls.handleResetFilters}
-                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                  title="Reset table search, column filters, and sorting"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Table Container with Sticky Headers */}
-          <div className="max-h-[620px] overflow-auto relative">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                <tr className="border-b border-slate-200 text-[11px] font-bold text-white uppercase tracking-wider bg-[#1F4E79]">
-                  <th
-                    onClick={() => inwardTableControls.handleSort('inwardNo')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Inward #</span>
-                      {inwardTableControls.renderSortIcon('inwardNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('inwardDate')}
-                    className="py-2.5 px-3 text-center border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Date</span>
-                      {inwardTableControls.renderSortIcon('inwardDate')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('customerDcNo')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Customer DC</span>
-                      {inwardTableControls.renderSortIcon('customerDcNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('customerName')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Customer Name</span>
-                      {inwardTableControls.renderSortIcon('customerName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('subcontractorName')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Contractor Unit</span>
-                      {inwardTableControls.renderSortIcon('subcontractorName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('styleNo')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Style / PO</span>
-                      {inwardTableControls.renderSortIcon('styleNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('colourName')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Colour Name</span>
-                      {inwardTableControls.renderSortIcon('colourName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('process')}
-                    className="py-2.5 px-3 border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Wash / Process</span>
-                      {inwardTableControls.renderSortIcon('process')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('receivedQty')}
-                    className="py-2.5 px-3 text-right border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Inward Qty</span>
-                      {inwardTableControls.renderSortIcon('receivedQty')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('balanceAfterReceipt')}
-                    className="py-2.5 px-3 text-right border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>PO Balance</span>
-                      {inwardTableControls.renderSortIcon('balanceAfterReceipt')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('unit')}
-                    className="py-2.5 px-3 text-center border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Unit</span>
-                      {inwardTableControls.renderSortIcon('unit')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => inwardTableControls.handleSort('status')}
-                    className="py-2.5 px-3 text-center border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Status</span>
-                      {inwardTableControls.renderSortIcon('status')}
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3 text-center align-middle">Action</th>
-                </tr>
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                    <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider">
+                      <th
+                        onClick={() => inwardTableControls.handleSort('inwardNo')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'inwardNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Inward #</span>
+                          {inwardTableControls.renderSortIcon('inwardNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('inwardDate')}
+                        className={`py-2.5 px-3 text-center border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'inwardDate' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Date</span>
+                          {inwardTableControls.renderSortIcon('inwardDate')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('customerDcNo')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'customerDcNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Customer DC</span>
+                          {inwardTableControls.renderSortIcon('customerDcNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('customerName')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'customerName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Customer Name</span>
+                          {inwardTableControls.renderSortIcon('customerName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('subcontractorName')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'subcontractorName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Contractor Unit</span>
+                          {inwardTableControls.renderSortIcon('subcontractorName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('styleNo')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'styleNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Style / PO</span>
+                          {inwardTableControls.renderSortIcon('styleNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('colourName')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'colourName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Colour Name</span>
+                          {inwardTableControls.renderSortIcon('colourName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('process')}
+                        className={`py-2.5 px-3 border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'process' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Wash / Process</span>
+                          {inwardTableControls.renderSortIcon('process')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('receivedQty')}
+                        className={`py-2.5 px-3 text-right border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'receivedQty' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Inward Qty</span>
+                          {inwardTableControls.renderSortIcon('receivedQty')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('balanceAfterReceipt')}
+                        className={`py-2.5 px-3 text-right border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'balanceAfterReceipt' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          <span>PO Balance</span>
+                          {inwardTableControls.renderSortIcon('balanceAfterReceipt')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('unit')}
+                        className={`py-2.5 px-3 text-center border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'unit' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Unit</span>
+                          {inwardTableControls.renderSortIcon('unit')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => inwardTableControls.handleSort('status')}
+                        className={`py-2.5 px-3 text-center border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          inwardTableControls.sortField === 'status' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Status</span>
+                          {inwardTableControls.renderSortIcon('status')}
+                        </div>
+                      </th>
+                      <th className="py-2.5 px-3 text-center align-middle pr-12 min-w-[130px]">Action</th>
+                    </tr>
 
                 {/* Inline Column Filter Row */}
                 {inwardTableControls.showColumnFilters && (
@@ -1624,6 +1662,8 @@ export const InwardReport: React.FC<InwardReportProps> = ({
             </span>
           </div>
         </div>
+        )}
+      </TableMaximizeWrapper>
       )}
     </div>
   );

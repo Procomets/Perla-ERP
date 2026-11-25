@@ -51,7 +51,7 @@ export const EmployeeViewModal: React.FC<EmployeeViewModalProps> = ({
 
       <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
         <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden text-slate-800 animate-in fade-in zoom-in-98 duration-150">
-          
+
           {/* Header - Clean, seamless & airy */}
           <div className="px-7 pt-7 pb-6 flex items-start justify-between border-b border-slate-100">
             <div className="flex items-center gap-4">
@@ -73,11 +73,10 @@ export const EmployeeViewModal: React.FC<EmployeeViewModalProps> = ({
                     {employee.fullName}
                   </h2>
                   <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                      isActive
-                        ? 'text-emerald-700 bg-emerald-50/80 border border-emerald-200/60'
-                        : 'text-slate-500 bg-slate-100 border border-slate-200'
-                    }`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${isActive
+                      ? 'text-emerald-700 bg-emerald-50/80 border border-emerald-200/60'
+                      : 'text-slate-500 bg-slate-100 border border-slate-200'
+                      }`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                     {employee.employmentStatus}
@@ -131,7 +130,7 @@ export const EmployeeViewModal: React.FC<EmployeeViewModalProps> = ({
 
           {/* Modal Body - Clean Typography & Subtle Dividers */}
           <div className="p-7 max-h-[62vh] overflow-y-auto space-y-6 text-xs">
-            
+
             {/* Section 1: Contact & Personal Details */}
             <div>
               <h3 className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-3">

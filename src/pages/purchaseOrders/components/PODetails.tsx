@@ -229,6 +229,8 @@ export const PODetails: React.FC<PODetailsProps> = ({
             <button
               type="button"
               onClick={onBack}
+              data-back-button="true"
+              title="Back to Purchase Orders (Esc)"
               className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -411,22 +413,20 @@ export const PODetails: React.FC<PODetailsProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`pb-2.5 transition-colors cursor-pointer border-b-2 ${
-              activeTab === 'overview'
-                ? 'border-[#1F4E79] text-[#1F4E79]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`pb-2.5 transition-colors cursor-pointer border-b-2 ${activeTab === 'overview'
+              ? 'border-[#1F4E79] text-[#1F4E79]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             Order Overview
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('audit')}
-            className={`pb-2.5 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'audit'
-                ? 'border-[#1F4E79] text-[#1F4E79]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`pb-2.5 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${activeTab === 'audit'
+              ? 'border-[#1F4E79] text-[#1F4E79]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             <span>Audit History</span>
             <span className="px-1.5 py-0.2 bg-slate-100 rounded-full text-[10px]">
@@ -436,11 +436,10 @@ export const PODetails: React.FC<PODetailsProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('downstream')}
-            className={`pb-2.5 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'downstream'
-                ? 'border-[#1F4E79] text-[#1F4E79]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`pb-2.5 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${activeTab === 'downstream'
+              ? 'border-[#1F4E79] text-[#1F4E79]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             <span>Downstream Operations</span>
             <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full text-[10px]">

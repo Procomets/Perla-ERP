@@ -49,6 +49,8 @@ export const LoginPage: React.FC = () => {
         <div className="relative z-10 flex flex-col items-start">
           <button 
             onClick={() => navigate('/')} 
+            data-back-button="true"
+            title="Back to Home (Esc)"
             className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors mb-8 text-sm group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />

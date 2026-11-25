@@ -164,6 +164,8 @@ export const QuickInwardView: React.FC<QuickInwardViewProps> = ({
             size="sm"
             icon={<ArrowLeft className="w-4 h-4" />}
             onClick={onBackToTable}
+            data-back-button="true"
+            title="Back to Inward Receipts (Esc)"
           >
             Back to Inward Receipts
           </Button>

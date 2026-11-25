@@ -18,6 +18,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { Card } from '../../../components/ui/Card';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 
 interface HsnMasterSettingsProps {
   currentUserId: string;
@@ -281,80 +282,99 @@ export const HsnMasterSettings: React.FC<HsnMasterSettingsProps> = ({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                  <th className="py-3 px-4 w-12 text-center">#</th>
-                  <th className="py-3 px-4 w-36">HSN No.</th>
-                  <th className="py-3 px-4">Description</th>
-                  <th className="py-3 px-4 w-28 text-center">Status</th>
-                  <th className="py-3 px-4 w-28 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredList.map((item, idx) => (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
-                      {idx + 1}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="inline-block px-2.5 py-1 rounded-md bg-blue-50 text-blue-900 border border-blue-200 font-mono font-bold text-xs">
-                        {item.hsnNo}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-medium text-slate-800">
-                      {item.description}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(item)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition cursor-pointer ${
-                          item.isActive
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
-                        }`}
-                        title="Click to toggle status"
-                      >
-                        {item.isActive ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-600" />
-                            Active
-                          </>
-                        ) : (
-                          <>
-                            <X className="w-3 h-3 text-slate-400" />
-                            Inactive
-                          </>
-                        )}
-                      </button>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-1.5 text-slate-400 hover:text-[#1F4E79] hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                          title="Edit HSN"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                          title="Delete HSN"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TableMaximizeWrapper
+            title="HSN Master Directory"
+            badge={
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+                {filteredList.length} Entries
+              </span>
+            }
+          >
+            {(isMaximized) => (
+              <div
+                data-table-scroll="true"
+                className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px] overflow-y-auto'}`}
+              >
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                    <tr className="border-b-2 border-slate-300 text-[11px] font-bold text-[#1F4E79] uppercase tracking-wider bg-[#EEF5FB]">
+                      <th className="py-3 px-4 w-12 text-center border-r border-slate-200">#</th>
+                      <th className="py-3 px-4 w-36 border-r border-slate-200">HSN No.</th>
+                      <th className="py-3 px-4 border-r border-slate-200">Description</th>
+                      <th className="py-3 px-4 w-28 text-center border-r border-slate-200">Status</th>
+                      <th className="py-3 px-4 w-28 text-right pr-12 min-w-[130px]">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredList.map((item, idx) => (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-block px-2.5 py-1 rounded-md bg-blue-50 text-blue-900 border border-blue-200 font-mono font-bold text-xs">
+                            {item.hsnNo}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-800">
+                          {item.description}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(item)}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                              item.isActive
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
+                            }`}
+                            title="Click to toggle status"
+                          >
+                            {item.isActive ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                Active
+                              </>
+                            ) : (
+                              <>
+                                <X className="w-3 h-3 text-slate-400" />
+                                Inactive
+                              </>
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 text-slate-400 hover:text-[#1F4E79] hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                              title="Edit HSN"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDelete(item)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="Delete HSN"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 5, label: `TOTAL (${filteredList.length} HSN entries)` }
+                    ]}
+                  />
+                </table>
+              </div>
+            )}
+          </TableMaximizeWrapper>
         )}
       </div>
 

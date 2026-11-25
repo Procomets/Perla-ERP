@@ -398,8 +398,8 @@ export const POForm: React.FC<POFormProps> = ({
   const defaultInitialLines: POColourLine[] = initialPO?.colourLines?.length
     ? initialPO.colourLines
     : initialPO?.lines?.length
-    ? initialPO.lines
-    : [
+      ? initialPO.lines
+      : [
         {
           id: `pol_${Date.now()}_1`,
           lineId: `pol_${Date.now()}_1`,
@@ -866,8 +866,7 @@ export const POForm: React.FC<POFormProps> = ({
     // 6. Subcontractor / Subcompany Unit
     if (unitType !== 'none' && !selectedSubUnitId) {
       errors.push(
-        `Please select a ${
-          unitType === 'subcontractor' ? 'Subcontractor Unit' : 'Sister Company Unit'
+        `Please select a ${unitType === 'subcontractor' ? 'Subcontractor Unit' : 'Sister Company Unit'
         }.`
       );
     }
@@ -1030,6 +1029,8 @@ export const POForm: React.FC<POFormProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            data-back-button="true"
+            title="Cancel and return to list (Esc)"
             className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -1119,22 +1120,20 @@ export const POForm: React.FC<POFormProps> = ({
               <button
                 type="button"
                 onClick={() => setProcessCategory('washing')}
-                className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
-                  processCategory?.toLowerCase() === 'washing'
-                    ? 'bg-black text-white border-black shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                }`}
+                className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${processCategory?.toLowerCase() === 'washing'
+                  ? 'bg-black text-white border-black shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
               >
                 Washing
               </button>
               <button
                 type="button"
                 onClick={() => setProcessCategory('dyeing')}
-                className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
-                  processCategory?.toLowerCase() === 'dyeing'
-                    ? 'bg-black text-white border-black shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                }`}
+                className={`py-2 px-3 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${processCategory?.toLowerCase() === 'dyeing'
+                  ? 'bg-black text-white border-black shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
               >
                 Dyeing
               </button>
@@ -1246,15 +1245,14 @@ export const POForm: React.FC<POFormProps> = ({
             return (
               <div
                 key={line.id || line.lineId || idx}
-                className={`p-3.5 rounded-xl border transition-colors space-y-2 text-xs ${
-                  isLineInvoiced
-                    ? 'border-emerald-200 bg-emerald-50/30'
-                    : isBelowInward
+                className={`p-3.5 rounded-xl border transition-colors space-y-2 text-xs ${isLineInvoiced
+                  ? 'border-emerald-200 bg-emerald-50/30'
+                  : isBelowInward
                     ? 'border-rose-300 bg-rose-50/40 ring-1 ring-rose-200'
                     : isLineApproved
-                    ? 'border-blue-200 bg-blue-50/20'
-                    : 'border-slate-200 bg-slate-50/70 hover:bg-slate-50'
-                }`}
+                      ? 'border-blue-200 bg-blue-50/20'
+                      : 'border-slate-200 bg-slate-50/70 hover:bg-slate-50'
+                  }`}
               >
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
                   <div className="flex items-center gap-2">
@@ -1275,11 +1273,10 @@ export const POForm: React.FC<POFormProps> = ({
                     )}
                     {hasInwardForThisRow && (
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          isBelowInward
-                            ? 'bg-rose-100 text-rose-800 border-rose-300'
-                            : 'bg-amber-100 text-amber-800 border-amber-300'
-                        }`}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isBelowInward
+                          ? 'bg-rose-100 text-rose-800 border-rose-300'
+                          : 'bg-amber-100 text-amber-800 border-amber-300'
+                          }`}
                       >
                         Inward Received: {minQty.toLocaleString()} {line.unit}
                       </span>
@@ -1301,12 +1298,12 @@ export const POForm: React.FC<POFormProps> = ({
                         isLineInvoiced
                           ? 'Cannot remove: this colour line has already been invoiced.'
                           : isPoFullyLocked
-                          ? 'Cannot remove: PO entry is locked.'
-                          : hasInwardForThisRow
-                          ? `Cannot remove: ${minQty.toLocaleString()} ${line.unit} already received in Inward entries`
-                          : lines.length <= 1
-                          ? 'PO must have at least one line'
-                          : 'Remove Row'
+                            ? 'Cannot remove: PO entry is locked.'
+                            : hasInwardForThisRow
+                              ? `Cannot remove: ${minQty.toLocaleString()} ${line.unit} already received in Inward entries`
+                              : lines.length <= 1
+                                ? 'PO must have at least one line'
+                                : 'Remove Row'
                       }
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1339,8 +1336,8 @@ export const POForm: React.FC<POFormProps> = ({
                         isLineInvoiced
                           ? 'Colour cannot be changed: line has already been invoiced.'
                           : hasInwardForThisRow
-                          ? `Colour cannot be changed: ${minQty.toLocaleString()} ${line.unit} already received in Inward.`
-                          : undefined
+                            ? `Colour cannot be changed: ${minQty.toLocaleString()} ${line.unit} already received in Inward.`
+                            : undefined
                       }
                       onChange={(e) => {
                         const val = e.target.value;
@@ -1357,11 +1354,10 @@ export const POForm: React.FC<POFormProps> = ({
                           setLines(updated);
                         }
                       }}
-                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
-                        hasInwardForThisRow || isRowDisabled
-                          ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
-                          : ''
-                      }`}
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${hasInwardForThisRow || isRowDisabled
+                        ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
+                        : ''
+                        }`}
                       required
                     >
                       <option value="">Select Colour...</option>
@@ -1407,9 +1403,8 @@ export const POForm: React.FC<POFormProps> = ({
                           handleLineChange(idx, 'processType', val);
                         }
                       }}
-                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
-                        isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
+                        }`}
                       required
                     >
                       <option value="">Select Process...</option>
@@ -1472,9 +1467,8 @@ export const POForm: React.FC<POFormProps> = ({
                           setLines(updated);
                         }
                       }}
-                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
-                        isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${isRowDisabled ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed' : ''
+                        }`}
                       required
                     >
                       <option value="">Select HSN...</option>
@@ -1506,11 +1500,10 @@ export const POForm: React.FC<POFormProps> = ({
                       </label>
                       {hasInwardForThisRow && (
                         <span
-                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${
-                            isBelowInward
-                              ? 'bg-rose-100 text-rose-800 border-rose-300'
-                              : 'bg-amber-100/70 text-amber-700 border-amber-300'
-                          }`}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${isBelowInward
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : 'bg-amber-100/70 text-amber-700 border-amber-300'
+                            }`}
                           title={`Minimum allowable: ${minQty.toLocaleString()} ${line.unit} (Inward received)`}
                         >
                           Min: {minQty.toLocaleString()}
@@ -1528,8 +1521,8 @@ export const POForm: React.FC<POFormProps> = ({
                           isLineInvoiced
                             ? 'Quantity cannot be changed: line has already been invoiced.'
                             : hasInwardForThisRow
-                            ? `Min allowable quantity: ${minQty} ${line.unit}`
-                            : undefined
+                              ? `Min allowable quantity: ${minQty} ${line.unit}`
+                              : undefined
                         }
                         onChange={(e) => {
                           const raw = e.target.value;
@@ -1561,13 +1554,12 @@ export const POForm: React.FC<POFormProps> = ({
                             );
                           }
                         }}
-                        className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
-                          isRowDisabled
-                            ? 'bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200'
-                            : isBelowInward
+                        className={`w-2/3 h-9 bg-white rounded-lg px-2 text-xs font-medium focus:outline-hidden transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${isRowDisabled
+                          ? 'bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200'
+                          : isBelowInward
                             ? 'border-2 border-rose-500 bg-rose-50/50 text-rose-900 focus:border-rose-600'
                             : 'border border-slate-200 text-slate-900 focus:border-[#1F4E79]'
-                        }`}
+                          }`}
                         required
                       />
                       <select
@@ -1577,8 +1569,8 @@ export const POForm: React.FC<POFormProps> = ({
                           isLineInvoiced
                             ? 'Unit cannot be changed: line has already been invoiced.'
                             : hasInwardForThisRow
-                            ? 'Unit locked because inward entries have already been received in this unit.'
-                            : undefined
+                              ? 'Unit locked because inward entries have already been received in this unit.'
+                              : undefined
                         }
                         onChange={(e) =>
                           handleLineChange(
@@ -1587,11 +1579,10 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as QuantityUnit
                           )
                         }
-                        className={`w-1/3 h-9 bg-white border border-slate-200 rounded-lg px-1 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${
-                          hasInwardForThisRow || isRowDisabled
-                            ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
-                            : ''
-                        }`}
+                        className={`w-1/3 h-9 bg-white border border-slate-200 rounded-lg px-1 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] ${hasInwardForThisRow || isRowDisabled
+                          ? 'disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed'
+                          : ''
+                          }`}
                       >
                         <option value="piece">Pcs</option>
                         <option value="kg">Kg</option>
@@ -1624,9 +1615,8 @@ export const POForm: React.FC<POFormProps> = ({
                             e.target.value as RateBasis
                           )
                         }
-                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700 ${
-                          isRowDisabled ? 'disabled:bg-slate-100 disabled:cursor-not-allowed' : ''
-                        }`}
+                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-1 text-[11px] font-medium text-slate-700 ${isRowDisabled ? 'disabled:bg-slate-100 disabled:cursor-not-allowed' : ''
+                          }`}
                       >
                         <option value="per_piece">/ Pc</option>
                         <option value="per_kg">/ Kg</option>
@@ -1656,9 +1646,8 @@ export const POForm: React.FC<POFormProps> = ({
                             e.preventDefault();
                           }
                         }}
-                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
-                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
-                        }`}
+                        className={`w-1/2 h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-900 focus:outline-hidden focus:border-[#1F4E79] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                          }`}
                         required
                       />
                     </div>
@@ -1691,9 +1680,8 @@ export const POForm: React.FC<POFormProps> = ({
                             e.preventDefault();
                           }
                         }}
-                        className={`w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${
-                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
-                        }`}
+                        className={`w-full h-9 bg-white border border-amber-300 rounded-lg px-2 text-xs font-medium text-amber-900 focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:hidden [&::-webkit-inner-spin-button]:hidden ${isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                          }`}
                         required
                       />
                     ) : (
@@ -1706,9 +1694,8 @@ export const POForm: React.FC<POFormProps> = ({
                         onChange={(e) =>
                           handleLineChange(idx, 'notes', e.target.value)
                         }
-                        className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-700 ${
-                          isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
-                        }`}
+                        className={`w-full h-9 bg-white border border-slate-200 rounded-lg px-2 text-xs font-medium text-slate-700 ${isRowDisabled ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                          }`}
                       />
                     )}
                   </div>
@@ -1779,8 +1766,8 @@ export const POForm: React.FC<POFormProps> = ({
               isPoFullyLocked
                 ? 'All colour lines have been moved to invoice generation. PO entry cannot be edited.'
                 : hasInward && !isUserAdmin
-                ? 'Inward has been entered. Only Admin can edit this PO.'
-                : undefined
+                  ? 'Inward has been entered. Only Admin can edit this PO.'
+                  : undefined
             }
             className={
               isPoFullyLocked || (hasInward && !isUserAdmin)

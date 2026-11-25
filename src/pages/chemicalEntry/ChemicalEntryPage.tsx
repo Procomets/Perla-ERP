@@ -20,6 +20,10 @@ import {
 } from '../../utils/unitConversion';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../components/ui/TableMaximizeWrapper';
 import { formatDate, formatCurrency, formatQuantity } from '../../utils/formatters';
 import {
   FlaskConical,
@@ -1490,6 +1494,19 @@ const ChemicalEntryContent: React.FC = () => {
     }
   };
 
+  const chemicalTotals = useMemo(() => {
+    return sortedEntries.reduce(
+      (acc, e) => {
+        const qty = Number(e.quantity) || 0;
+        const amt = Number(e.totalAmount) || 0;
+        acc.totalQuantity += qty;
+        acc.totalAmount += amt;
+        return acc;
+      },
+      { totalQuantity: 0, totalAmount: 0 }
+    );
+  }, [sortedEntries]);
+
   return (
     <div className="space-y-6">
       {/* Top Header - Minimal & Airy */}
@@ -1643,7 +1660,16 @@ const ChemicalEntryContent: React.FC = () => {
       </div>
 
       {/* Main Ledger Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <TableMaximizeWrapper
+        title={activeSection === 'wood' ? 'Firewood & Boiler Usage Ledger' : 'Chemical Process & Purchase Records'}
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {sortedEntries.length} entries
+          </span>
+        }
+      >
+        {(isMaximized) => (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
         {/* Integrated Search & Filters Header */}
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
           {/* Left: Column Selector Dropdown + Search Input + Column Filters Toggle */}
@@ -1783,7 +1809,10 @@ const ChemicalEntryContent: React.FC = () => {
         )}
 
         {/* Sticky Table Container */}
-        <div className="overflow-x-auto max-h-[620px] overflow-y-auto relative">
+        <div
+          data-table-scroll="true"
+          className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'} overflow-y-auto`}
+        >
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
               <tr>
@@ -1900,7 +1929,7 @@ const ChemicalEntryContent: React.FC = () => {
                 </th>
 
                 {/* 9. Actions */}
-                <th className="py-3 px-3.5 text-center w-28 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] border-b-2 border-slate-300">
+                <th className="py-3 px-3.5 pr-12 text-center w-28 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] border-b-2 border-slate-300 min-w-[130px]">
                   Actions
                 </th>
               </tr>
@@ -2218,6 +2247,17 @@ const ChemicalEntryContent: React.FC = () => {
                 })
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 3, label: `Total (${sortedEntries.length} Records)`, isTotal: true },
+                { quantity: chemicalTotals.totalQuantity, unit: activeSection === 'wood' ? 'kg' : 'kg', isTotal: true },
+                { content: '—', align: 'center' },
+                { currency: chemicalTotals.totalAmount, isTotal: true },
+                { content: '—', align: 'center' },
+                { content: '—', align: 'center' },
+                { content: '—', align: 'center', className: 'pr-12' }
+              ]}
+            />
           </table>
         </div>
 
@@ -2238,6 +2278,8 @@ const ChemicalEntryContent: React.FC = () => {
           </span>
         </div>
       </div>
+        )}
+      </TableMaximizeWrapper>
 
       {/* MODAL 1: New Chemical Purchase */}
       <Modal

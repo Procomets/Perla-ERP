@@ -3,6 +3,10 @@ import { InvoiceHistoryItem } from '../../../types/statement';
 import { formatDate, formatQuantity, formatCurrency } from '../../../utils/formatters';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { Button } from '../../../components/ui/Button';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../../components/ui/TableMaximizeWrapper';
 import { History, ExternalLink, Receipt, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InvoicePdfService } from '../../../services/invoicePdfService';
@@ -40,53 +44,68 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
     }
   };
 
+  const totalQty = React.useMemo(() => historyItems.reduce((s, r) => s + (r.quantity || 0), 0), [historyItems]);
+  const totalAmount = React.useMemo(() => historyItems.reduce((s, r) => s + (r.amount || 0), 0), [historyItems]);
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden space-y-0">
-      {/* Header */}
-      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-        <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-[#1F4E79]" />
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Invoiced Historical Records Ledger
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              Fully reconciled colour lines that have been approved and billed to {companyName || 'Customers'}.
-            </p>
+    <TableMaximizeWrapper
+      title="Invoiced Historical Records Ledger"
+      badge={
+        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+          {historyItems.length} invoiced lines
+        </span>
+      }
+    >
+      {(isMaximized) => (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col flex-1 min-h-0">
+          {/* Header */}
+          <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-[#1F4E79]" />
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  Invoiced Historical Records Ledger
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Fully reconciled colour lines that have been approved and billed to {companyName || 'Customers'}.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-semibold text-slate-500">
+                {historyItems.length} invoiced line(s) recorded
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold text-slate-500">
-            {historyItems.length} invoiced line(s) recorded
-          </span>
-        </div>
-      </div>
-
-      {historyItems.length === 0 ? (
-        <div className="p-12 text-center text-xs text-slate-400 bg-slate-50/20">
-          <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          No invoiced colour lines found in history yet. Lines approved and billed in the Invoice module will appear here.
-        </div>
-      ) : (
-        <div className="overflow-x-auto text-xs">
-          <table className="w-full text-center border-collapse border border-slate-300">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 uppercase font-semibold text-[11px] tracking-wider border-b border-slate-300">
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoice No</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoice Date</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Customer Company</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">PO Number</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Style & Item</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Colour Line</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoiced Qty</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Unit</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Rate</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Amount (₹)</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Status</th>
-                <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Action</th>
-              </tr>
-            </thead>
+          {historyItems.length === 0 ? (
+            <div className="p-12 text-center text-xs text-slate-400 bg-slate-50/20">
+              <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              No invoiced colour lines found in history yet. Lines approved and billed in the Invoice module will appear here.
+            </div>
+          ) : (
+            <div
+              data-table-scroll="true"
+              className={`overflow-x-auto text-xs ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+            >
+              <table className="w-full text-center border-collapse border border-slate-300">
+                <thead>
+                  <tr className="bg-[#EEF5FB] text-[#1F4E79] uppercase font-bold text-[11px] tracking-wider border-b-2 border-slate-300">
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoice No</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoice Date</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Customer Company</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">PO Number</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Style & Item</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Colour Line</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Invoiced Qty</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Unit</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Rate</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Amount (₹)</th>
+                    <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Status</th>
+                    <th className="py-2.5 px-3 pr-12 border border-slate-300 text-center whitespace-nowrap min-w-[130px]">Action</th>
+                  </tr>
+                </thead>
             <tbody>
               {historyItems.map((item) => (
                 <tr key={item.approvalId} className="hover:bg-slate-50 transition-colors">
@@ -153,9 +172,33 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                 </tr>
               ))}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                {
+                  colSpan: 6,
+                  label: `Total (${historyItems.length} Invoiced Lines)`,
+                  isTotal: true
+                },
+                {
+                  quantity: totalQty,
+                  unit: 'piece',
+                  isTotal: true
+                },
+                { content: '—', align: 'center' },
+                { content: '—', align: 'center' },
+                {
+                  currency: totalAmount,
+                  isTotal: true
+                },
+                { content: '—', align: 'center' },
+                { content: '—', align: 'center', className: 'pr-12' }
+              ]}
+            />
           </table>
         </div>
       )}
     </div>
+      )}
+    </TableMaximizeWrapper>
   );
 };

@@ -42,11 +42,13 @@ export class EBMonitoringService {
     ) || 0;
 
     const readingNumber = data?.readingNumber || data?.entryId || `EB-${id.slice(0, 8)}`;
+    const unitType: 'NTP' | 'PTP' = data?.unitType === 'NTP' ? 'NTP' : 'PTP';
 
     return {
       id,
       readingNumber,
       date: data?.date || new Date().toISOString().split('T')[0],
+      unitType,
       openingReading,
       openingTime: data?.openingTime || '06:00',
       closingReading,
@@ -162,13 +164,16 @@ export class EBMonitoringService {
    * Find the most recent reading to automatically provide
    * previous day's closing reading as next day's opening reading
    */
-  static async getLatestReading(): Promise<EBReadingRecord | null> {
+  static async getLatestReading(unitType?: 'NTP' | 'PTP'): Promise<EBReadingRecord | null> {
     try {
       // 1. Check fresh from Firestore
       try {
         const snap = await getDocs(collection(db, 'eb_readings'));
         if (!snap.empty) {
-          const list = snap.docs.map((d) => this.normalizeReading(d.id, d.data()));
+          let list = snap.docs.map((d) => this.normalizeReading(d.id, d.data()));
+          if (unitType) {
+            list = list.filter((r) => (r.unitType || 'PTP') === unitType);
+          }
           list.sort(
             (a, b) =>
               (b.date || '').localeCompare(a.date || '') ||
@@ -184,7 +189,11 @@ export class EBMonitoringService {
       // 2. Fallback to local cache
       const cached = this.getCache();
       if (cached.length > 0) {
-        const sorted = [...cached].sort(
+        let sorted = [...cached];
+        if (unitType) {
+          sorted = sorted.filter((r) => (r.unitType || 'PTP') === unitType);
+        }
+        sorted.sort(
           (a, b) =>
             (b.date || '').localeCompare(a.date || '') ||
             (b.createdAt || '').localeCompare(a.createdAt || '')
@@ -218,6 +227,19 @@ export class EBMonitoringService {
       throw new Error('Spending amount per unit must be greater than zero.');
     }
 
+    const unitType: 'NTP' | 'PTP' = payload.unitType === 'NTP' ? 'NTP' : 'PTP';
+
+    // Enforce only one reading per day per unit
+    const cachedReadings = this.getCache();
+    const isDuplicate = cachedReadings.some(
+      (r) => r.date === payload.date && (r.unitType || 'PTP') === unitType
+    );
+    if (isDuplicate) {
+      throw new Error(
+        `An EB daily reading for ${unitType} on ${payload.date} already exists. Only one reading per day is allowed.`
+      );
+    }
+
     const totalUnits = Math.round((closingReading - openingReading) * 100) / 100;
     const totalCost = Math.round(totalUnits * spendingAmountPerUnit * 100) / 100;
 
@@ -245,6 +267,7 @@ export class EBMonitoringService {
           id: readingDocRef.id,
           readingNumber: generatedNumber,
           date: payload.date,
+          unitType,
           openingReading,
           openingTime: payload.openingTime,
           closingReading,
@@ -273,6 +296,7 @@ export class EBMonitoringService {
         id: readingDocRef.id,
         readingNumber,
         date: payload.date,
+        unitType,
         openingReading,
         openingTime: payload.openingTime,
         closingReading,
@@ -294,6 +318,7 @@ export class EBMonitoringService {
       id: readingDocRef.id,
       readingNumber,
       date: payload.date,
+      unitType,
       openingReading,
       openingTime: payload.openingTime,
       closingReading,
@@ -331,6 +356,19 @@ export class EBMonitoringService {
     const openingReading = payload.openingReading !== undefined ? Number(payload.openingReading) : (existing?.openingReading || 0);
     const closingReading = payload.closingReading !== undefined ? Number(payload.closingReading) : (existing?.closingReading || 0);
 
+    const targetDate = payload.date || existing?.date;
+    const targetUnit: 'NTP' | 'PTP' = payload.unitType || existing?.unitType || 'PTP';
+    if (targetDate) {
+      const isDuplicate = cached.some(
+        (r) => r.id !== id && r.date === targetDate && (r.unitType || 'PTP') === targetUnit
+      );
+      if (isDuplicate) {
+        throw new Error(
+          `An EB daily reading for ${targetUnit} on ${targetDate} already exists. Only one reading per day is allowed.`
+        );
+      }
+    }
+
     if (closingReading < openingReading) {
       throw new Error(
         `Closing reading (${closingReading} kW) cannot be less than opening reading (${openingReading} kW).`
@@ -346,6 +384,7 @@ export class EBMonitoringService {
 
     const updateData: Partial<EBReadingRecord> = {
       ...(payload.date ? { date: payload.date } : {}),
+      ...(payload.unitType ? { unitType: payload.unitType } : {}),
       openingReading,
       ...(payload.openingTime ? { openingTime: payload.openingTime } : {}),
       closingReading,
@@ -369,6 +408,7 @@ export class EBMonitoringService {
       id,
       readingNumber: existing?.readingNumber || `EB-${id.slice(0, 8)}`,
       date: payload.date || existing?.date || now.split('T')[0],
+      unitType: payload.unitType || existing?.unitType || 'PTP',
       openingReading,
       openingTime: payload.openingTime || existing?.openingTime || '06:00',
       closingReading,

@@ -14,6 +14,7 @@ import { WarehouseService } from '../../services/warehouseService';
 import { RawMaterialPurchaseService } from '../../services/rawMaterialPurchaseService';
 import { VendorService } from '../../services/vendorService';
 import { Modal } from '../../components/ui/Modal';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import { SearchableSelect, SelectOption, SelectOptionGroup } from '../inward/components/SearchableSelect';
 import {
@@ -129,9 +130,8 @@ const SearchableItemSelect: React.FC<SearchableItemSelectProps> = ({
           <span className="text-slate-400 font-normal">-- Choose Item from Master --</span>
         )}
         <ChevronDown
-          className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
+          className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''
+            }`}
         />
       </button>
 
@@ -176,9 +176,8 @@ const SearchableItemSelect: React.FC<SearchableItemSelectProps> = ({
                       setIsOpen(false);
                       setSearchQuery('');
                     }}
-                    className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between gap-2 text-xs ${
-                      isSelected ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'
-                    }`}
+                    className={`p-2 rounded-lg cursor-pointer transition flex items-center justify-between gap-2 text-xs ${isSelected ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'
+                      }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[10px] bg-slate-200/70 text-slate-800 shrink-0">
@@ -607,15 +606,14 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     const isCurrent = sortField === field && sortDirection !== 'normal';
     return (
       <span
-        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${
-          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
-        }`}
+        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
+          }`}
         title={
           sortField === field && sortDirection === 'asc'
             ? 'Sorted ascending (click to sort descending or reset to normal)'
             : sortField === field && sortDirection === 'desc'
-            ? 'Sorted descending (click to reset to normal)'
-            : 'Click to sort'
+              ? 'Sorted descending (click to reset to normal)'
+              : 'Click to sort'
         }
       >
         {isCurrent ? (
@@ -890,6 +888,39 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
   const firewoodPurchasesCount = useMemo(() => {
     return purchases.filter((p) => isFirewoodPurchase(p)).length;
   }, [purchases]);
+
+  // Dynamic Totals for Table 1 (General Purchases)
+  const generalTotals = useMemo(() => {
+    let totalQty = 0;
+    let totalAmt = 0;
+    filteredGeneralPurchases.forEach((p: any) => {
+      totalAmt += Number(p.grandTotal) || 0;
+      (p.items || []).forEach((it: any) => {
+        totalQty += Number(it.quantity) || 0;
+      });
+    });
+    return { totalQty, totalAmt };
+  }, [filteredGeneralPurchases]);
+
+  // Dynamic Totals for Table 2 (Firewood Purchases)
+  const firewoodTotals = useMemo(() => {
+    let gross = 0;
+    let tare = 0;
+    let nett = 0;
+    let totalAmt = 0;
+    let charges = 0;
+    filteredFirewoodPurchases.forEach((p: any) => {
+      totalAmt += Number(p.grandTotal) || 0;
+      const wb = p.weighbridgeDetails;
+      if (wb) {
+        gross += Number(wb.grossWeightKg) || 0;
+        tare += Number(wb.tareWeightKg) || 0;
+        nett += Number(wb.nettWeightKg) || 0;
+        charges += Number(wb.weighbridgeCharges) || 0;
+      }
+    });
+    return { gross, tare, nett, totalAmt, charges };
+  }, [filteredFirewoodPurchases]);
 
   // Export to Excel using exceljs
   const handleExportExcel = async () => {
@@ -1227,19 +1258,19 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
 
       const weighbridgePayload: WeighbridgeDetails | undefined = isFirewood
         ? {
-            slipNo: wbSlipNo.trim(),
-            vehicleNo: finalVehicleNo,
-            weighbridgeName: wbName.trim(),
-            weighbridgeCharges: wbCharges === '' ? 0 : Number(wbCharges),
-            grossWeightKg: wbGrossWeightKg === '' ? 0 : Number(wbGrossWeightKg),
-            grossWeightTime: wbGrossWeightTime.trim(),
-            tareWeightKg: wbTareWeightKg === '' ? 0 : Number(wbTareWeightKg),
-            tareWeightTime: wbTareWeightTime.trim(),
-            nettWeightKg: Number(wbNettWeightKg) || 0,
-            nettWeightTonnes: Number(wbNettWeightTonnes) || 0,
-            materialVariety: wbMaterialVariety.trim(),
-            remarks: wbRemarks.trim()
-          }
+          slipNo: wbSlipNo.trim(),
+          vehicleNo: finalVehicleNo,
+          weighbridgeName: wbName.trim(),
+          weighbridgeCharges: wbCharges === '' ? 0 : Number(wbCharges),
+          grossWeightKg: wbGrossWeightKg === '' ? 0 : Number(wbGrossWeightKg),
+          grossWeightTime: wbGrossWeightTime.trim(),
+          tareWeightKg: wbTareWeightKg === '' ? 0 : Number(wbTareWeightKg),
+          tareWeightTime: wbTareWeightTime.trim(),
+          nettWeightKg: Number(wbNettWeightKg) || 0,
+          nettWeightTonnes: Number(wbNettWeightTonnes) || 0,
+          materialVariety: wbMaterialVariety.trim(),
+          remarks: wbRemarks.trim()
+        }
         : undefined;
 
       if (isEditMode && editingPurchaseId) {
@@ -1313,11 +1344,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${
-            toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/25'
-              : 'bg-rose-600 text-white border-rose-500 shadow-rose-600/25'
-          }`}
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${toast.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/25'
+            : 'bg-rose-600 text-white border-rose-500 shadow-rose-600/25'
+            }`}
         >
           {toast.type === 'success' ? (
             <CheckCircle2 className="w-4 h-4 text-white" />
@@ -1423,11 +1453,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
             setActiveTab('overview');
             navigate('/erp/warehouse', { replace: true });
           }}
-          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
-            activeTab === 'overview'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${activeTab === 'overview'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <Package className="w-4 h-4" />
           <span>Stock Overview</span>
@@ -1438,11 +1467,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
             setActiveTab('purchases');
             navigate('/erp/purchases', { replace: true });
           }}
-          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${
-            activeTab === 'purchases'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 transition cursor-pointer border-b-2 ${activeTab === 'purchases'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <ShoppingBag className="w-4 h-4" />
           <span>Raw Material Purchase</span>
@@ -1492,8 +1520,8 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 activeTab === 'overview'
                   ? 'Search materials...'
                   : purchaseSearchColumn === 'ALL'
-                  ? 'Search across all columns...'
-                  : `Search by ${getColumnDisplayName(purchaseSearchColumn)}...`
+                    ? 'Search across all columns...'
+                    : `Search by ${getColumnDisplayName(purchaseSearchColumn)}...`
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1517,44 +1545,40 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Healthy' ? 'ALL' : 'Healthy')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                activeStatusFilter === 'Healthy'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${activeStatusFilter === 'Healthy'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
             >
               Healthy: {healthyStockCount}
             </button>
 
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Low Stock' ? 'ALL' : 'Low Stock')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                activeStatusFilter === 'Low Stock'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${activeStatusFilter === 'Low Stock'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
             >
               Low Stock: {lowStockCount}
             </button>
 
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Critical' ? 'ALL' : 'Critical')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                activeStatusFilter === 'Critical'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${activeStatusFilter === 'Critical'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
             >
               Critical Stock: {criticalCount}
             </button>
 
             <button
               onClick={() => setActiveStatusFilter(activeStatusFilter === 'Out Of Stock' ? 'ALL' : 'Out Of Stock')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                activeStatusFilter === 'Out Of Stock'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${activeStatusFilter === 'Out Of Stock'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
             >
               Out Of Stock: {outOfStockCount}
             </button>
@@ -1601,11 +1625,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
             <button
               type="button"
               onClick={() => setShowColumnFilters(!showColumnFilters)}
-              className={`h-9 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
-                  ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`h-9 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
               title="Toggle column-wise search inputs on table header"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -1792,80 +1815,84 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
 
       {/* TAB 2: RAW MATERIAL PURCHASES */}
       {activeTab === 'purchases' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                {purchaseSubTab === 'firewood' ? 'Firewood Purchases Ledger' : 'Raw Material Purchases Ledger'}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {purchaseSubTab === 'firewood'
-                  ? 'Recorded firewood consignments with weighbridge slip verification and gross/tare weights'
-                  : 'Recorded supplier deliveries and raw material purchases linked to warehouse inventory'}
-              </p>
-            </div>
+        <TableMaximizeWrapper
+          title={purchaseSubTab === 'firewood' ? 'Firewood Purchases Ledger' : 'Raw Material Purchases Ledger'}
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {purchaseSubTab === 'firewood' ? filteredFirewoodPurchases.length : filteredGeneralPurchases.length} Purchases
+            </span>
+          }
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {purchaseSubTab === 'firewood' ? 'Firewood Purchases Ledger' : 'Raw Material Purchases Ledger'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {purchaseSubTab === 'firewood'
+                    ? 'Recorded firewood consignments with weighbridge slip verification and gross/tare weights'
+                    : 'Recorded supplier deliveries and raw material purchases linked to warehouse inventory'}
+                </p>
+              </div>
 
-            {/* Sub-tab Switcher: Raw Material Purchases vs Firewood (Weighbridge) */}
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setPurchaseSubTab('general')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  purchaseSubTab === 'general'
+              {/* Sub-tab Switcher: Raw Material Purchases vs Firewood (Weighbridge) */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setPurchaseSubTab('general')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${purchaseSubTab === 'general'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span>Raw Material Purchases</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    purchaseSubTab === 'general'
+                    }`}
+                >
+                  <span>Raw Material Purchases</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${purchaseSubTab === 'general'
                       ? 'bg-slate-100 text-slate-800'
                       : 'bg-slate-200/70 text-slate-600'
-                  }`}
-                >
-                  {generalPurchasesCount}
-                </span>
-              </button>
+                      }`}
+                  >
+                    {generalPurchasesCount}
+                  </span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setPurchaseSubTab('firewood')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  purchaseSubTab === 'firewood'
+                <button
+                  type="button"
+                  onClick={() => setPurchaseSubTab('firewood')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${purchaseSubTab === 'firewood'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span>Firewood (Weighbridge)</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    purchaseSubTab === 'firewood'
+                    }`}
+                >
+                  <span>Firewood (Weighbridge)</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${purchaseSubTab === 'firewood'
                       ? 'bg-amber-100 text-amber-900'
                       : 'bg-slate-200/70 text-slate-600'
-                  }`}
-                >
-                  {firewoodPurchasesCount}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="p-4 overflow-x-auto">
-            {loading ? (
-              <div className="py-12 text-center text-xs text-slate-500">
-                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-slate-900 mb-2" />
-                Loading purchase entries...
+                      }`}
+                  >
+                    {firewoodPurchasesCount}
+                  </span>
+                </button>
               </div>
-            ) : purchaseSubTab === 'general' ? (
-              /* TABLE 1: GENERAL RAW MATERIAL & CHEMICAL PURCHASES */
-              <div className="border border-slate-200 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
-                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+            </div>
+
+            <div className="p-4 overflow-x-auto">
+              {loading ? (
+                <div className="py-12 text-center text-xs text-slate-500">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-slate-900 mb-2" />
+                  Loading purchase entries...
+                </div>
+              ) : purchaseSubTab === 'general' ? (
+                /* TABLE 1: GENERAL RAW MATERIAL & CHEMICAL PURCHASES */
+                <div data-table-scroll="true" className="border border-slate-300 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
+                  <table className="w-full text-left border-collapse text-xs border border-slate-300">
                     <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                      <tr className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b-2 border-slate-300">
+                      <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider border-b-2 border-slate-300">
                         <th
                           onClick={() => handleSort('purchaseNumber')}
-                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Purchase No</span>
@@ -1874,7 +1901,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('purchaseDate')}
-                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Date</span>
@@ -1883,7 +1910,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('vendorName')}
-                          className="p-3 border border-slate-200 text-left min-w-[140px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Supplier / Vendor</span>
@@ -1892,7 +1919,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('supplierInvoiceNo')}
-                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[130px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Invoice & Vehicle</span>
@@ -1901,7 +1928,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('itemName')}
-                          className="p-3 border border-slate-200 text-left min-w-[140px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Material / Item</span>
@@ -1910,7 +1937,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('quantity')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Quantity</span>
@@ -1919,7 +1946,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('grandTotal')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[110px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[110px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Amount (₹)</span>
@@ -1928,14 +1955,14 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('status')}
-                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-slate-50 cursor-pointer select-none group hover:bg-slate-100 transition-colors"
+                          className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-center">
                             <span>Status</span>
                             {renderSortIcon('status')}
                           </div>
                         </th>
-                        <th className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-slate-50">
+                        <th className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
                           Actions
                         </th>
                       </tr>
@@ -2014,7 +2041,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                               className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-center"
                             />
                           </th>
-                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center">
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center min-w-[140px] pr-12">
                             {Object.values(columnFilters).some(v => (v || '').trim() !== '') && (
                               <button
                                 type="button"
@@ -2054,194 +2081,201 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </tr>
                       ) : (
                         filteredGeneralPurchases.map((p) => {
-                        const lines = p.lines && p.lines.length > 0 ? p.lines : null;
-                        if (!lines) {
-                          return (
-                            <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
-                                <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
-                                <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-left">
-                                <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
-                                {p.vendorCode && (
-                                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
-                                )}
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-left">
-                                <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
-                                {p.vehicleNo && (
-                                  <div className="mt-1">
-                                    <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
-                                      Veh: {p.vehicleNo}
-                                    </span>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-left text-slate-400 italic">No items</td>
-                              <td className="p-3 border border-slate-200 align-middle text-right text-slate-400 whitespace-nowrap font-bold">—</td>
-                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
-                                {formatCurrency(p.grandTotal)}
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                                <span
-                                  className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                                    p.status === 'Received'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : p.status === 'Confirmed'
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                      : p.status === 'Draft'
-                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                      : 'bg-rose-50 text-rose-700 border-rose-200'
-                                  }`}
-                                >
-                                  {p.status}
-                                </span>
-                              </td>
-                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                                <div className="inline-flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() => handleOpenViewPurchase(p)}
-                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
-                                  >
-                                    View
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenEditPurchase(p)}
-                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeletePurchase(p)}
-                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        return (
-                          <React.Fragment key={p.id}>
-                            {lines.map((line, idx) => (
-                              <tr key={`${p.id}_line_${line.lineId || idx}`} className="hover:bg-slate-50/70 transition-colors">
-                                {idx === 0 && (
-                                  <>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
-                                      <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
-                                      {lines.length > 1 && (
-                                        <div className="text-[11px] font-black text-slate-900 mt-1.5 pt-1 border-t border-slate-100">
-                                          Total: {formatCurrency(p.grandTotal)}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
-                                      <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
-                                    </td>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
-                                      <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
-                                      {p.vendorCode && (
-                                        <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
-                                      )}
-                                    </td>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
-                                      <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
-                                      {p.vehicleNo && (
-                                        <div className="mt-1">
-                                          <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
-                                            Veh: {p.vehicleNo}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </td>
-                                  </>
-                                )}
-
-                                {/* Separate Item Row: Material, Quantity, and Amount */}
+                          const lines = p.lines && p.lines.length > 0 ? p.lines : null;
+                          if (!lines) {
+                            return (
+                              <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                  <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
+                                </td>
+                                <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                  <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                                </td>
                                 <td className="p-3 border border-slate-200 align-middle text-left">
-                                  <div className="font-semibold text-slate-900 leading-tight">{line.itemName}</div>
-                                  {line.itemCode && (
-                                    <div className="text-[10px] font-mono text-slate-400 mt-0.5">{line.itemCode}</div>
+                                  <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
+                                  {p.vendorCode && (
+                                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
                                   )}
                                 </td>
-                                <td className="p-3 border border-slate-200 align-middle text-right font-bold text-slate-800 whitespace-nowrap">
-                                  {Number(line.quantity).toLocaleString('en-IN')} {line.unit}
-                                </td>
-                                <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
-                                  <div className="font-black text-slate-900">
-                                    {formatCurrency(line.amount || (line.quantity * line.rate))}
-                                  </div>
-                                  {line.rate && Number(line.rate) > 0 ? (
-                                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">
-                                      @ ₹{Number(line.rate).toFixed(2)}/{line.unit}
+                                <td className="p-3 border border-slate-200 align-middle text-left">
+                                  <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                                  {p.vehicleNo && (
+                                    <div className="mt-1">
+                                      <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
+                                        Veh: {p.vehicleNo}
+                                      </span>
                                     </div>
-                                  ) : null}
+                                  )}
                                 </td>
+                                <td className="p-3 border border-slate-200 align-middle text-left text-slate-400 italic">No items</td>
+                                <td className="p-3 border border-slate-200 align-middle text-right text-slate-400 whitespace-nowrap font-bold">—</td>
+                                <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
+                                  {formatCurrency(p.grandTotal)}
+                                </td>
+                                <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                  <span
+                                    className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${p.status === 'Received'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : p.status === 'Confirmed'
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : p.status === 'Draft'
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                                      }`}
+                                  >
+                                    {p.status}
+                                  </span>
+                                </td>
+                                <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                  <div className="inline-flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={() => handleOpenViewPurchase(p)}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenEditPurchase(p)}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeletePurchase(p)}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
 
-                                {idx === 0 && (
-                                  <>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
-                                      <span
-                                        className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                                          p.status === 'Received'
+                          return (
+                            <React.Fragment key={p.id}>
+                              {lines.map((line, idx) => (
+                                <tr key={`${p.id}_line_${line.lineId || idx}`} className="hover:bg-slate-50/70 transition-colors">
+                                  {idx === 0 && (
+                                    <>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
+                                        <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
+                                        {lines.length > 1 && (
+                                          <div className="text-[11px] font-black text-slate-900 mt-1.5 pt-1 border-t border-slate-100">
+                                            Total: {formatCurrency(p.grandTotal)}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap bg-white">
+                                        <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                                      </td>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
+                                        <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
+                                        {p.vendorCode && (
+                                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
+                                        )}
+                                      </td>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 align-middle text-left bg-white">
+                                        <div className="font-medium text-slate-800">Inv: {p.supplierInvoiceNo || '—'}</div>
+                                        {p.vehicleNo && (
+                                          <div className="mt-1">
+                                            <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/70 inline-block">
+                                              Veh: {p.vehicleNo}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </>
+                                  )}
+
+                                  {/* Separate Item Row: Material, Quantity, and Amount */}
+                                  <td className="p-3 border border-slate-200 align-middle text-left">
+                                    <div className="font-semibold text-slate-900 leading-tight">{line.itemName}</div>
+                                    {line.itemCode && (
+                                      <div className="text-[10px] font-mono text-slate-400 mt-0.5">{line.itemCode}</div>
+                                    )}
+                                  </td>
+                                  <td className="p-3 border border-slate-200 align-middle text-right font-bold text-slate-800 whitespace-nowrap">
+                                    {Number(line.quantity).toLocaleString('en-IN')} {line.unit}
+                                  </td>
+                                  <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                    <div className="font-black text-slate-900">
+                                      {formatCurrency(line.amount || (line.quantity * line.rate))}
+                                    </div>
+                                    {line.rate && Number(line.rate) > 0 ? (
+                                      <div className="text-[10px] text-slate-400 font-normal mt-0.5">
+                                        @ ₹{Number(line.rate).toFixed(2)}/{line.unit}
+                                      </div>
+                                    ) : null}
+                                  </td>
+
+                                  {idx === 0 && (
+                                    <>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
+                                        <span
+                                          className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${p.status === 'Received'
                                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                             : p.status === 'Confirmed'
-                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                            : p.status === 'Draft'
-                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                                        }`}
-                                      >
-                                        {p.status}
-                                      </span>
-                                    </td>
-                                    <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
-                                      <div className="inline-flex items-center justify-center gap-1.5">
-                                        <button
-                                          onClick={() => handleOpenViewPurchase(p)}
-                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                              : p.status === 'Draft'
+                                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                                            }`}
                                         >
-                                          View
-                                        </button>
-                                        <button
-                                          onClick={() => handleOpenEditPurchase(p)}
-                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeletePurchase(p)}
-                                          className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </>
-                                )}
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        );
-                      })
-                    )}
+                                          {p.status}
+                                        </span>
+                                      </td>
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
+                                        <div className="inline-flex items-center justify-center gap-1.5">
+                                          <button
+                                            onClick={() => handleOpenViewPurchase(p)}
+                                            className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                          >
+                                            View
+                                          </button>
+                                          <button
+                                            onClick={() => handleOpenEditPurchase(p)}
+                                            className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeletePurchase(p)}
+                                            className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
                     </tbody>
+                    <TableTotalsFooter
+                      cells={[
+                        { colSpan: 5, label: `TOTAL (${filteredGeneralPurchases.length} purchases)` },
+                        { value: generalTotals.totalQty.toLocaleString('en-IN'), isTotal: true },
+                        { currency: generalTotals.totalAmt, isTotal: true },
+                        { align: 'center' },
+                        { align: 'center' }
+                      ]}
+                    />
                   </table>
                 </div>
-            ) : (
-              /* TABLE 2: FIREWOOD PURCHASES (WITH FULL WEIGHBRIDGE DETAILS) */
-              <div className="border border-slate-200 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
-                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+              ) : (
+                /* TABLE 2: FIREWOOD PURCHASES (WITH FULL WEIGHBRIDGE DETAILS) */
+                <div data-table-scroll="true" className="border border-slate-300 rounded-xl overflow-auto max-h-[620px] shadow-2xs relative">
+                  <table className="w-full text-left border-collapse text-xs border border-slate-300">
                     <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                      <tr className="bg-amber-50/95 text-slate-800 font-bold uppercase text-[10px] tracking-wider border-b-2 border-amber-300">
+                      <tr className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider border-b-2 border-slate-300">
                         <th
                           onClick={() => handleSort('purchaseNumber')}
-                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[125px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Purchase No</span>
@@ -2250,7 +2284,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('purchaseDate')}
-                          className="p-3 border border-slate-200 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Date</span>
@@ -2259,7 +2293,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('vendorName')}
-                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[130px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Supplier / Vendor</span>
@@ -2268,7 +2302,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('wbSlipNo')}
-                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[130px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>WB Slip No & Center</span>
@@ -2277,7 +2311,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('vehicleNo')}
-                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[100px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-center">
                             <span>Vehicle No</span>
@@ -2286,7 +2320,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('materialVariety')}
-                          className="p-3 border border-slate-200 text-left min-w-[130px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-left min-w-[130px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-start">
                             <span>Material Variety</span>
@@ -2295,7 +2329,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('grossWeightKg')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Gross Wt</span>
@@ -2304,7 +2338,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('tareWeightKg')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Tare Wt</span>
@@ -2313,7 +2347,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('nettWeightKg')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[115px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[115px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Nett Wt (Qty)</span>
@@ -2322,7 +2356,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('rate')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Rate</span>
@@ -2331,7 +2365,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('grandTotal')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[105px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>Amount (₹)</span>
@@ -2340,7 +2374,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('wbCharges')}
-                          className="p-3 border border-slate-200 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-right whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-end">
                             <span>WB Charges</span>
@@ -2349,14 +2383,14 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </th>
                         <th
                           onClick={() => handleSort('status')}
-                          className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-amber-50 cursor-pointer select-none group hover:bg-amber-100/70 transition-colors"
+                          className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[95px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] cursor-pointer select-none group hover:bg-[#DCE9F5] transition-colors"
                         >
                           <div className="flex items-center gap-1 justify-center">
                             <span>Status</span>
                             {renderSortIcon('status')}
                           </div>
                         </th>
-                        <th className="p-3 border border-slate-200 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-amber-50">
+                        <th className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
                           Actions
                         </th>
                       </tr>
@@ -2480,7 +2514,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                               className="w-full h-7 px-2 text-[11px] font-normal bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-center"
                             />
                           </th>
-                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-amber-100 text-center">
+                          <th className="p-1.5 border border-slate-200 sticky top-[41px] z-20 bg-slate-100 text-center min-w-[140px] pr-12">
                             {Object.values(columnFilters).some(v => (v || '').trim() !== '') && (
                               <button
                                 type="button"
@@ -2520,159 +2554,172 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                         </tr>
                       ) : (
                         filteredFirewoodPurchases.map((p) => {
-                        const firstLine = p.lines?.[0];
-                        const wb = p.weighbridge;
-                        return (
-                          <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
-                            <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
-                              <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
-                              <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-left">
-                              <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
-                              {p.vendorCode && (
-                                <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-left">
-                              {wb?.slipNo ? (
-                                <div className="font-mono font-bold text-amber-950">
-                                  Slip #{wb.slipNo}
-                                </div>
-                              ) : (
-                                <div className="text-slate-400 font-medium italic text-[11px]">
-                                  No slip recorded
-                                </div>
-                              )}
-                              {wb?.weighbridgeName ? (
-                                <div className="text-[11px] text-slate-600 font-medium truncate max-w-[160px] mt-0.5">
-                                  {wb.weighbridgeName}
-                                </div>
-                              ) : p.supplierInvoiceNo ? (
-                                <div className="text-[11px] text-slate-400 mt-0.5 font-mono">Inv: {p.supplierInvoiceNo}</div>
-                              ) : null}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                              <span className="font-mono font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/80 text-xs inline-block">
-                                {wb?.vehicleNo || p.vehicleNo || '—'}
-                              </span>
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-left">
-                              <div className="font-semibold text-slate-900 leading-tight">
-                                {wb?.materialVariety || firstLine?.itemName || 'Firewood'}
-                              </div>
-                              {firstLine?.itemCode && (
-                                <div className="text-[10px] font-mono text-slate-400 mt-0.5">{firstLine.itemCode}</div>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
-                              {wb?.grossWeightKg ? (
-                                <>
-                                  <div className="font-mono font-bold text-slate-900">
-                                    {Number(wb.grossWeightKg).toLocaleString('en-IN')} kg
+                          const firstLine = p.lines?.[0];
+                          const wb = p.weighbridge;
+                          return (
+                            <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
+                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-900 tracking-tight">{p.purchaseNumber}</div>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                <div className="text-slate-700 font-medium text-xs">{formatDate(p.purchaseDate)}</div>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left">
+                                <div className="font-bold text-slate-900 leading-tight">{p.vendorName}</div>
+                                {p.vendorCode && (
+                                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">{p.vendorCode}</div>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left">
+                                {wb?.slipNo ? (
+                                  <div className="font-mono font-bold text-amber-950">
+                                    Slip #{wb.slipNo}
                                   </div>
-                                  {wb?.grossWeightTime && (
-                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.grossWeightTime}</div>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-slate-300 font-bold">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
-                              {wb?.tareWeightKg ? (
-                                <>
-                                  <div className="font-mono font-bold text-slate-900">
-                                    {Number(wb.tareWeightKg).toLocaleString('en-IN')} kg
+                                ) : (
+                                  <div className="text-slate-400 font-medium italic text-[11px]">
+                                    No slip recorded
                                   </div>
-                                  {wb?.tareWeightTime && (
-                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.tareWeightTime}</div>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-slate-300 font-bold">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
-                              <div className="font-mono font-black text-amber-950 text-xs">
-                                {wb?.nettWeightKg
-                                  ? `${Number(wb.nettWeightKg).toLocaleString('en-IN')} kg`
-                                  : firstLine
-                                  ? `${Number(firstLine.quantity).toLocaleString('en-IN')} ${firstLine.unit}`
-                                  : '—'}
-                              </div>
-                              {wb?.nettWeightTonnes ? (
-                                <div className="text-[10px] font-mono text-slate-500 font-bold mt-0.5">
-                                  ({wb.nettWeightTonnes} T)
+                                )}
+                                {wb?.weighbridgeName ? (
+                                  <div className="text-[11px] text-slate-600 font-medium truncate max-w-[160px] mt-0.5">
+                                    {wb.weighbridgeName}
+                                  </div>
+                                ) : p.supplierInvoiceNo ? (
+                                  <div className="text-[11px] text-slate-400 mt-0.5 font-mono">Inv: {p.supplierInvoiceNo}</div>
+                                ) : null}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                <span className="font-mono font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/80 text-xs inline-block">
+                                  {wb?.vehicleNo || p.vehicleNo || '—'}
+                                </span>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-left">
+                                <div className="font-semibold text-slate-900 leading-tight">
+                                  {wb?.materialVariety || firstLine?.itemName || 'Firewood'}
                                 </div>
-                              ) : null}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap text-slate-700 font-medium">
-                              {firstLine?.rate && Number(firstLine.rate) > 0 ? (
-                                <span>₹{Number(firstLine.rate).toFixed(2)}/{firstLine.unit}</span>
-                              ) : (
-                                <span className="text-slate-300 font-bold">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
-                              {formatCurrency(p.grandTotal)}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-semibold text-slate-700">
-                              {wb?.weighbridgeCharges !== undefined && wb?.weighbridgeCharges !== 0 ? (
-                                `₹${wb.weighbridgeCharges}`
-                              ) : (
-                                <span className="text-slate-300 font-bold">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                              <span
-                                className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                                  p.status === 'Received'
+                                {firstLine?.itemCode && (
+                                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">{firstLine.itemCode}</div>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                {wb?.grossWeightKg ? (
+                                  <>
+                                    <div className="font-mono font-bold text-slate-900">
+                                      {Number(wb.grossWeightKg).toLocaleString('en-IN')} kg
+                                    </div>
+                                    {wb?.grossWeightTime && (
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.grossWeightTime}</div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-slate-300 font-bold">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                {wb?.tareWeightKg ? (
+                                  <>
+                                    <div className="font-mono font-bold text-slate-900">
+                                      {Number(wb.tareWeightKg).toLocaleString('en-IN')} kg
+                                    </div>
+                                    {wb?.tareWeightTime && (
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{wb.tareWeightTime}</div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-slate-300 font-bold">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap">
+                                <div className="font-mono font-black text-amber-950 text-xs">
+                                  {wb?.nettWeightKg
+                                    ? `${Number(wb.nettWeightKg).toLocaleString('en-IN')} kg`
+                                    : firstLine
+                                      ? `${Number(firstLine.quantity).toLocaleString('en-IN')} ${firstLine.unit}`
+                                      : '—'}
+                                </div>
+                                {wb?.nettWeightTonnes ? (
+                                  <div className="text-[10px] font-mono text-slate-500 font-bold mt-0.5">
+                                    ({wb.nettWeightTonnes} T)
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap text-slate-700 font-medium">
+                                {firstLine?.rate && Number(firstLine.rate) > 0 ? (
+                                  <span>₹{Number(firstLine.rate).toFixed(2)}/{firstLine.unit}</span>
+                                ) : (
+                                  <span className="text-slate-300 font-bold">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-black text-slate-900">
+                                {formatCurrency(p.grandTotal)}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-right whitespace-nowrap font-semibold text-slate-700">
+                                {wb?.weighbridgeCharges !== undefined && wb?.weighbridgeCharges !== 0 ? (
+                                  `₹${wb.weighbridgeCharges}`
+                                ) : (
+                                  <span className="text-slate-300 font-bold">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${p.status === 'Received'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                     : p.status === 'Confirmed'
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                    : p.status === 'Draft'
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                }`}
-                              >
-                                {p.status}
-                              </span>
-                            </td>
-                            <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                              <div className="inline-flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleOpenViewPurchase(p)}
-                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : p.status === 'Draft'
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                                    }`}
                                 >
-                                  View
-                                </button>
-                                <button
-                                  onClick={() => handleOpenEditPurchase(p)}
-                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeletePurchase(p)}
-                                  className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
+                                <div className="inline-flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenViewPurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenEditPurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeletePurchase(p)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
+                    <TableTotalsFooter
+                      cells={[
+                        { colSpan: 6, label: `TOTAL (${filteredFirewoodPurchases.length} consignments)` },
+                        { value: `${firewoodTotals.gross.toLocaleString('en-IN')} kg`, isTotal: true },
+                        { value: `${firewoodTotals.tare.toLocaleString('en-IN')} kg`, isTotal: true },
+                        { value: `${firewoodTotals.nett.toLocaleString('en-IN')} kg`, isTotal: true },
+                        { align: 'center' },
+                        { currency: firewoodTotals.totalAmt, isTotal: true },
+                        { currency: firewoodTotals.charges, isTotal: true },
+                        { align: 'center' },
+                        { align: 'center' }
+                      ]}
+                    />
                   </table>
                 </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        </TableMaximizeWrapper>
       )}
 
       {/* MODAL: NEW / EDIT RAW MATERIAL PURCHASE ENTRY */}
@@ -2700,11 +2747,10 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                     <span className="truncate">{opt.primaryText}</span>
                     {opt.badge && (
                       <span
-                        className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
-                          opt.badge === 'Customer & Supplier'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
+                        className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${opt.badge === 'Customer & Supplier'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-slate-100 text-slate-700'
+                          }`}
                       >
                         {opt.badge}
                       </span>

@@ -33,6 +33,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import { TaxAndIssuerSettings } from './components/TaxAndIssuerSettings';
 import { ItemCategorySettings } from './components/ItemCategorySettings';
 import { HsnMasterSettings } from './components/HsnMasterSettings';
@@ -792,18 +793,30 @@ export const GeneralSettingsPage: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                      <th className="py-3 px-4 w-12">#</th>
-                      <th className="py-3 px-4">Colour Details</th>
-                      <th className="py-3 px-4">Normalized Key</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Created Info</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
+              <TableMaximizeWrapper
+                title="Colour Master Directory"
+                badge={
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+                    {filteredColours.length} Colours
+                  </span>
+                }
+              >
+                {(isMaximized) => (
+                  <div
+                    data-table-scroll="true"
+                    className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px] overflow-y-auto'}`}
+                  >
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                        <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[11px] font-bold text-[#1F4E79] uppercase tracking-wider">
+                          <th className="py-3 px-4 w-12 border-r border-slate-200">#</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Colour Details</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Normalized Key</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Status</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Created Info</th>
+                          <th className="py-3 px-4 text-right pr-12 min-w-[130px]">Actions</th>
+                        </tr>
+                      </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredColours.map((colour, idx) => {
                       const swatchColor = getSwatchColor(colour.normalizedName);
@@ -899,8 +912,15 @@ export const GeneralSettingsPage: React.FC = () => {
                       );
                     })}
                   </tbody>
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 6, label: `TOTAL (${filteredColours.length} colours)` }
+                    ]}
+                  />
                 </table>
               </div>
+            )}
+          </TableMaximizeWrapper>
             )}
           </Card>
         </div>
@@ -981,18 +1001,30 @@ export const GeneralSettingsPage: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      <th className="py-3 px-4 w-12 text-center">#</th>
-                      <th className="py-3 px-4">Process Name</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Created Info</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
+              <TableMaximizeWrapper
+                title="Wash / Process Master Directory"
+                badge={
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+                    {filteredProcesses.length} Processes
+                  </span>
+                }
+              >
+                {(isMaximized) => (
+                  <div
+                    data-table-scroll="true"
+                    className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px] overflow-y-auto'}`}
+                  >
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                        <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[11px] font-bold text-[#1F4E79] uppercase tracking-wider">
+                          <th className="py-3 px-4 w-12 text-center border-r border-slate-200">#</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Process Name</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Category</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Status</th>
+                          <th className="py-3 px-4 border-r border-slate-200">Created Info</th>
+                          <th className="py-3 px-4 text-right pr-12 min-w-[130px]">Actions</th>
+                        </tr>
+                      </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredProcesses.map((proc, idx) => {
                       const creatorName = getUserDisplayName(proc.createdBy);
@@ -1085,8 +1117,15 @@ export const GeneralSettingsPage: React.FC = () => {
                       );
                     })}
                   </tbody>
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 6, label: `TOTAL (${filteredProcesses.length} processes)` }
+                    ]}
+                  />
                 </table>
               </div>
+            )}
+          </TableMaximizeWrapper>
             )}
           </Card>
         </div>

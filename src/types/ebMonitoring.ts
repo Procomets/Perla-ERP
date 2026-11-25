@@ -2,6 +2,7 @@ export interface EBReadingRecord {
   id: string;
   readingNumber: string; // e.g. "EB-2026-0001"
   date: string; // YYYY-MM-DD
+  unitType?: 'NTP' | 'PTP'; // Unit / Plant selection
   openingReading: number; // in kW
   openingTime: string; // e.g. "06:00"
   closingReading: number; // in kW
@@ -19,6 +20,7 @@ export interface EBReadingRecord {
 
 export interface CreateEBReadingPayload {
   date: string;
+  unitType?: 'NTP' | 'PTP';
   openingReading: number;
   openingTime: string;
   closingReading: number;
@@ -34,6 +36,7 @@ export interface EBReadingFilterOptions {
   search?: string;
   startDate?: string;
   endDate?: string;
+  unitType?: 'NTP' | 'PTP';
 }
 
 export interface EBSettings {

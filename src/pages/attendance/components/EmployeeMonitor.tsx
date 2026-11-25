@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, FileDown, Clock } from 'lucide-react';
 import { EmployeeMaster } from '../../../types/employee';
 import { AttendanceRecord } from '../../../types/attendance';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../../components/ui/TableMaximizeWrapper';
 import { AttendanceService, calculateWorkingHours, formatTime24To12 } from '../../../services/attendanceService';
 import { EmployeePdfModal } from './EmployeePdfModal';
 
@@ -103,12 +104,24 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
 
   // Yearly totals
   const totals = useMemo(() => {
-    const totalWorking = monthStats.reduce((acc, m) => acc + m.workingDays, 0);
+    const totalDays = monthStats.reduce((acc, m) => acc + m.totalDays, 0);
+    const workingDays = monthStats.reduce((acc, m) => acc + m.workingDays, 0);
+    const presentDays = monthStats.reduce((acc, m) => acc + m.presentDays, 0);
+    const nightDays = monthStats.reduce((acc, m) => acc + m.nightDays, 0);
+    const pnDays = monthStats.reduce((acc, m) => acc + m.pnDays, 0);
+    const absentDays = monthStats.reduce((acc, m) => acc + m.absentDays, 0);
+    const totalWorking = workingDays;
     const totalPresent = monthStats.reduce((acc, m) => acc + m.presentDays + m.nightDays + (m.pnDays * 2), 0);
-    const totalAbsent = monthStats.reduce((acc, m) => acc + m.absentDays, 0);
+    const totalAbsent = absentDays;
     const totalHours = monthStats.reduce((acc, m) => acc + (m.totalWorkingHours || 0), 0);
     const percent = totalWorking > 0 ? Math.round((totalPresent / totalWorking) * 100) : 0;
     return {
+      totalDays,
+      workingDays,
+      presentDays,
+      nightDays,
+      pnDays,
+      absentDays,
       totalWorking,
       totalPresent,
       totalAbsent,
@@ -196,124 +209,145 @@ export const EmployeeMonitor: React.FC<EmployeeMonitorProps> = ({ employees, cur
       </div>
 
       {/* 12 Months Breakdown Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
-                <th className="py-2.5 px-3 w-10"></th>
-                <th className="py-2.5 px-4 font-bold text-slate-700">Month</th>
-                <th className="py-2.5 px-3 text-center">Calendar Days</th>
-                <th className="py-2.5 px-3 text-center">Working Days</th>
-                <th className="py-2.5 px-3 text-center text-emerald-700">Present (P)</th>
-                <th className="py-2.5 px-3 text-center text-purple-700">Night (N)</th>
-                <th className="py-2.5 px-3 text-center text-sky-700">Double (P/N)</th>
-                <th className="py-2.5 px-3 text-center text-rose-700">Absent (AB)</th>
-                <th className="py-2.5 px-3 text-center text-indigo-700 font-bold">Total Working Hours</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Loading yearly records...
-                  </td>
+      <TableMaximizeWrapper
+        title={`Annual Attendance Breakdown - ${selectedEmployee?.fullName || 'Employee'} (${selectedYear})`}
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {selectedYear}
+          </span>
+        }
+      >
+        <div className="bg-white rounded-xl border border-slate-300 overflow-hidden shadow-2xs">
+          <div data-table-scroll="true" className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-[#EEF5FB] border-b-2 border-slate-300 text-[#1F4E79] font-bold uppercase text-[11px]">
+                  <th className="py-2.5 px-3 w-10 border-r border-slate-300 bg-[#EEF5FB]"></th>
+                  <th className="py-2.5 px-4 font-bold text-[#1F4E79] border-r border-slate-300 bg-[#EEF5FB]">Month</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Calendar Days</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Working Days</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Present (P)</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Night (N)</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Double (P/N)</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-300 bg-[#EEF5FB]">Absent (AB)</th>
+                  <th className="py-2.5 px-3 pr-12 min-w-[140px] text-center bg-[#EEF5FB]">Total Working Hours</th>
                 </tr>
-              ) : (
-                monthStats.map((stat) => {
-                  const isExpanded = !!expandedMonths[stat.monthIndex];
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                      Loading yearly records...
+                    </td>
+                  </tr>
+                ) : (
+                  monthStats.map((stat) => {
+                    const isExpanded = !!expandedMonths[stat.monthIndex];
 
-                  return (
-                    <React.Fragment key={stat.monthIndex}>
-                      <tr className="hover:bg-slate-50 transition cursor-pointer" onClick={() => toggleMonth(stat.monthIndex)}>
-                        <td className="py-2.5 px-3 text-center text-slate-400">
-                          {isExpanded ? <ChevronUp className="w-4 h-4 mx-auto" /> : <ChevronDown className="w-4 h-4 mx-auto" />}
-                        </td>
-                        <td className="py-2.5 px-4 font-bold text-slate-900">{stat.monthName}</td>
-                        <td className="py-2.5 px-3 text-center text-slate-600">{stat.totalDays}</td>
-                        <td className="py-2.5 px-3 text-center text-slate-700 font-medium">{stat.workingDays}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{stat.presentDays}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-purple-700">{stat.nightDays}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-sky-700">{stat.pnDays}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-rose-700">{stat.absentDays}</td>
-                        <td className="py-2.5 px-3 text-center font-bold text-slate-800">
-                          {stat.totalWorkingHours > 0 ? (
-                            <span className="font-mono text-xs">
-                              {stat.totalWorkingHours}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-mono">-</span>
-                          )}
-                        </td>
-                      </tr>
-
-                      {/* Expandable Date Breakdown */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={9} className="p-4 bg-slate-50/70 border-y border-slate-200">
-                            <div className="space-y-2">
-                              <span className="text-[11px] font-bold text-slate-600 block">
-                                Day-by-Day Attendance: {stat.monthName} {selectedYear}
+                    return (
+                      <React.Fragment key={stat.monthIndex}>
+                        <tr className="hover:bg-slate-50 transition cursor-pointer" onClick={() => toggleMonth(stat.monthIndex)}>
+                          <td className="py-2.5 px-3 text-center text-slate-400">
+                            {isExpanded ? <ChevronUp className="w-4 h-4 mx-auto" /> : <ChevronDown className="w-4 h-4 mx-auto" />}
+                          </td>
+                          <td className="py-2.5 px-4 font-bold text-slate-900">{stat.monthName}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-600">{stat.totalDays}</td>
+                          <td className="py-2.5 px-3 text-center text-slate-700 font-medium">{stat.workingDays}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{stat.presentDays}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-purple-700">{stat.nightDays}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-sky-700">{stat.pnDays}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-rose-700">{stat.absentDays}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-slate-800">
+                            {stat.totalWorkingHours > 0 ? (
+                              <span className="font-mono text-xs">
+                                {stat.totalWorkingHours}
                               </span>
-                              <div className="grid grid-cols-7 sm:grid-cols-10 md:grid-cols-16 gap-1.5 pt-1">
-                                {Array.from({ length: stat.totalDays }, (_, i) => i + 1).map((day) => {
-                                  const d = new Date(selectedYear, stat.monthIndex, day);
-                                  const dateStr = `${selectedYear}-${String(stat.monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                  const rec = stat.records.find((r) => r.date === dateStr);
-                                  const isSun = d.getDay() === 0;
-
-                                  let badge = 'bg-slate-100 text-slate-400 border border-slate-200';
-                                  let label = '-';
-
-                                  if (rec?.status === 'Present') {
-                                    badge = 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold';
-                                    label = 'P';
-                                  } else if (rec?.status === 'P/N') {
-                                    badge = 'bg-sky-100 text-sky-800 border border-sky-300 font-bold';
-                                    label = 'P/N';
-                                  } else if (rec?.status === 'N') {
-                                    badge = 'bg-purple-100 text-purple-800 border border-purple-300 font-bold';
-                                    label = 'N';
-                                  } else if (rec?.status === 'Absent') {
-                                    badge = 'bg-rose-100 text-rose-800 border border-rose-300 font-bold';
-                                    label = 'AB';
-                                  } else if (isSun) {
-                                    badge = 'bg-amber-50 text-amber-600 border border-amber-200';
-                                    label = 'Sun';
-                                  }
-
-                                  const hoursVal = rec?.workingHours || (rec?.timeIn && rec?.timeOut ? calculateWorkingHours(rec.timeIn, rec.timeOut) : 0);
-                                  const timingTitle = rec?.timeIn
-                                    ? ` • In: ${formatTime24To12(rec.timeIn)}${rec.timeOut ? ` | Out: ${formatTime24To12(rec.timeOut)}` : ''}${hoursVal > 0 ? ` (${hoursVal} hrs)` : ''}`
-                                    : '';
-
-                                  return (
-                                    <div
-                                      key={day}
-                                      className={`p-1.5 rounded-lg text-center flex flex-col items-center justify-center ${badge}`}
-                                      title={`${dateStr}: ${label}${timingTitle}`}
-                                    >
-                                      <span className="text-[9px] opacity-70 leading-none">{day}</span>
-                                      <span className="text-[10px] font-bold mt-0.5 leading-none">{label}</span>
-                                      {hoursVal > 0 && (
-                                        <span className="text-[8px] font-mono opacity-80 mt-0.5 leading-none">{hoursVal}</span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
+                            ) : (
+                              <span className="text-slate-300 font-mono">-</span>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+
+                        {/* Expandable Date Breakdown */}
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={9} className="p-4 bg-slate-50/70 border-y border-slate-200">
+                              <div className="space-y-2">
+                                <span className="text-[11px] font-bold text-slate-600 block">
+                                  Day-by-Day Attendance: {stat.monthName} {selectedYear}
+                                </span>
+                                <div className="grid grid-cols-7 sm:grid-cols-10 md:grid-cols-16 gap-1.5 pt-1">
+                                  {Array.from({ length: stat.totalDays }, (_, i) => i + 1).map((day) => {
+                                    const d = new Date(selectedYear, stat.monthIndex, day);
+                                    const dateStr = `${selectedYear}-${String(stat.monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                    const rec = stat.records.find((r) => r.date === dateStr);
+                                    const isSun = d.getDay() === 0;
+
+                                    let badge = 'bg-slate-100 text-slate-400 border border-slate-200';
+                                    let label = '-';
+
+                                    if (rec?.status === 'Present') {
+                                      badge = 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold';
+                                      label = 'P';
+                                    } else if (rec?.status === 'P/N') {
+                                      badge = 'bg-sky-100 text-sky-800 border border-sky-300 font-bold';
+                                      label = 'P/N';
+                                    } else if (rec?.status === 'N') {
+                                      badge = 'bg-purple-100 text-purple-800 border border-purple-300 font-bold';
+                                      label = 'N';
+                                    } else if (rec?.status === 'Absent') {
+                                      badge = 'bg-rose-100 text-rose-800 border border-rose-300 font-bold';
+                                      label = 'AB';
+                                    } else if (isSun) {
+                                      badge = 'bg-amber-50 text-amber-600 border border-amber-200';
+                                      label = 'Sun';
+                                    }
+
+                                    const hoursVal = rec?.workingHours || (rec?.timeIn && rec?.timeOut ? calculateWorkingHours(rec.timeIn, rec.timeOut) : 0);
+                                    const timingTitle = rec?.timeIn
+                                      ? ` • In: ${formatTime24To12(rec.timeIn)}${rec.timeOut ? ` | Out: ${formatTime24To12(rec.timeOut)}` : ''}${hoursVal > 0 ? ` (${hoursVal} hrs)` : ''}`
+                                      : '';
+
+                                    return (
+                                      <div
+                                        key={day}
+                                        className={`p-1.5 rounded-lg text-center flex flex-col items-center justify-center ${badge}`}
+                                        title={`${dateStr}: ${label}${timingTitle}`}
+                                      >
+                                        <span className="text-[9px] opacity-70 leading-none">{day}</span>
+                                        <span className="text-[10px] font-bold mt-0.5 leading-none">{label}</span>
+                                        {hoursVal > 0 && (
+                                          <span className="text-[8px] font-mono opacity-80 mt-0.5 leading-none">{hoursVal}</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+              <TableTotalsFooter
+                cells={[
+                  { colSpan: 2, label: `YEAR TOTAL (${selectedYear})` },
+                  { value: totals.totalDays, isTotal: true },
+                  { value: totals.workingDays, isTotal: true },
+                  { value: totals.presentDays, isTotal: true },
+                  { value: totals.nightDays, isTotal: true },
+                  { value: totals.pnDays, isTotal: true },
+                  { value: totals.absentDays, isTotal: true },
+                  { value: `${totals.totalHours} hrs`, isTotal: true }
+                ]}
+              />
+            </table>
+          </div>
         </div>
-      </div>
+      </TableMaximizeWrapper>
 
       {/* Interactive PDF Preview Modal */}
       <EmployeePdfModal

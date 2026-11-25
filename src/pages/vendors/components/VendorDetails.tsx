@@ -112,7 +112,7 @@ export const VendorDetails: React.FC<VendorDetailsProps> = ({
         <XCircle className="w-12 h-12 text-rose-500 mx-auto" />
         <h3 className="text-lg font-bold text-slate-800">Vendor Not Found</h3>
         <p className="text-xs text-slate-500">The requested vendor master record could not be located.</p>
-        <Button variant="outline" onClick={onBack}>
+        <Button variant="outline" onClick={onBack} data-back-button="true" title="Return to Vendor List (Esc)">
           Return to Vendor List
         </Button>
       </div>
@@ -157,6 +157,8 @@ export const VendorDetails: React.FC<VendorDetailsProps> = ({
           <div className="flex items-start gap-4">
             <button
               onClick={onBack}
+              data-back-button="true"
+              title="Back to Vendor List (Esc)"
               className="p-2 hover:bg-slate-100 rounded-xl transition-colors shrink-0 cursor-pointer mt-1"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -221,11 +223,10 @@ export const VendorDetails: React.FC<VendorDetailsProps> = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 font-bold text-xs rounded-t-xl transition-all border-b-2 cursor-pointer whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
+              className={`flex items-center gap-2 px-4 py-2.5 font-bold text-xs rounded-t-xl transition-all border-b-2 cursor-pointer whitespace-nowrap ${activeTab === tab.id
+                ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
             >
               {tab.icon}
               <span>{tab.label}</span>
@@ -443,9 +444,8 @@ export const VendorDetails: React.FC<VendorDetailsProps> = ({
             {contacts.map((c) => (
               <div
                 key={c.contactId}
-                className={`p-4 rounded-xl border space-y-2 ${
-                  c.isPrimary ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200 bg-slate-50'
-                }`}
+                className={`p-4 rounded-xl border space-y-2 ${c.isPrimary ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200 bg-slate-50'
+                  }`}
               >
                 <div className="flex justify-between items-start">
                   <div>

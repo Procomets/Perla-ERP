@@ -24,7 +24,9 @@ import {
   Calendar,
   Save,
   ChevronRight,
-  Info
+  Info,
+  Truck,
+  Printer
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useAuth } from '../../context/AuthContext';
@@ -34,12 +36,19 @@ import {
   SamplePoInward,
   SamplePoItem,
   SamplePoDispatchStatus,
-  SamplePoStatus
+  SamplePoStatus,
+  SamplePoOutward
 } from '../../types/samplePo';
 import { SamplePoService } from '../../services/samplePoService';
+import { SamplePoPdfService } from '../../services/samplePoPdfService';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { ExcelExportButton } from '../../components/ui/ExportButtons';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../components/ui/TableMaximizeWrapper';
+import { SampleOutwardTab } from './components/SampleOutwardTab';
 
 interface SamplePoPageProps {
   vendors?: Vendor[];
@@ -107,13 +116,18 @@ function formatDisplayDate(dateStr?: string): string {
     if (!isNaN(d.getTime())) {
       return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     }
-  } catch {}
+  } catch { }
   return dateStr;
 }
 
 export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
   const { user, isDemoMode, isAdmin } = useAuth();
   const userIsAdmin = Boolean(isAdmin || isUserAdmin(user));
+
+  // Top Level Tab: Inward vs Outward
+  const [activeProcessTab, setActiveProcessTab] = useState<'inward' | 'outward'>('inward');
+  const [sampleOutwards, setSampleOutwards] = useState<SamplePoOutward[]>(() => SamplePoService.getOutwardCache());
+  const [outwardPreSelectedInward, setOutwardPreSelectedInward] = useState<SamplePoInward | null>(null);
 
   // Data State
   const [samplePos, setSamplePos] = useState<SamplePoInward[]>(() => SamplePoService.getCache());
@@ -125,6 +139,8 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [showColumnFilters, setShowColumnFilters] = useState<boolean>(false);
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [columnFilters, setColumnFilters] = useState<{
     entryNumber: string;
     customerDcNumber: string;
@@ -230,6 +246,29 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
     };
   }, [isDemoMode]);
 
+  // Subscribe to real-time Sample Outwards
+  useEffect(() => {
+    let isMounted = true;
+    const unsubscribe = SamplePoService.subscribeSampleOutwards(
+      (data) => {
+        if (isMounted) {
+          setSampleOutwards(data);
+        }
+      },
+      (err) => {
+        console.warn('Real-time fallback for Sample Outwards:', err);
+        SamplePoService.getSampleOutwards(isDemoMode).then((data) => {
+          if (isMounted) setSampleOutwards(data);
+        });
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [isDemoMode]);
+
   // Handle 3-state sorting cycle: Default Direction -> Opposite Direction -> Normal (Unsorted)
   const handleSort = (field: SortField) => {
     const isNumericOrDate = field === 'totalQuantity' || field === 'customerDcDate' || field === 'createdAt';
@@ -251,15 +290,14 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
     const isCurrent = sortField === field && sortDirection !== 'normal';
     return (
       <span
-        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${
-          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
-        }`}
+        className={`inline-flex items-center transition-colors shrink-0 ml-1 ${isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60 group-hover:opacity-100'
+          }`}
         title={
           sortField === field && sortDirection === 'asc'
             ? 'Sorted ascending (click to sort descending or reset)'
             : sortField === field && sortDirection === 'desc'
-            ? 'Sorted descending (click to reset to unsorted)'
-            : 'Click to sort'
+              ? 'Sorted descending (click to reset to unsorted)'
+              : 'Click to sort'
         }
       >
         {isCurrent ? (
@@ -286,13 +324,17 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
       searchQuery.trim() !== '' ||
       searchColumn !== 'ALL' ||
       activeColumnFilterCount > 0 ||
+      Boolean(dateFrom) ||
+      Boolean(dateTo) ||
       (sortField !== null && sortDirection !== 'normal')
     );
-  }, [searchQuery, searchColumn, activeColumnFilterCount, sortField, sortDirection]);
+  }, [searchQuery, searchColumn, activeColumnFilterCount, dateFrom, dateTo, sortField, sortDirection]);
 
   const handleResetAllFilters = () => {
     setSearchQuery('');
     setSearchColumn('ALL');
+    setDateFrom('');
+    setDateTo('');
     setColumnFilters({
       entryNumber: '',
       customerDcNumber: '',
@@ -404,6 +446,14 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
       result = result.filter((po) => (po.status || '').toLowerCase().includes(val));
     }
 
+    // Date Range Filter (based on customerDcDate)
+    if (dateFrom) {
+      result = result.filter((po) => (po.customerDcDate || '') >= dateFrom);
+    }
+    if (dateTo) {
+      result = result.filter((po) => (po.customerDcDate || '') <= dateTo);
+    }
+
     // 3-State Sorting
     if (sortField && sortDirection !== 'normal') {
       result.sort((a, b) => {
@@ -426,7 +476,7 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
     }
 
     return result;
-  }, [samplePos, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
+  }, [samplePos, searchQuery, searchColumn, columnFilters, dateFrom, dateTo, sortField, sortDirection]);
 
   // Paginated Slices
   const totalRecords = filteredAndSortedPos.length;
@@ -461,7 +511,7 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
     let nextEntry = 'SMP-INW-2026-0006';
     try {
       nextEntry = await SamplePoService.generateNextEntryNumber();
-    } catch {}
+    } catch { }
 
     const today = new Date().toISOString().split('T')[0];
     const firstVendor = vendors[0];
@@ -515,23 +565,23 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
       remarks: po.remarks || '',
       items: (po.items && po.items.length > 0)
         ? po.items.map((it) => ({
-            ...it,
-            customerDcNumber: it.customerDcNumber || fallbackDc,
-            customerDcDate: it.customerDcDate || fallbackDate
-          }))
+          ...it,
+          customerDcNumber: it.customerDcNumber || fallbackDc,
+          customerDcDate: it.customerDcDate || fallbackDate
+        }))
         : [
-            {
-              id: `[#${Math.random().toString(16).substring(2, 7)}]`,
-              itemName: '',
-              styleNo: '',
-              washType: '',
-              quantity: 0,
-              unit: 'PCS',
-              customerDcNumber: fallbackDc,
-              customerDcDate: fallbackDate,
-              dispatchedQuantity: 0
-            }
-          ]
+          {
+            id: `[#${Math.random().toString(16).substring(2, 7)}]`,
+            itemName: '',
+            styleNo: '',
+            washType: '',
+            quantity: 0,
+            unit: 'PCS',
+            customerDcNumber: fallbackDc,
+            customerDcDate: fallbackDate,
+            dispatchedQuantity: 0
+          }
+        ]
     });
     setIsAddEditModalOpen(true);
   };
@@ -829,16 +879,80 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
     return formState.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
   }, [formState.items]);
 
+  const sampleTotals = useMemo(() => {
+    return filteredAndSortedPos.reduce(
+      (sum, p) => sum + (p.totalQuantity || 0),
+      0
+    );
+  }, [filteredAndSortedPos]);
+
   return (
     <div className="space-y-5">
+      {/* Top Navigation Switcher: Sample Inward vs Sample Outward */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveProcessTab('inward');
+              setOutwardPreSelectedInward(null);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeProcessTab === 'inward'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Sample Inward</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                activeProcessTab === 'inward'
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {samplePos.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveProcessTab('outward')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeProcessTab === 'outward'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>Sample Outward (Dispatch)</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                activeProcessTab === 'outward'
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {sampleOutwards.length}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-slate-400 font-medium">
+          {activeProcessTab === 'inward'
+            ? 'Manage sample inward entries & item specifications'
+            : 'Track outbound dispatches and challan delivery data'}
+        </div>
+      </div>
+
       {/* Notifications */}
       {notice && (
         <div
-          className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between shadow-2xs border ${
-            notice.type === 'success'
-              ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-              : 'bg-rose-50 text-rose-900 border-rose-200'
-          }`}
+          className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between shadow-2xs border ${notice.type === 'success'
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+            : 'bg-rose-50 text-rose-900 border-rose-200'
+            }`}
         >
           <div className="flex items-center gap-2">
             {notice.type === 'success' ? (
@@ -851,14 +965,32 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="text-slate-400 hover:text-slate-700 p-1"
+            className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* KPI Summary Cards */}
+      {/* Render Active View */}
+      {activeProcessTab === 'outward' ? (
+        <SampleOutwardTab
+          sampleOutwards={sampleOutwards}
+          samplePos={samplePos}
+          vendors={vendors}
+          user={user}
+          isDemoMode={isDemoMode}
+          onRefresh={() => {
+            SamplePoService.getSampleOutwards(isDemoMode).then(setSampleOutwards);
+            SamplePoService.getSamplePos(isDemoMode).then(setSamplePos);
+          }}
+          onNotice={(n) => setNotice(n)}
+          preSelectedInward={outwardPreSelectedInward}
+          onClearPreSelectedInward={() => setOutwardPreSelectedInward(null)}
+        />
+      ) : (
+        <>
+          {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Sample POs */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
@@ -866,9 +998,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Total Sample POs
             </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#1F4E79] flex items-center justify-center">
-              <FileText className="w-4 h-4" />
-            </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 font-mono">
@@ -884,9 +1013,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Total Sample Qty
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-              <Shirt className="w-4 h-4" />
-            </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 font-mono">
@@ -902,9 +1028,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Pending Dispatches
             </span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
-            </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 font-mono">
@@ -920,9 +1043,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Active Samples
             </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 font-mono">
@@ -934,586 +1054,655 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
       </div>
 
       {/* Main Table Card with All Table Controls */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Controls Bar Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
-          {/* Left: Column-Wise Search + Column Filters Toggle + Master Reset */}
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            {/* Search Pill */}
-            <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
-              <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
-                <select
-                  value={searchColumn}
-                  onChange={(e) => setSearchColumn(e.target.value)}
-                  className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
-                  title="Select column to search in"
-                >
-                  <option value="ALL">All Columns</option>
-                  <option value="entryNumber">Entry No</option>
-                  <option value="customerDcNumber">Customer DC No</option>
-                  <option value="vendorName">Customer / Vendor</option>
-                  <option value="items">Items & Styles</option>
-                  <option value="dispatchStatus">Dispatch Status</option>
-                  <option value="status">Status</option>
-                  <option value="remarks">Remarks</option>
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+      <TableMaximizeWrapper
+        title="Sample Purchase Orders & Processing"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredAndSortedPos.length} Sample POs
+          </span>
+        }
+      >
+        {(isMaximized) => (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
+            {/* Controls Bar Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+              {/* Left: Column-Wise Search + Column Filters Toggle + Master Reset */}
+              <div className="flex flex-wrap items-center gap-2.5 flex-1">
+                {/* Search Pill */}
+                <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
+                  <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
+                    <select
+                      value={searchColumn}
+                      onChange={(e) => setSearchColumn(e.target.value)}
+                      className="h-9 pl-3 pr-7 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer appearance-none"
+                      title="Select column to search in"
+                    >
+                      <option value="ALL">All Columns</option>
+                      <option value="entryNumber">Entry No</option>
+                      <option value="customerDcNumber">Customer DC No</option>
+                      <option value="vendorName">Customer / Vendor</option>
+                      <option value="items">Items & Styles</option>
+                      <option value="dispatchStatus">Dispatch Status</option>
+                      <option value="status">Status</option>
+                      <option value="remarks">Remarks</option>
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
 
-              <div className="relative flex-1 min-w-[200px] flex items-center">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={searchColumn === 'ALL' ? 'Search all columns...' : `Search ${searchColumn}...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
-                />
-                {searchQuery && (
+                  <div className="relative flex-1 min-w-[200px] flex items-center">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder={searchColumn === 'ALL' ? 'Search all columns...' : `Search ${searchColumn}...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-7 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column Filters Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowColumnFilters((prev) => !prev)}
+                  className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${showColumnFilters || activeColumnFilterCount > 0
+                    ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
+                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  title="Toggle inline column filters"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Column Filters</span>
+                  {activeColumnFilterCount > 0 && (
+                    <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      {activeColumnFilterCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Date Range Filters */}
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 h-9 text-xs shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    Start Date:
+                  </span>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="text-xs bg-transparent focus:outline-none text-slate-800 font-semibold cursor-pointer"
+                    title="Filter by start date"
+                  />
+                  <span className="text-slate-300">|</span>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    End Date:
+                  </span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="text-xs bg-transparent focus:outline-none text-slate-800 font-semibold cursor-pointer"
+                    title="Filter by end date"
+                  />
+                  {(dateFrom || dateTo) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateFrom('');
+                        setDateTo('');
+                      }}
+                      className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer ml-1"
+                      title="Clear date range"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Master Reset Button */}
+                {hasAnyFilter && (
                   <button
                     type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                    title="Clear search"
+                    onClick={handleResetAllFilters}
+                    className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                    title="Reset All Filters"
                   >
-                    <X className="w-3 h-3" />
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
                   </button>
                 )}
               </div>
+
+              {/* Right: Export Excel, Download PDF & Add Sample PO */}
+              <div className="flex items-center gap-2">
+                <ExcelExportButton
+                  onClick={handleExportExcel}
+                  label="Export Excel"
+                  title="Export filtered records to Excel spreadsheet"
+                />
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => SamplePoPdfService.downloadSamplePoTableReportPdf(filteredAndSortedPos, dateFrom, dateTo)}
+                  icon={<Printer className="w-4 h-4 text-rose-600" />}
+                  className="h-9 font-bold border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  title="Download entire table as PDF report"
+                >
+                  Download PDF
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  icon={<Plus className="w-4 h-4" />}
+                  onClick={handleOpenAddModal}
+                  className="h-9 font-bold cursor-pointer"
+                >
+                  Add Sample PO
+                </Button>
+              </div>
             </div>
 
-            {/* Column Filters Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setShowColumnFilters((prev) => !prev)}
-              className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                showColumnFilters || activeColumnFilterCount > 0
-                  ? 'bg-blue-50 border-blue-300 text-[#1F4E79]'
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-              title="Toggle inline column filters"
+            {/* Table View */}
+            <div
+              data-table-scroll="true"
+              className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'} overflow-y-auto`}
             >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Column Filters</span>
-              {activeColumnFilterCount > 0 && (
-                <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                  {activeColumnFilterCount}
-                </span>
-              )}
-            </button>
-
-            {/* Master Reset Button */}
-            {hasAnyFilter && (
-              <button
-                type="button"
-                onClick={handleResetAllFilters}
-                className="h-9 px-2.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-                title="Reset All Filters"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset</span>
-              </button>
-            )}
-          </div>
-
-          {/* Right: Export Excel & Add Sample PO */}
-          <div className="flex items-center gap-2">
-            <ExcelExportButton
-              onClick={handleExportExcel}
-              label="Export Excel"
-              title="Export filtered records to Excel spreadsheet"
-            />
-
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              icon={<Plus className="w-4 h-4" />}
-              onClick={handleOpenAddModal}
-              className="h-9 font-bold cursor-pointer"
-            >
-              Add Sample PO
-            </Button>
-          </div>
-        </div>
-
-        {/* Table View */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10.5px] tracking-wider select-none">
-                <th className="py-3 px-3 w-12 text-center whitespace-nowrap">S.No</th>
-                <th
-                  onClick={() => handleSort('entryNumber')}
-                  className="py-3 px-3 cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[170px] whitespace-nowrap"
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Entry Number</span>
-                    {renderSortIcon('entryNumber')}
-                  </div>
-                </th>
-                <th
-                  onClick={() => handleSort('customerDcNumber')}
-                  className="py-3 px-3 cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[130px] whitespace-nowrap"
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Customer DC</span>
-                    {renderSortIcon('customerDcNumber')}
-                  </div>
-                </th>
-                <th
-                  onClick={() => handleSort('vendorName')}
-                  className="py-3 px-3 cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[220px]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Customer / Vendor</span>
-                    {renderSortIcon('vendorName')}
-                  </div>
-                </th>
-                <th className="py-3 px-3 min-w-[260px]">
-                  <span>Items &amp; Styles</span>
-                </th>
-                <th
-                  onClick={() => handleSort('totalQuantity')}
-                  className="py-3 px-3 text-right cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[100px] whitespace-nowrap"
-                >
-                  <div className="flex items-center justify-end">
-                    <span>Total Qty</span>
-                    {renderSortIcon('totalQuantity')}
-                  </div>
-                </th>
-                <th
-                  onClick={() => handleSort('dispatchStatus')}
-                  className="py-3 px-3 text-center cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[120px] whitespace-nowrap"
-                >
-                  <div className="flex items-center justify-center">
-                    <span>Dispatch</span>
-                    {renderSortIcon('dispatchStatus')}
-                  </div>
-                </th>
-                <th
-                  onClick={() => handleSort('status')}
-                  className="py-3 px-3 text-center cursor-pointer group hover:bg-slate-100/80 transition-colors min-w-[90px] whitespace-nowrap"
-                >
-                  <div className="flex items-center justify-center">
-                    <span>Status</span>
-                    {renderSortIcon('status')}
-                  </div>
-                </th>
-                <th className="py-3 px-3 text-center w-28 whitespace-nowrap">Actions</th>
-              </tr>
-
-              {/* Inline Column Filters Row */}
-              {showColumnFilters && (
-                <tr className="bg-slate-50 border-b border-slate-200 text-xs">
-                  <th className="p-1.5 text-center text-[10px] text-slate-400 font-normal">
-                    #
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter Entry..."
-                      value={columnFilters.entryNumber}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, entryNumber: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter DC..."
-                      value={columnFilters.customerDcNumber}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, customerDcNumber: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter Customer..."
-                      value={columnFilters.vendorName}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, vendorName: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter Items / Styles..."
-                      value={columnFilters.itemSummary}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, itemSummary: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="number"
-                      placeholder="Min Qty"
-                      value={columnFilters.totalQuantity}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, totalQuantity: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 text-right focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Pending / Partial..."
-                      value={columnFilters.dispatchStatus}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, dispatchStatus: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Active..."
-                      value={columnFilters.status}
-                      onChange={(e) =>
-                        setColumnFilters((prev) => ({ ...prev, status: e.target.value }))
-                      }
-                      className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 text-center focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                    />
-                  </th>
-                  <th className="p-1.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setColumnFilters({
-                          entryNumber: '',
-                          customerDcNumber: '',
-                          customerDcDate: '',
-                          vendorName: '',
-                          itemSummary: '',
-                          totalQuantity: '',
-                          dispatchStatus: '',
-                          status: ''
-                        })
-                      }
-                      className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
+              <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
+                <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                  <tr className="bg-[#EEF5FB] text-[#1F4E79] border-b border-slate-300 font-bold uppercase text-[11px] tracking-wider select-none">
+                    <th className="py-3 px-3 w-12 text-center whitespace-nowrap">S.No</th>
+                    <th
+                      onClick={() => handleSort('entryNumber')}
+                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[150px] whitespace-nowrap"
                     >
-                      Clear
-                    </button>
-                  </th>
-                </tr>
-              )}
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    <div className="flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-[#1F4E79]" />
-                      <span>Loading Sample POs...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : paginatedPos.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
-                    <div className="max-w-xs mx-auto space-y-2">
-                      <Package className="w-8 h-8 text-slate-300 mx-auto" />
-                      <p className="font-bold text-slate-700">No Sample POs Found</p>
-                      <p className="text-xs text-slate-400">
-                        {hasAnyFilter
-                          ? 'No records match the active search or column filters.'
-                          : 'No sample inward work orders recorded yet. Click "+ Add Sample PO" to begin.'}
-                      </p>
-                      {hasAnyFilter && (
+                      <div className="flex items-center justify-between">
+                        <span>Entry Number</span>
+                        {renderSortIcon('entryNumber')}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('customerDcNumber')}
+                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[130px] whitespace-nowrap"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Customer DC No</span>
+                        {renderSortIcon('customerDcNumber')}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('customerDcDate')}
+                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[130px] whitespace-nowrap"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Customer DC Date</span>
+                        {renderSortIcon('customerDcDate')}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('vendorName')}
+                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[200px]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Customer / Vendor</span>
+                        {renderSortIcon('vendorName')}
+                      </div>
+                    </th>
+                    <th className="py-3 px-3 min-w-[220px]">
+                      <span>Items &amp; Styles</span>
+                    </th>
+                    <th
+                      onClick={() => handleSort('totalQuantity')}
+                      className="py-3 px-3 text-right cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[100px] whitespace-nowrap"
+                    >
+                      <div className="flex items-center justify-end">
+                        <span>Total Qty</span>
+                        {renderSortIcon('totalQuantity')}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('dispatchStatus')}
+                      className="py-3 px-3 text-center cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[120px] whitespace-nowrap"
+                    >
+                      <div className="flex items-center justify-center">
+                        <span>Dispatch</span>
+                        {renderSortIcon('dispatchStatus')}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort('status')}
+                      className="py-3 px-3 text-center cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[90px] whitespace-nowrap"
+                    >
+                      <div className="flex items-center justify-center">
+                        <span>Status</span>
+                        {renderSortIcon('status')}
+                      </div>
+                    </th>
+                    <th className="py-3 px-3 pr-12 text-center whitespace-nowrap min-w-[220px]">Actions</th>
+                  </tr>
+
+                  {/* Inline Column Filters Row */}
+                  {showColumnFilters && (
+                    <tr className="bg-slate-50 border-b border-slate-200 text-xs">
+                      <th className="p-1.5 text-center text-[10px] text-slate-400 font-normal">
+                        #
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Filter Entry..."
+                          value={columnFilters.entryNumber}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, entryNumber: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Filter DC No..."
+                          value={columnFilters.customerDcNumber}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, customerDcNumber: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Filter DC Date..."
+                          value={columnFilters.customerDcDate}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, customerDcDate: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Filter Customer..."
+                          value={columnFilters.vendorName}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, vendorName: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Filter Items / Styles..."
+                          value={columnFilters.itemSummary}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, itemSummary: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="number"
+                          placeholder="Min Qty"
+                          value={columnFilters.totalQuantity}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, totalQuantity: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 text-right focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Pending / Partial..."
+                          value={columnFilters.dispatchStatus}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, dispatchStatus: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5">
+                        <input
+                          type="text"
+                          placeholder="Active..."
+                          value={columnFilters.status}
+                          onChange={(e) =>
+                            setColumnFilters((prev) => ({ ...prev, status: e.target.value }))
+                          }
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 text-center focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                        />
+                      </th>
+                      <th className="p-1.5 text-right">
                         <button
                           type="button"
-                          onClick={handleResetAllFilters}
-                          className="mt-2 text-xs text-[#1F4E79] font-bold underline cursor-pointer"
+                          onClick={() =>
+                            setColumnFilters({
+                              entryNumber: '',
+                              customerDcNumber: '',
+                              customerDcDate: '',
+                              vendorName: '',
+                              itemSummary: '',
+                              totalQuantity: '',
+                              dispatchStatus: '',
+                              status: ''
+                            })
+                          }
+                          className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
                         >
-                          Clear All Filters
+                          Clear
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                paginatedPos.map((po, idx) => {
-                  const sNo = (currentPage - 1) * pageSize + idx + 1;
-                  const isExpanded = expandedId === po.id;
-                  const itemsCount = po.items?.length || 0;
-                  const firstItem = po.items?.[0];
+                      </th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        <div className="flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-[#1F4E79]" />
+                          <span>Loading Sample POs...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : paginatedPos.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-500">
+                        <div className="max-w-xs mx-auto space-y-2">
+                          <Package className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="font-bold text-slate-700">No Sample POs Found</p>
+                          <p className="text-xs text-slate-400">
+                            {hasAnyFilter
+                              ? 'No records match the active search or column filters.'
+                              : 'No sample inward work orders recorded yet. Click "+ Add Sample PO" to begin.'}
+                          </p>
+                          {hasAnyFilter && (
+                            <button
+                              type="button"
+                              onClick={handleResetAllFilters}
+                              className="mt-2 text-xs text-[#1F4E79] font-bold underline cursor-pointer"
+                            >
+                              Clear All Filters
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAndSortedPos.map((po, idx) => {
+                      const sNo = idx + 1;
+                      const isExpanded = expandedId === po.id;
+                      const itemsCount = po.items?.length || 0;
+                      const firstItem = po.items?.[0];
 
-                  return (
-                    <React.Fragment key={po.id}>
-                      <tr
-                        className={`hover:bg-slate-50/80 transition-colors ${
-                          isExpanded ? 'bg-blue-50/30' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-3 text-center text-slate-400 font-mono font-bold align-middle whitespace-nowrap">
-                          {sNo}
-                        </td>
-                        <td className="py-3 px-3 align-middle whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedId(isExpanded ? null : po.id)}
-                            className="font-bold font-mono text-[#1F4E79] hover:underline inline-flex items-center gap-1.5 text-left cursor-pointer text-xs"
-                          >
-                            <ChevronRight
-                              className={`w-3.5 h-3.5 shrink-0 transition-transform ${
-                                isExpanded ? 'rotate-90 text-[#1F4E79]' : 'text-slate-400'
+                      return (
+                        <React.Fragment key={po.id}>
+                          <tr
+                            className={`hover:bg-slate-50/80 transition-colors ${isExpanded ? 'bg-blue-50/30' : ''
                               }`}
-                            />
-                            <span>{po.entryNumber}</span>
-                          </button>
-                          <span className="text-[10px] text-slate-400 block ml-5">
-                            Added by: {po.createdByName || 'Staff'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 align-middle whitespace-nowrap">
-                          {(() => {
-                            const dcs = Array.from(
-                              new Set(
-                                (po.items || [])
-                                  .map((i) => i.customerDcNumber)
-                                  .filter(Boolean)
-                              )
-                            );
-                            const primaryDc = dcs.length > 0 ? dcs[0] : (po.customerDcNumber || '—');
-                            const moreCount = dcs.length > 1 ? dcs.length - 1 : 0;
-                            const primaryDate = (po.items && po.items[0]?.customerDcDate) || po.customerDcDate;
-
-                            return (
-                              <div>
-                                <div className="font-bold text-slate-900 font-mono text-xs flex items-center gap-1">
-                                  <span>DC #{primaryDc}</span>
-                                  {moreCount > 0 && (
-                                    <span
-                                      className="text-[10px] font-sans font-bold px-1.5 py-0.2 rounded bg-sky-100 text-sky-800"
-                                      title={`All DCs: ${dcs.map((d) => `#${d}`).join(', ')}`}
-                                    >
-                                      +{moreCount} more
+                          >
+                            <td className="py-3 px-3 text-center text-slate-400 font-mono font-bold align-middle whitespace-nowrap">
+                              {sNo}
+                            </td>
+                            <td className="py-3 px-3 align-middle whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedId(isExpanded ? null : po.id)}
+                                className="font-bold font-mono text-[#1F4E79] hover:underline inline-flex items-center gap-1.5 text-left cursor-pointer text-xs"
+                              >
+                                <ChevronRight
+                                  className={`w-3.5 h-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90 text-[#1F4E79]' : 'text-slate-400'
+                                    }`}
+                                />
+                                <span>{po.entryNumber}</span>
+                              </button>
+                            </td>
+                            {/* Separate Customer DC No */}
+                            <td className="py-3 px-3 align-middle whitespace-nowrap font-mono font-bold text-slate-900">
+                              {(() => {
+                                const dcs = Array.from(
+                                  new Set(
+                                    (po.items || [])
+                                      .map((i) => i.customerDcNumber)
+                                      .filter(Boolean)
+                                  )
+                                );
+                                const primaryDc = dcs.length > 0 ? dcs[0] : (po.customerDcNumber || '—');
+                                const moreCount = dcs.length > 1 ? dcs.length - 1 : 0;
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <span>{primaryDc !== '—' ? `DC #${primaryDc}` : '—'}</span>
+                                    {moreCount > 0 && (
+                                      <span
+                                        className="text-[10px] font-sans font-bold px-1.5 py-0.2 rounded bg-sky-100 text-sky-800"
+                                        title={`All DCs: ${dcs.map((d) => `#${d}`).join(', ')}`}
+                                      >
+                                        +{moreCount} more
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                            {/* Separate Customer DC Date */}
+                            <td className="py-3 px-3 align-middle whitespace-nowrap text-slate-600">
+                              {(() => {
+                                const primaryDate = (po.items && po.items[0]?.customerDcDate) || po.customerDcDate;
+                                return formatDisplayDate(primaryDate);
+                              })()}
+                            </td>
+                            <td className="py-3 px-3 align-middle">
+                              <div className="font-bold text-slate-900 leading-snug line-clamp-1 max-w-[220px]" title={po.vendorName}>
+                                {po.vendorName || '—'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 align-middle">
+                              {itemsCount > 0 ? (
+                                <div>
+                                  <div className="flex items-center gap-1.5 flex-nowrap">
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-bold text-[10.5px] whitespace-nowrap shrink-0">
+                                      {itemsCount} {itemsCount === 1 ? 'Item' : 'Items'}:
                                     </span>
-                                  )}
+                                    <span className="font-semibold text-slate-900 truncate max-w-[190px]" title={`${firstItem?.itemName} (${firstItem?.styleNo || '—'})`}>
+                                      {firstItem?.itemName} <span className="font-mono text-slate-500 font-normal">({firstItem?.styleNo || '—'})</span>
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-medium truncate max-w-[250px] mt-0.5">
+                                    Wash: <span className="text-slate-700 font-semibold">{firstItem?.washType || '—'}</span>
+                                    {itemsCount > 1 && (
+                                      <span className="text-[#1F4E79] font-bold ml-1">+{itemsCount - 1} more</span>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                  <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span>{formatDisplayDate(primaryDate)}</span>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="py-3 px-3 align-middle">
-                          <div className="font-bold text-slate-900 leading-snug line-clamp-1 max-w-[220px]" title={po.vendorName}>
-                            {po.vendorName || '—'}
-                          </div>
-                          {po.vendorGst && (
-                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                              GST: {po.vendorGst}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 align-middle">
-                          {itemsCount > 0 ? (
-                            <div>
-                              <div className="flex items-center gap-1.5 flex-nowrap">
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-bold text-[10.5px] whitespace-nowrap shrink-0">
-                                  {itemsCount} {itemsCount === 1 ? 'Item' : 'Items'}:
-                                </span>
-                                <span className="font-semibold text-slate-900 truncate max-w-[190px]" title={`${firstItem?.itemName} (${firstItem?.styleNo || '—'})`}>
-                                  {firstItem?.itemName} <span className="font-mono text-slate-500 font-normal">({firstItem?.styleNo || '—'})</span>
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 font-medium truncate max-w-[250px] mt-0.5">
-                                Wash: <span className="text-slate-700 font-semibold">{firstItem?.washType || '—'}</span>
-                                {itemsCount > 1 && (
-                                  <span className="text-[#1F4E79] font-bold ml-1">+{itemsCount - 1} more</span>
+                              ) : (
+                                <span className="text-slate-400 italic">No lines</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right align-middle whitespace-nowrap">
+                              <span className="font-black font-mono text-slate-900 text-sm block">
+                                {po.totalQuantity.toLocaleString()}
+                              </span>
+                              <span className="text-[10.5px] text-slate-500 font-bold block uppercase tracking-wider">
+                                {firstItem?.unit || 'PCS'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
+                              {getDispatchBadge(po.dispatchStatus)}
+                            </td>
+                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
+                              {getStatusBadge(po.status)}
+                            </td>
+                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap pr-12">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* Create Outward / Dispatch Action in words */}
+                                {(po.dispatchStatus || '').toLowerCase() !== 'completed' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOutwardPreSelectedInward(po);
+                                      setActiveProcessTab('outward');
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs transition cursor-pointer"
+                                    title="Create Sample Outward (Dispatch) for this PO"
+                                  >
+                                    Dispatch
+                                  </button>
                                 )}
+
+                                {/* View Details in words */}
+                                <button
+                                  type="button"
+                                  onClick={() => setViewDetailsPo(po)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
+                                  title="View full sample details"
+                                >
+                                  View
+                                </button>
+
+                                {/* Edit Action in words */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(po)}
+                                  className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
+                                  title="Edit Sample PO"
+                                >
+                                  Edit
+                                </button>
+
+                                {/* Delete Action in words */}
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmPo(po)}
+                                  className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
+                                  title="Delete Sample PO"
+                                >
+                                  Delete
+                                </button>
                               </div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic">No lines</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-right align-middle whitespace-nowrap">
-                          <span className="font-black font-mono text-slate-900 text-sm block">
-                            {po.totalQuantity.toLocaleString()}
-                          </span>
-                          <span className="text-[10.5px] text-slate-500 font-bold block uppercase tracking-wider">
-                            {firstItem?.unit || 'PCS'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
-                          {getDispatchBadge(po.dispatchStatus)}
-                        </td>
-                        <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
-                          {getStatusBadge(po.status)}
-                        </td>
-                        <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1">
-                            {/* View Details */}
-                            <button
-                              type="button"
-                              onClick={() => setViewDetailsPo(po)}
-                              className="p-1.5 text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                              title="View full sample details"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
+                            </td>
+                          </tr>
 
-                            {/* Edit Action */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(po)}
-                              className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition cursor-pointer"
-                              title="Edit Sample PO"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
+                          {/* Expanded Line Items Detail Row */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/70 border-b border-slate-200">
+                              <td colSpan={9} className="p-4 pl-12">
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 space-y-3">
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <div className="flex items-center gap-2">
+                                      <Layers className="w-4 h-4 text-[#1F4E79]" />
+                                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                        Sample Line Items Breakdown ({po.items?.length || 0})
+                                      </h4>
+                                    </div>
+                                    {po.remarks && (
+                                      <span className="text-xs text-slate-500 italic">
+                                        Remarks: "{po.remarks}"
+                                      </span>
+                                    )}
+                                  </div>
 
-                            {/* Delete Action */}
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirmPo(po)}
-                              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                              title="Delete Sample PO"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Expanded Line Items Detail Row */}
-                      {isExpanded && (
-                        <tr className="bg-slate-50/70 border-b border-slate-200">
-                          <td colSpan={9} className="p-4 pl-12">
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 space-y-3">
-                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                <div className="flex items-center gap-2">
-                                  <Layers className="w-4 h-4 text-[#1F4E79]" />
-                                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                                    Sample Line Items Breakdown ({po.items?.length || 0})
-                                  </h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border border-slate-100 rounded-lg">
+                                      <thead>
+                                        <tr className="bg-slate-100/70 text-slate-600 font-bold uppercase text-[10px]">
+                                          <th className="py-1.5 px-2.5">#</th>
+                                          <th className="py-1.5 px-2.5">Customer DC No</th>
+                                          <th className="py-1.5 px-2.5">Customer DC Date</th>
+                                          <th className="py-1.5 px-2.5">Item Name</th>
+                                          <th className="py-1.5 px-2.5">Style No</th>
+                                          <th className="py-1.5 px-2.5">Wash / Process Type</th>
+                                          <th className="py-1.5 px-2.5 text-right">Quantity</th>
+                                          <th className="py-1.5 px-2.5 text-right">Dispatched</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {(po.items || []).map((it, iIdx) => (
+                                          <tr key={it.id || iIdx} className="hover:bg-slate-50/50">
+                                            <td className="py-1.5 px-2.5 text-slate-400 font-mono">
+                                              {iIdx + 1}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 font-bold font-mono text-slate-900">
+                                              DC #{it.customerDcNumber || po.customerDcNumber || '—'}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 text-slate-600">
+                                              {formatDisplayDate(it.customerDcDate || po.customerDcDate)}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 font-bold text-slate-800">
+                                              {it.itemName}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 font-mono font-semibold text-slate-700">
+                                              {it.styleNo || '—'}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 text-slate-700 font-medium">
+                                              {it.washType || '—'}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 text-right font-black font-mono text-slate-900">
+                                              {it.quantity} {it.unit || 'PCS'}
+                                            </td>
+                                            <td className="py-1.5 px-2.5 text-right font-mono text-slate-600">
+                                              {it.dispatchedQuantity || 0} {it.unit || 'PCS'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                                {po.remarks && (
-                                  <span className="text-xs text-slate-500 italic">
-                                    Remarks: "{po.remarks}"
-                                  </span>
-                                )}
-                              </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+                <TableTotalsFooter
+                  cells={[
+                    { colSpan: 6, label: `Total (${filteredAndSortedPos.length} Sample Orders)`, isTotal: true },
+                    { quantity: sampleTotals, unit: 'piece', isTotal: true },
+                    { content: '—', align: 'center' },
+                    { content: '—', align: 'center' },
+                    { content: '—', align: 'center', className: 'pr-12' }
+                  ]}
+                />
+              </table>
+            </div>
 
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs border border-slate-100 rounded-lg">
-                                  <thead>
-                                    <tr className="bg-slate-100/70 text-slate-600 font-bold uppercase text-[10px]">
-                                      <th className="py-1.5 px-2.5">#</th>
-                                      <th className="py-1.5 px-2.5">Customer DC No</th>
-                                      <th className="py-1.5 px-2.5">Customer DC Date</th>
-                                      <th className="py-1.5 px-2.5">Item Name</th>
-                                      <th className="py-1.5 px-2.5">Style No</th>
-                                      <th className="py-1.5 px-2.5">Wash / Process Type</th>
-                                      <th className="py-1.5 px-2.5 text-right">Quantity</th>
-                                      <th className="py-1.5 px-2.5 text-right">Dispatched</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {(po.items || []).map((it, iIdx) => (
-                                      <tr key={it.id || iIdx} className="hover:bg-slate-50/50">
-                                        <td className="py-1.5 px-2.5 text-slate-400 font-mono">
-                                          {iIdx + 1}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 font-bold font-mono text-slate-900">
-                                          DC #{it.customerDcNumber || po.customerDcNumber || '—'}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 text-slate-600">
-                                          {formatDisplayDate(it.customerDcDate || po.customerDcDate)}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 font-bold text-slate-800">
-                                          {it.itemName}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 font-mono font-semibold text-slate-700">
-                                          {it.styleNo || '—'}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 text-slate-700 font-medium">
-                                          {it.washType || '—'}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 text-right font-black font-mono text-slate-900">
-                                          {it.quantity} {it.unit || 'PCS'}
-                                        </td>
-                                        <td className="py-1.5 px-2.5 text-right font-mono text-slate-600">
-                                          {it.dispatchedQuantity || 0} {it.unit || 'PCS'}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination & Summary Bar */}
-        <div className="p-3.5 sm:p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
-            <span>Show</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            <span>records per page</span>
-            <span className="text-slate-400 ml-2">
-              (Total {totalRecords} records)
-            </span>
+            {/* Single Stretch Display Summary Note */}
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+              <div>
+                Showing all <strong>{filteredAndSortedPos.length}</strong> records in one stretch
+                {filteredAndSortedPos.length !== samplePos.length && (
+                  <span className="text-slate-400 ml-1">
+                    (filtered from {samplePos.length} total)
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Perla ERP • Sample Inward Management
+              </div>
+            </div>
           </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              className="px-2.5 py-1 rounded border border-slate-200 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
-            >
-              Previous
-            </button>
-            <span className="px-2 text-xs font-semibold">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              type="button"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-              className="px-2.5 py-1 rounded border border-slate-200 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </div>
+        )}
+      </TableMaximizeWrapper>
+      </>
+      )}
 
       {/* ========================================================================= */}
       {/* MODAL 1: ADD / EDIT SAMPLE PO */}
@@ -1943,17 +2132,27 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                   Created by: {viewDetailsPo.createdByName || 'Staff'} • Status: {viewDetailsPo.status}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const target = viewDetailsPo;
-                  setViewDetailsPo(null);
-                  handleOpenEditModal(target);
-                }}
-              >
-                Edit Sample PO
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => SamplePoPdfService.downloadSingleSamplePoPdf(viewDetailsPo)}
+                  icon={<Printer className="w-4 h-4 text-rose-600" />}
+                >
+                  Download as PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const target = viewDetailsPo;
+                    setViewDetailsPo(null);
+                    handleOpenEditModal(target);
+                  }}
+                >
+                  Edit Sample PO
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>

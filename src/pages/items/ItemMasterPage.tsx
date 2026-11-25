@@ -10,6 +10,10 @@ import { ItemCategoryMasterService } from '../../services/itemCategoryMasterServ
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { StatusChip } from '../../components/ui/StatusChip';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../components/ui/TableMaximizeWrapper';
 import { ItemModal } from './components/ItemModal';
 import { ItemDetailsModal } from './components/ItemDetailsModal';
 import {
@@ -84,9 +88,8 @@ export const ItemMasterPage: React.FC = () => {
     const isCurrent = sortField === field && sortDirection !== 'normal';
     return (
       <span
-        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
-          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
-        }`}
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+          }`}
       >
         {isCurrent ? (
           sortDirection === 'asc' ? (
@@ -380,11 +383,10 @@ export const ItemMasterPage: React.FC = () => {
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${
-            toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/25'
-              : 'bg-rose-600 text-white border-rose-500 shadow-rose-600/25'
-          }`}
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${toast.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/25'
+            : 'bg-rose-600 text-white border-rose-500 shadow-rose-600/25'
+            }`}
         >
           <CheckCircle2 className="w-4 h-4 text-white" />
           <span>{toast.message}</span>
@@ -493,11 +495,10 @@ export const ItemMasterPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowColumnFilters((prev) => !prev)}
-              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
-                showColumnFilters || activeColumnFilterCount > 0
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${showColumnFilters || activeColumnFilterCount > 0
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
               title="Toggle inline column filters"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -566,331 +567,353 @@ export const ItemMasterPage: React.FC = () => {
             )}
           </div>
         </div>
-
-        {/* Single Sticky Table View */}
-        <div className="max-h-[620px] overflow-auto relative">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
-              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                {/* Item Code */}
-                <th
-                  onClick={() => handleSort('itemCode')}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Item Code</span>
-                    {renderSortIcon('itemCode')}
-                  </div>
-                </th>
-
-                {/* Full Item / Material Name */}
-                <th
-                  onClick={() => handleSort('itemName')}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Full Item / Material Name</span>
-                    {renderSortIcon('itemName')}
-                  </div>
-                </th>
-
-                {/* Category */}
-                <th
-                  onClick={() => handleSort('categoryName')}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Category</span>
-                    {renderSortIcon('categoryName')}
-                  </div>
-                </th>
-
-                {/* Base UOM */}
-                <th
-                  onClick={() => handleSort('baseUnit')}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Base UOM</span>
-                    {renderSortIcon('baseUnit')}
-                  </div>
-                </th>
-
-                {/* Min Stock */}
-                <th
-                  onClick={() => handleSort('minimumStockLevel', true)}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Min Stock</span>
-                    {renderSortIcon('minimumStockLevel')}
-                  </div>
-                </th>
-
-                {/* Status */}
-                <th
-                  onClick={() => handleSort('status')}
-                  className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Status</span>
-                    {renderSortIcon('status')}
-                  </div>
-                </th>
-
-                {/* Actions */}
-                <th className="p-3.5 whitespace-nowrap text-right bg-slate-50">Actions</th>
-              </tr>
-
-              {/* Sticky Inline Column Filters Row */}
-              {showColumnFilters && (
-                <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
-                  {/* Item Code */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter code..."
-                      value={columnFilters.itemCode || ''}
-                      onChange={(e) => handleColumnFilterChange('itemCode', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Item Name */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter name..."
-                      value={columnFilters.itemName || ''}
-                      onChange={(e) => handleColumnFilterChange('itemName', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Category */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter category..."
-                      value={columnFilters.categoryName || ''}
-                      onChange={(e) => handleColumnFilterChange('categoryName', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Base UOM */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter UOM..."
-                      value={columnFilters.baseUnit || ''}
-                      onChange={(e) => handleColumnFilterChange('baseUnit', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Min Stock */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter stock..."
-                      value={columnFilters.minStock || ''}
-                      onChange={(e) => handleColumnFilterChange('minStock', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Status */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter status..."
-                      value={columnFilters.status || ''}
-                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </th>
-
-                  {/* Actions Clear */}
-                  <th className="p-1.5 text-right">
-                    {activeColumnFilterCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setColumnFilters({})}
-                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
-                        title="Clear column filters"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </th>
-                </tr>
-              )}
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="py-16 text-center text-xs text-slate-400">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                    Loading master catalogue items...
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-16 text-center text-xs text-slate-500">
-                    <div className="max-w-xs mx-auto space-y-2">
-                      <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <p className="font-semibold text-slate-700">No master items found</p>
-                      <p className="text-slate-400 text-[11px]">
-                        Try adjusting your search criteria, category filters, or inline column filters.
-                      </p>
-                      {hasAnyFilter && (
-                        <button
-                          type="button"
-                          onClick={handleResetAllFilters}
-                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reset All Filters</span>
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                    {/* Item Code */}
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className="font-bold text-[#1F4E79] font-mono text-xs">{item.itemCode}</span>
-                    </td>
-
-                    {/* Item Name */}
-                    <td className="p-3.5">
-                      <span className="font-bold text-slate-900 block text-xs">{item.itemName}</span>
-                      {item.description && (
-                        <span className="text-[11px] text-slate-400 line-clamp-1">{item.description}</span>
-                      )}
-                    </td>
-
-                    {/* Category */}
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className="text-xs text-slate-700 font-medium">
-                        {item.categoryName || 'General'}
-                      </span>
-                    </td>
-
-                    {/* Base UOM */}
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className="font-mono font-bold text-slate-800 text-xs uppercase">
-                        {item.baseUnit}
-                      </span>
-                    </td>
-
-                    {/* Min Stock */}
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className="text-xs text-slate-600 font-mono">
-                        {item.minimumStockLevel !== undefined ? item.minimumStockLevel : 0} {item.baseUnit}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="p-3.5 whitespace-nowrap">
-                      <StatusChip
-                        status={item.status === 'active' ? 'Active' : 'Inactive'}
-                        variant={item.status === 'active' ? 'green' : 'slate'}
-                      />
-                    </td>
-
-                    {/* Actions */}
-                    <td className="p-3.5 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => handleViewItem(item)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"
-                          title="View Details"
-                        >
-                          View
-                        </button>
-
-                        <button
-                          onClick={() => handleEditItem(item)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs cursor-pointer"
-                          title="Edit Item"
-                        >
-                          Edit
-                        </button>
-
-                        {item.status === 'active' ? (
-                          <button
-                            onClick={() => handleDeactivate(item)}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs cursor-pointer"
-                            title="Deactivate Item"
-                          >
-                            Deactivate
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleReactivate(item)}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
-                            title="Reactivate Item"
-                          >
-                            Reactivate
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleDeleteItem(item)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
-                          title="Delete Item"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Table Records Summary Footer */}
-        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
-          <span>
-            Showing all <strong className="text-slate-800">{filteredItems.length}</strong> records in one stretch
-            {filteredItems.length !== items.length && (
-              <span className="text-slate-400 ml-1">(filtered from {items.length} total)</span>
-            )}
-          </span>
-          <span className="text-[11px] text-slate-400">
-            Total Active: {totalActiveCount} · Inactive: {inactiveCount} · Categories: {activeCategoriesCount}
-          </span>
-        </div>
       </div>
 
-      {/* Item Modal (Create / Edit) */}
-      <ItemModal
-        isOpen={isItemModalOpen}
-        onClose={() => setIsItemModalOpen(false)}
-        onSaved={handleItemSaved}
-        initialItem={selectedItemForEdit}
-        defaultCategoryId={itemModalDefaultCategoryId}
-        categories={categories}
-        units={units}
-        currentUser={currentUser}
-      />
+      {/* Single Sticky Table View */}
+      <TableMaximizeWrapper
+          title="Chemical & Material Master Directory"
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {filteredItems.length} Items
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0">
+              <div
+                data-table-scroll="true"
+                className={`overflow-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
+              >
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                    <tr className="border-b border-slate-300 text-[#1F4E79] bg-[#EEF5FB] font-bold uppercase tracking-wider text-[11px]">
+                      {/* Item Code */}
+                      <th
+                        onClick={() => handleSort('itemCode')}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Item Code</span>
+                          {renderSortIcon('itemCode')}
+                        </div>
+                      </th>
 
-      {/* Item Details Modal */}
-      <ItemDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        item={selectedItemForView}
-        onEdit={handleEditItem}
-        onDeactivate={handleDeactivate}
-        onReactivate={handleReactivate}
-        isAdminOrManager={isAdminOrManager}
-      />
-    </div>
-  );
+                      {/* Full Item / Material Name */}
+                      <th
+                        onClick={() => handleSort('itemName')}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Full Item / Material Name</span>
+                          {renderSortIcon('itemName')}
+                        </div>
+                      </th>
+
+                      {/* Category */}
+                      <th
+                        onClick={() => handleSort('categoryName')}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Category</span>
+                          {renderSortIcon('categoryName')}
+                        </div>
+                      </th>
+
+                      {/* Base UOM */}
+                      <th
+                        onClick={() => handleSort('baseUnit')}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Base UOM</span>
+                          {renderSortIcon('baseUnit')}
+                        </div>
+                      </th>
+
+                      {/* Min Stock */}
+                      <th
+                        onClick={() => handleSort('minimumStockLevel', true)}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Min Stock</span>
+                          {renderSortIcon('minimumStockLevel')}
+                        </div>
+                      </th>
+
+                      {/* Status */}
+                      <th
+                        onClick={() => handleSort('status')}
+                        className="p-3.5 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 transition bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span>Status</span>
+                          {renderSortIcon('status')}
+                        </div>
+                      </th>
+
+                      {/* Actions */}
+                      <th className="p-3.5 pr-12 whitespace-nowrap text-right min-w-[130px] bg-[#EEF5FB]">Actions</th>
+                    </tr>
+
+                    {/* Sticky Inline Column Filters Row */}
+                    {showColumnFilters && (
+                      <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+                        {/* Item Code */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter code..."
+                            value={columnFilters.itemCode || ''}
+                            onChange={(e) => handleColumnFilterChange('itemCode', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Item Name */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter name..."
+                            value={columnFilters.itemName || ''}
+                            onChange={(e) => handleColumnFilterChange('itemName', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Category */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter category..."
+                            value={columnFilters.categoryName || ''}
+                            onChange={(e) => handleColumnFilterChange('categoryName', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Base UOM */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter UOM..."
+                            value={columnFilters.baseUnit || ''}
+                            onChange={(e) => handleColumnFilterChange('baseUnit', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Min Stock */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter stock..."
+                            value={columnFilters.minStock || ''}
+                            onChange={(e) => handleColumnFilterChange('minStock', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Status */}
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filter status..."
+                            value={columnFilters.status || ''}
+                            onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                            className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                        </th>
+
+                        {/* Actions Clear */}
+                        <th className="p-1.5 text-right">
+                          {activeColumnFilterCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setColumnFilters({})}
+                              className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                              title="Clear column filters"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={7} className="py-16 text-center text-xs text-slate-400">
+                          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
+                          Loading master catalogue items...
+                        </td>
+                      </tr>
+                    ) : filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-16 text-center text-xs text-slate-500">
+                          <div className="max-w-xs mx-auto space-y-2">
+                            <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="font-semibold text-slate-700">No master items found</p>
+                            <p className="text-slate-400 text-[11px]">
+                              Try adjusting your search criteria, category filters, or inline column filters.
+                            </p>
+                            {hasAnyFilter && (
+                              <button
+                                type="button"
+                                onClick={handleResetAllFilters}
+                                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset All Filters</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredItems.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* Item Code */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <span className="font-bold text-[#1F4E79] font-mono text-xs">{item.itemCode}</span>
+                          </td>
+
+                          {/* Item Name */}
+                          <td className="p-3.5">
+                            <span className="font-bold text-slate-900 block text-xs">{item.itemName}</span>
+                            {item.description && (
+                              <span className="text-[11px] text-slate-400 line-clamp-1">{item.description}</span>
+                            )}
+                          </td>
+
+                          {/* Category */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <span className="text-xs text-slate-700 font-medium">
+                              {item.categoryName || 'General'}
+                            </span>
+                          </td>
+
+                          {/* Base UOM */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <span className="font-mono font-bold text-slate-800 text-xs uppercase">
+                              {item.baseUnit}
+                            </span>
+                          </td>
+
+                          {/* Min Stock */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <span className="text-xs text-slate-600 font-mono">
+                              {item.minimumStockLevel !== undefined ? item.minimumStockLevel : 0} {item.baseUnit}
+                            </span>
+                          </td>
+
+                          {/* Status */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <StatusChip
+                              status={item.status === 'active' ? 'Active' : 'Inactive'}
+                              variant={item.status === 'active' ? 'green' : 'slate'}
+                            />
+                          </td>
+
+                          {/* Actions */}
+                          <td className="p-3.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleViewItem(item)}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"
+                                title="View Details"
+                              >
+                                View
+                              </button>
+
+                              <button
+                                onClick={() => handleEditItem(item)}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-[#1F4E79] hover:text-white transition-colors border border-slate-200 shadow-2xs cursor-pointer"
+                                title="Edit Item"
+                              >
+                                Edit
+                              </button>
+
+                              {item.status === 'active' ? (
+                                <button
+                                  onClick={() => handleDeactivate(item)}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200 shadow-2xs cursor-pointer"
+                                  title="Deactivate Item"
+                                >
+                                  Deactivate
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleReactivate(item)}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
+                                  title="Reactivate Item"
+                                >
+                                  Reactivate
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => handleDeleteItem(item)}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
+                                title="Delete Item"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <TableTotalsFooter
+                    cells={[
+                      { colSpan: 6, label: `Total (${filteredItems.length} Items)`, isTotal: true },
+                      { content: '—', align: 'right', className: 'pr-12' }
+                    ]}
+                  />
+                </table>
+              </div>
+
+              {/* Table Records Summary Footer */}
+              <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+                <span>
+                  Showing all <strong className="text-slate-800">{filteredItems.length}</strong> records in one stretch
+                  {filteredItems.length !== items.length && (
+                    <span className="text-slate-400 ml-1">(filtered from {items.length} total)</span>
+                  )}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Total Active: {totalActiveCount} · Inactive: {inactiveCount} · Categories: {activeCategoriesCount}
+                </span>
+              </div>
+            </div>
+          )}
+        </TableMaximizeWrapper>
+
+        {/* Item Modal (Create / Edit) */}
+        <ItemModal
+          isOpen={isItemModalOpen}
+          onClose={() => setIsItemModalOpen(false)}
+          onSaved={handleItemSaved}
+          initialItem={selectedItemForEdit}
+          defaultCategoryId={itemModalDefaultCategoryId}
+          categories={categories}
+          units={units}
+          currentUser={currentUser}
+        />
+
+        {/* Item Details Modal */}
+        <ItemDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          item={selectedItemForView}
+          onEdit={handleEditItem}
+          onDeactivate={handleDeactivate}
+          onReactivate={handleReactivate}
+          isAdminOrManager={isAdminOrManager}
+        />
+      </div>
+      );
 };

@@ -50,6 +50,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import { UserRole, ModuleId, ModulePermissionsMap } from '../../types/user';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -108,9 +109,8 @@ export const UsersPage: React.FC = () => {
     const isCurrent = sortField === field && sortDirection !== 'normal';
     return (
       <span
-        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${
-          isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
-        }`}
+        className={`inline-flex items-center shrink-0 ml-1 transition-colors ${isCurrent ? 'text-slate-900 font-bold' : 'text-slate-400 opacity-60'
+          }`}
       >
         {isCurrent ? (
           sortDirection === 'asc' ? (
@@ -616,11 +616,10 @@ export const UsersPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowColumnFilters((prev) => !prev)}
-              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
-                showColumnFilters || activeColumnFilterCount > 0
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${showColumnFilters || activeColumnFilterCount > 0
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
               title="Toggle inline column filters"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -658,363 +657,375 @@ export const UsersPage: React.FC = () => {
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-        <div className="max-h-[620px] overflow-auto relative">
-          <table className="w-full text-left text-xs text-slate-600 border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-50 shadow-xs">
-              <tr className="border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                {/* User */}
-                <th
-                  onClick={() => handleSort('displayName')}
-                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>User</span>
-                    {renderSortIcon('displayName')}
-                  </div>
-                </th>
-
-                {/* Email */}
-                <th
-                  onClick={() => handleSort('email')}
-                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Email</span>
-                    {renderSortIcon('email')}
-                  </div>
-                </th>
-
-                {/* Designation */}
-                <th
-                  onClick={() => handleSort('designation')}
-                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Designation</span>
-                    {renderSortIcon('designation')}
-                  </div>
-                </th>
-
-                {/* Module Accessibility */}
-                <th className="px-5 py-3.5 whitespace-nowrap bg-slate-50">Module Accessibility</th>
-
-                {/* Password */}
-                <th className="px-5 py-3.5 whitespace-nowrap bg-slate-50">Password</th>
-
-                {/* Status */}
-                <th
-                  onClick={() => handleSort('status')}
-                  className="px-5 py-3.5 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap bg-slate-50"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span>Status</span>
-                    {renderSortIcon('status')}
-                  </div>
-                </th>
-
-                {/* Actions */}
-                <th className="px-5 py-3.5 text-right whitespace-nowrap bg-slate-50">Actions</th>
-              </tr>
-
-              {/* Sticky Column Filter Input Row */}
-              {showColumnFilters && (
-                <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+      <TableMaximizeWrapper
+        title="User Management & System Access Control"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredUsers.length} Users
+          </span>
+        }
+      >
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+          <div data-table-scroll="true" className="max-h-[620px] overflow-auto relative border border-slate-300 rounded-b-2xl">
+            <table className="w-full text-left text-xs text-slate-600 border-collapse border border-slate-300">
+              <thead className="sticky top-0 z-20 bg-[#EEF5FB] shadow-xs">
+                <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px]">
                   {/* User */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter name..."
-                      value={columnFilters.displayName || ''}
-                      onChange={(e) => handleColumnFilterChange('displayName', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
+                  <th
+                    onClick={() => handleSort('displayName')}
+                    className="px-5 py-3.5 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span>User</span>
+                      {renderSortIcon('displayName')}
+                    </div>
                   </th>
 
                   {/* Email */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter email..."
-                      value={columnFilters.email || ''}
-                      onChange={(e) => handleColumnFilterChange('email', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
+                  <th
+                    onClick={() => handleSort('email')}
+                    className="px-5 py-3.5 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span>Email</span>
+                      {renderSortIcon('email')}
+                    </div>
                   </th>
 
                   {/* Designation */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter designation..."
-                      value={columnFilters.designation || ''}
-                      onChange={(e) => handleColumnFilterChange('designation', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
+                  <th
+                    onClick={() => handleSort('designation')}
+                    className="px-5 py-3.5 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span>Designation</span>
+                      {renderSortIcon('designation')}
+                    </div>
                   </th>
 
                   {/* Module Accessibility */}
-                  <th className="p-1.5"></th>
+                  <th className="px-5 py-3.5 whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300">Module Accessibility</th>
 
                   {/* Password */}
-                  <th className="p-1.5"></th>
+                  <th className="px-5 py-3.5 whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300">Password</th>
 
                   {/* Status */}
-                  <th className="p-1.5">
-                    <input
-                      type="text"
-                      placeholder="Filter status..."
-                      value={columnFilters.status || ''}
-                      onChange={(e) => handleColumnFilterChange('status', e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
+                  <th
+                    onClick={() => handleSort('status')}
+                    className="px-5 py-3.5 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] border-r border-slate-300"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span>Status</span>
+                      {renderSortIcon('status')}
+                    </div>
                   </th>
 
-                  {/* Actions Clear */}
-                  <th className="p-1.5 text-right">
-                    {activeColumnFilterCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setColumnFilters({})}
-                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
-                        title="Clear column filters"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </th>
+                  {/* Actions */}
+                  <th className="px-5 py-3.5 text-center whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] min-w-[130px] pr-12">Actions</th>
                 </tr>
-              )}
-            </thead>
-            <tbody className="divide-y divide-slate-200/60">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                    Loading users...
-                  </td>
-                </tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    <div className="max-w-xs mx-auto space-y-2">
-                      <p className="font-semibold text-slate-700">No users found matching your criteria</p>
-                      <p className="text-slate-400 text-[11px]">
-                        Try adjusting your search query or inline column filters.
-                      </p>
-                      {hasAnyFilter && (
+
+                {/* Sticky Column Filter Input Row */}
+                {showColumnFilters && (
+                  <tr className="sticky top-[41px] z-20 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 shadow-xs">
+                    {/* User */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        placeholder="Filter name..."
+                        value={columnFilters.displayName || ''}
+                        onChange={(e) => handleColumnFilterChange('displayName', e.target.value)}
+                        className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </th>
+
+                    {/* Email */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        placeholder="Filter email..."
+                        value={columnFilters.email || ''}
+                        onChange={(e) => handleColumnFilterChange('email', e.target.value)}
+                        className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </th>
+
+                    {/* Designation */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        placeholder="Filter designation..."
+                        value={columnFilters.designation || ''}
+                        onChange={(e) => handleColumnFilterChange('designation', e.target.value)}
+                        className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </th>
+
+                    {/* Module Accessibility */}
+                    <th className="p-1.5"></th>
+
+                    {/* Password */}
+                    <th className="p-1.5"></th>
+
+                    {/* Status */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        placeholder="Filter status..."
+                        value={columnFilters.status || ''}
+                        onChange={(e) => handleColumnFilterChange('status', e.target.value)}
+                        className="w-full px-2 py-1 text-[11px] bg-white border border-slate-200 rounded font-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </th>
+
+                    {/* Actions Clear */}
+                    <th className="p-1.5 text-center min-w-[130px] pr-12">
+                      {activeColumnFilterCount > 0 && (
                         <button
                           type="button"
-                          onClick={handleResetAllFilters}
-                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                          onClick={() => setColumnFilters({})}
+                          className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                          title="Clear column filters"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reset All Filters</span>
+                          Clear
                         </button>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((targetUser) => {
-                  const isUserAnAdmin =
-                    targetUser.role?.toLowerCase() === 'admin' ||
-                    targetUser.designation?.toLowerCase() === 'admin' ||
-                    (targetUser.permittedModules && targetUser.permittedModules.includes('*'));
-
-                  const accessibleModulesCount = isUserAnAdmin
-                    ? ERP_MODULES.length
-                    : targetUser.permissions
-                    ? Object.values(targetUser.permissions).filter((p) => p?.view).length
-                    : targetUser.permittedModules?.length || 0;
-
-                  const isExpanded = expandedUserPerms === targetUser.id;
-
-                  return (
-                    <React.Fragment key={targetUser.id}>
-                      <tr className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold border border-slate-200 shrink-0">
-                              {targetUser.displayName?.charAt(0).toUpperCase() || 'U'}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="font-bold text-slate-900 block truncate">
-                                {targetUser.displayName}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 font-mono text-[11px] text-slate-600">
-                          <div className="flex items-center space-x-1.5">
-                            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>{targetUser.email}</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-tight ${
-                              isUserAnAdmin
-                                ? 'bg-black text-white'
-                                : (targetUser.designation || targetUser.role)?.toLowerCase().includes('manager')
-                                ? 'bg-blue-100 text-blue-900'
-                                : (targetUser.designation || targetUser.role)?.toLowerCase().includes('supervisor')
-                                ? 'bg-purple-100 text-purple-900'
-                                : 'bg-slate-100 text-slate-800'
-                            }`}
+                    </th>
+                  </tr>
+                )}
+              </thead>
+              <tbody className="divide-y divide-slate-200/60">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
+                      Loading users...
+                    </td>
+                  </tr>
+                ) : filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <div className="max-w-xs mx-auto space-y-2">
+                        <p className="font-semibold text-slate-700">No users found matching your criteria</p>
+                        <p className="text-slate-400 text-[11px]">
+                          Try adjusting your search query or inline column filters.
+                        </p>
+                        {hasAnyFilter && (
+                          <button
+                            type="button"
+                            onClick={handleResetAllFilters}
+                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
                           >
-                            {targetUser.designation || targetUser.role || 'User'}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            {isUserAnAdmin ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-medium">
-                                <Shield className="w-3 h-3 text-emerald-600" />
-                                All Modules (Full Access)
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedUserPerms(isExpanded ? null : targetUser.id)
-                                }
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium transition cursor-pointer"
-                                title="Click to view module access breakdown"
-                              >
-                                <span>{accessibleModulesCount} of {ERP_MODULES.length} Modules</span>
-                                <span className="text-[10px] text-slate-400">
-                                  {isExpanded ? '▲' : '▼'}
-                                </span>
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
-                              {targetUser.password
-                                ? visiblePasswords[targetUser.id]
-                                  ? targetUser.password
-                                  : '••••••••'
-                                : 'N/A'}
-                            </span>
-                            {targetUser.password && (
-                              <button
-                                onClick={() => togglePasswordVisibility(targetUser.id)}
-                                className="text-slate-400 hover:text-slate-600 transition p-1"
-                                title="Toggle password visibility"
-                              >
-                                {visiblePasswords[targetUser.id] ? (
-                                  <EyeOff className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Eye className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          {targetUser.isActive ? (
-                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle className="w-3 h-3" />
-                              <span>Active</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                              <XCircle className="w-3 h-3" />
-                              <span>Inactive</span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          <div className="flex items-center justify-end space-x-2">
-                            <button
-                              onClick={() => openEditModal(targetUser)}
-                              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-                              title="Edit User & Permissions"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(targetUser)}
-                              className={`p-1.5 rounded-lg transition ${
-                                currentUser?.uid === targetUser.id
-                                  ? 'text-slate-200 cursor-not-allowed'
-                                  : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
-                              }`}
-                              title={
-                                currentUser?.uid === targetUser.id
-                                  ? 'You cannot delete your own account'
-                                  : 'Delete User'
-                              }
-                              disabled={currentUser?.uid === targetUser.id}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reset All Filters</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((targetUser) => {
+                    const isUserAnAdmin =
+                      targetUser.role?.toLowerCase() === 'admin' ||
+                      targetUser.designation?.toLowerCase() === 'admin' ||
+                      (targetUser.permittedModules && targetUser.permittedModules.includes('*'));
 
-                      {/* Expanded Module Permissions Row */}
-                      {isExpanded && !isUserAnAdmin && (
-                        <tr className="bg-slate-50/90 border-b border-slate-200">
-                          <td colSpan={7} className="px-6 py-3">
-                            <div className="space-y-2">
-                              <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                <Layers className="w-3.5 h-3.5" />
-                                <span>Accessible Modules for {targetUser.displayName}</span>
+                    const accessibleModulesCount = isUserAnAdmin
+                      ? ERP_MODULES.length
+                      : targetUser.permissions
+                        ? Object.values(targetUser.permissions).filter((p) => p?.view).length
+                        : targetUser.permittedModules?.length || 0;
+
+                    const isExpanded = expandedUserPerms === targetUser.id;
+
+                    return (
+                      <React.Fragment key={targetUser.id}>
+                        <tr className="hover:bg-slate-50/70 transition-colors">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold border border-slate-200 shrink-0">
+                                {targetUser.displayName?.charAt(0).toUpperCase() || 'U'}
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                {ERP_MODULES.map((mod) => {
-                                  const perm = targetUser.permissions?.[mod.id];
-                                  const hasView = perm?.view;
-                                  if (!hasView) return null;
-                                  return (
-                                    <div
-                                      key={mod.id}
-                                      className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] shadow-2xs"
-                                    >
-                                      <span className="font-semibold text-slate-800">{mod.label}</span>
-                                      <span className="text-[10px] text-slate-400 font-mono">
-                                        ({perm?.view && 'V'}
-                                        {perm?.edit && ', E'}
-                                        {perm?.delete && ', D'})
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                {accessibleModulesCount === 0 && (
-                                  <span className="text-xs text-slate-400 italic">
-                                    No modules granted yet. Click edit to assign permissions.
-                                  </span>
-                                )}
+                              <div className="min-w-0">
+                                <span className="font-bold text-slate-900 block truncate">
+                                  {targetUser.displayName}
+                                </span>
                               </div>
                             </div>
                           </td>
+                          <td className="px-5 py-3.5 font-mono text-[11px] text-slate-600">
+                            <div className="flex items-center space-x-1.5">
+                              <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>{targetUser.email}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-tight ${isUserAnAdmin
+                                ? 'bg-black text-white'
+                                : (targetUser.designation || targetUser.role)?.toLowerCase().includes('manager')
+                                  ? 'bg-blue-100 text-blue-900'
+                                  : (targetUser.designation || targetUser.role)?.toLowerCase().includes('supervisor')
+                                    ? 'bg-purple-100 text-purple-900'
+                                    : 'bg-slate-100 text-slate-800'
+                                }`}
+                            >
+                              {targetUser.designation || targetUser.role || 'User'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2">
+                              {isUserAnAdmin ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-medium">
+                                  <Shield className="w-3 h-3 text-emerald-600" />
+                                  All Modules (Full Access)
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedUserPerms(isExpanded ? null : targetUser.id)
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium transition cursor-pointer"
+                                  title="Click to view module access breakdown"
+                                >
+                                  <span>{accessibleModulesCount} of {ERP_MODULES.length} Modules</span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {isExpanded ? '▲' : '▼'}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                                {targetUser.password
+                                  ? visiblePasswords[targetUser.id]
+                                    ? targetUser.password
+                                    : '••••••••'
+                                  : 'N/A'}
+                              </span>
+                              {targetUser.password && (
+                                <button
+                                  onClick={() => togglePasswordVisibility(targetUser.id)}
+                                  className="text-slate-400 hover:text-slate-600 transition p-1"
+                                  title="Toggle password visibility"
+                                >
+                                  {visiblePasswords[targetUser.id] ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {targetUser.isActive ? (
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle className="w-3 h-3" />
+                                <span>Active</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                <XCircle className="w-3 h-3" />
+                                <span>Inactive</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex items-center justify-end space-x-2">
+                              <button
+                                onClick={() => openEditModal(targetUser)}
+                                className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                                title="Edit User & Permissions"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(targetUser)}
+                                className={`p-1.5 rounded-lg transition ${currentUser?.uid === targetUser.id
+                                  ? 'text-slate-200 cursor-not-allowed'
+                                  : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                title={
+                                  currentUser?.uid === targetUser.id
+                                    ? 'You cannot delete your own account'
+                                    : 'Delete User'
+                                }
+                                disabled={currentUser?.uid === targetUser.id}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
 
-        {/* Table Records Summary Footer */}
-        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
-          <span>
-            Showing all <strong className="text-slate-800">{filteredUsers.length}</strong> accounts in one stretch
-            {filteredUsers.length !== users.length && (
-              <span className="text-slate-400 ml-1">(filtered from {users.length} total)</span>
-            )}
-          </span>
-          <span className="text-[11px] text-slate-400">
-            Active Accounts: {users.filter((u) => u.isActive !== false).length} · Inactive: {users.filter((u) => u.isActive === false).length}
-          </span>
+                        {/* Expanded Module Permissions Row */}
+                        {isExpanded && !isUserAnAdmin && (
+                          <tr className="bg-slate-50/90 border-b border-slate-200">
+                            <td colSpan={7} className="px-6 py-3">
+                              <div className="space-y-2">
+                                <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Layers className="w-3.5 h-3.5" />
+                                  <span>Accessible Modules for {targetUser.displayName}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {ERP_MODULES.map((mod) => {
+                                    const perm = targetUser.permissions?.[mod.id];
+                                    const hasView = perm?.view;
+                                    if (!hasView) return null;
+                                    return (
+                                      <div
+                                        key={mod.id}
+                                        className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] shadow-2xs"
+                                      >
+                                        <span className="font-semibold text-slate-800">{mod.label}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                          ({perm?.view && 'V'}
+                                          {perm?.edit && ', E'}
+                                          {perm?.delete && ', D'})
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                  {accessibleModulesCount === 0 && (
+                                    <span className="text-xs text-slate-400 italic">
+                                      No modules granted yet. Click edit to assign permissions.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+              <TableTotalsFooter
+                cells={[
+                  { colSpan: 7, label: `TOTAL (${filteredUsers.length} accounts)` }
+                ]}
+              />
+            </table>
+          </div>
+
+          {/* Table Records Summary Footer */}
+          <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+            <span>
+              Showing all <strong className="text-slate-800">{filteredUsers.length}</strong> accounts in one stretch
+              {filteredUsers.length !== users.length && (
+                <span className="text-slate-400 ml-1">(filtered from {users.length} total)</span>
+              )}
+            </span>
+            <span className="text-[11px] text-slate-400">
+              Active Accounts: {users.filter((u) => u.isActive !== false).length} · Inactive: {users.filter((u) => u.isActive === false).length}
+            </span>
+          </div>
         </div>
-      </div>
+      </TableMaximizeWrapper>
 
       {/* Create / Edit User Modal */}
       {isModalOpen && (
@@ -1272,9 +1283,8 @@ export const UsersPage: React.FC = () => {
                               return (
                                 <div
                                   key={mod.id}
-                                  className={`px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                                    perm.view ? 'bg-blue-50/20' : 'bg-white'
-                                  }`}
+                                  className={`px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${perm.view ? 'bg-blue-50/20' : 'bg-white'
+                                    }`}
                                 >
                                   <div className="min-w-0 max-w-sm">
                                     <div className="flex items-center gap-2">
@@ -1304,9 +1314,8 @@ export const UsersPage: React.FC = () => {
                                         className="rounded text-slate-900 focus:ring-0 w-3.5 h-3.5"
                                       />
                                       <span
-                                        className={`text-xs font-semibold ${
-                                          perm.view ? 'text-slate-900' : 'text-slate-400'
-                                        }`}
+                                        className={`text-xs font-semibold ${perm.view ? 'text-slate-900' : 'text-slate-400'
+                                          }`}
                                       >
                                         View
                                       </span>
@@ -1322,9 +1331,8 @@ export const UsersPage: React.FC = () => {
                                         className="rounded text-slate-900 focus:ring-0 w-3.5 h-3.5"
                                       />
                                       <span
-                                        className={`text-xs font-semibold ${
-                                          perm.edit ? 'text-slate-900' : 'text-slate-400'
-                                        }`}
+                                        className={`text-xs font-semibold ${perm.edit ? 'text-slate-900' : 'text-slate-400'
+                                          }`}
                                       >
                                         Edit
                                       </span>
@@ -1340,9 +1348,8 @@ export const UsersPage: React.FC = () => {
                                         className="rounded text-slate-900 focus:ring-0 w-3.5 h-3.5"
                                       />
                                       <span
-                                        className={`text-xs font-semibold ${
-                                          perm.delete ? 'text-slate-900' : 'text-slate-400'
-                                        }`}
+                                        className={`text-xs font-semibold ${perm.delete ? 'text-slate-900' : 'text-slate-400'
+                                          }`}
                                       >
                                         Delete
                                       </span>

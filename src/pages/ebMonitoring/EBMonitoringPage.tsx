@@ -6,6 +6,7 @@ import { EBSettingsService } from '../../services/ebSettingsService';
 import { isUserAdmin } from '../../utils/permissions';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import {
   Plus,
@@ -114,6 +115,7 @@ export const EBMonitoringPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   // Filters & Table Controls State
+  const [selectedUnit, setSelectedUnit] = useState<'PTP' | 'NTP'>('PTP');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchColumn, setSearchColumn] = useState<string>('ALL');
   const [startDate, setStartDate] = useState('');
@@ -205,6 +207,7 @@ export const EBMonitoringPage: React.FC = () => {
 
   // Form Fields
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formUnitType, setFormUnitType] = useState<'NTP' | 'PTP'>('PTP');
   const [formOpeningReading, setFormOpeningReading] = useState<number | ''>('');
   const [formOpeningTime, setFormOpeningTime] = useState('06:00');
   const [formClosingReading, setFormClosingReading] = useState<number | ''>('');
@@ -237,7 +240,8 @@ export const EBMonitoringPage: React.FC = () => {
 
   // Filtered readings with multi-column search, column filters, and 3-state sorting
   const filteredReadings = useMemo(() => {
-    let result = [...readings];
+    // Only show readings for the selected unit (PTP or NTP)
+    let result = readings.filter((r) => (r.unitType || 'PTP') === selectedUnit);
 
     if (startDate) {
       result = result.filter((r) => r.date >= startDate);
@@ -324,7 +328,18 @@ export const EBMonitoringPage: React.FC = () => {
     }
 
     return result;
-  }, [readings, startDate, endDate, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
+  }, [readings, selectedUnit, startDate, endDate, searchQuery, searchColumn, columnFilters, sortField, sortDirection]);
+
+  // Dynamic Totals for Table Footer
+  const ebTotals = useMemo(() => {
+    let units = 0;
+    let cost = 0;
+    filteredReadings.forEach((r) => {
+      units += Number(r.totalUnits) || 0;
+      cost += Number(r.totalCost) || 0;
+    });
+    return { units, cost };
+  }, [filteredReadings]);
 
   // Overall KPI Metrics (Dynamically calculated based on applied filters)
   const metrics = useMemo(() => {
@@ -357,10 +372,16 @@ export const EBMonitoringPage: React.FC = () => {
     readingNumber?: string;
   } | null>(null);
 
-  // Helper to find preceding reading for a given target date
-  const findPrecedingReading = (targetDate: string, recordList: EBReadingRecord[]) => {
+  // Helper to find preceding reading for a given target date and unit (NTP / PTP)
+  const findPrecedingReading = (
+    targetDate: string,
+    recordList: EBReadingRecord[],
+    targetUnit: 'NTP' | 'PTP' = 'PTP'
+  ) => {
     if (!recordList || recordList.length === 0) return null;
-    const sorted = [...recordList].sort(
+    const filteredByUnit = recordList.filter((r) => (r.unitType || 'PTP') === targetUnit);
+    if (filteredByUnit.length === 0) return null;
+    const sorted = [...filteredByUnit].sort(
       (a, b) =>
         (b.date || '').localeCompare(a.date || '') ||
         (b.createdAt || '').localeCompare(a.createdAt || '')
@@ -384,6 +405,19 @@ export const EBMonitoringPage: React.FC = () => {
     return Math.round(liveTotalUnits * rate * 100) / 100;
   }, [liveTotalUnits, formSpendingAmountPerUnit]);
 
+  // Check if a reading already exists for the selected date and unit (only 1 reading per day allowed)
+  const existingReadingForFormDate = useMemo(() => {
+    if (!isModalOpen || !formDate) return null;
+    return (
+      readings.find(
+        (r) =>
+          r.date === formDate &&
+          (r.unitType || 'PTP') === formUnitType &&
+          (!isEditMode || r.id !== editingId)
+      ) || null
+    );
+  }, [isModalOpen, readings, formDate, formUnitType, isEditMode, editingId]);
+
   // Open Add Modal: Auto-populate opening reading & opening time from previous day's closing entry,
   // user name from logged-in user profile in the background, current time as closing time,
   // and unit rate from General Settings
@@ -397,6 +431,7 @@ export const EBMonitoringPage: React.FC = () => {
     const currentTime = `${currentHours}:${currentMinutes}`;
 
     setFormDate(todayStr);
+    setFormUnitType(selectedUnit);
     setFormClosingReading('');
     setFormClosingTime(currentTime); // Auto-populated with current time
     setFormRemarks('');
@@ -418,13 +453,14 @@ export const EBMonitoringPage: React.FC = () => {
       setFormSpendingAmountPerUnit(currentUnitPrice > 0 ? currentUnitPrice : 9.5);
     }
 
-    // 3. Automatically collect starting reading & opening time from previous closing entry
+    // 3. Automatically collect starting reading & opening time from previous closing entry for selectedUnit
     let latest: EBReadingRecord | null = null;
     if (readings.length > 0) {
-      latest = findPrecedingReading(todayStr, readings);
-    } else {
+      latest = findPrecedingReading(todayStr, readings, selectedUnit);
+    }
+    if (!latest) {
       try {
-        latest = await EBMonitoringService.getLatestReading();
+        latest = await EBMonitoringService.getLatestReading(selectedUnit);
       } catch {
         latest = null;
       }
@@ -448,11 +484,18 @@ export const EBMonitoringPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  // Date change handler to re-sync preceding closing reading if date is changed
-  const handleDateChange = (newDate: string) => {
-    setFormDate(newDate);
-    if (!isEditMode && readings.length > 0) {
-      const preceding = findPrecedingReading(newDate, readings);
+  // Unit / Plant change handler to re-sync preceding closing reading for that unit
+  const handleUnitTypeChange = async (newUnit: 'NTP' | 'PTP') => {
+    setFormUnitType(newUnit);
+    if (!isEditMode) {
+      let preceding: EBReadingRecord | null = findPrecedingReading(formDate, readings, newUnit);
+      if (!preceding) {
+        try {
+          preceding = await EBMonitoringService.getLatestReading(newUnit);
+        } catch {
+          preceding = null;
+        }
+      }
       if (preceding && typeof preceding.closingReading === 'number') {
         setFormOpeningReading(preceding.closingReading);
         if (preceding.closingTime) {
@@ -464,17 +507,54 @@ export const EBMonitoringPage: React.FC = () => {
           closingTime: preceding.closingTime,
           readingNumber: preceding.readingNumber
         });
+      } else {
+        setFormOpeningReading('');
+        setFormOpeningTime('06:00');
+        setPreviousClosingInfo(null);
+      }
+    }
+  };
+
+  // Date change handler to re-sync preceding closing reading if date is changed
+  const handleDateChange = async (newDate: string) => {
+    setFormDate(newDate);
+    if (!isEditMode) {
+      let preceding: EBReadingRecord | null = findPrecedingReading(newDate, readings, formUnitType);
+      if (!preceding) {
+        try {
+          preceding = await EBMonitoringService.getLatestReading(formUnitType);
+        } catch {
+          preceding = null;
+        }
+      }
+      if (preceding && typeof preceding.closingReading === 'number') {
+        setFormOpeningReading(preceding.closingReading);
+        if (preceding.closingTime) {
+          setFormOpeningTime(toTimeInputFormat(preceding.closingTime));
+        }
+        setPreviousClosingInfo({
+          value: preceding.closingReading,
+          date: preceding.date,
+          closingTime: preceding.closingTime,
+          readingNumber: preceding.readingNumber
+        });
+      } else {
+        setFormOpeningReading('');
+        setFormOpeningTime('06:00');
+        setPreviousClosingInfo(null);
       }
     }
   };
 
   // Manual re-sync helper for previous closing reading
   const handleResyncPreviousClosing = async () => {
-    let latest: EBReadingRecord | null = null;
-    if (readings.length > 0) {
-      latest = findPrecedingReading(formDate, readings);
-    } else {
-      latest = await EBMonitoringService.getLatestReading();
+    let latest: EBReadingRecord | null = findPrecedingReading(formDate, readings, formUnitType);
+    if (!latest) {
+      try {
+        latest = await EBMonitoringService.getLatestReading(formUnitType);
+      } catch {
+        latest = null;
+      }
     }
     if (latest && typeof latest.closingReading === 'number') {
       setFormOpeningReading(latest.closingReading);
@@ -487,6 +567,10 @@ export const EBMonitoringPage: React.FC = () => {
         closingTime: latest.closingTime,
         readingNumber: latest.readingNumber
       });
+    } else {
+      setFormOpeningReading('');
+      setFormOpeningTime('06:00');
+      setPreviousClosingInfo(null);
     }
   };
 
@@ -495,6 +579,7 @@ export const EBMonitoringPage: React.FC = () => {
     setIsEditMode(true);
     setEditingId(record.id);
     setFormDate(record.date);
+    setFormUnitType(record.unitType || 'PTP');
     setFormOpeningReading(record.openingReading);
     setFormOpeningTime(record.openingTime || '06:00');
     setFormClosingReading(record.closingReading);
@@ -510,6 +595,13 @@ export const EBMonitoringPage: React.FC = () => {
   // Submit Add or Edit Form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (existingReadingForFormDate) {
+      setFormError(
+        `An EB daily reading for ${formUnitType} on ${formatDate(formDate)} already exists (${existingReadingForFormDate.readingNumber}). Only one reading per day is allowed.`
+      );
+      return;
+    }
 
     const op = Number(formOpeningReading);
     const cl = Number(formClosingReading);
@@ -546,6 +638,7 @@ export const EBMonitoringPage: React.FC = () => {
     try {
       const payload: CreateEBReadingPayload = {
         date: formDate,
+        unitType: formUnitType,
         openingReading: op,
         openingTime: formOpeningTime || '06:00',
         closingReading: cl,
@@ -603,6 +696,7 @@ export const EBMonitoringPage: React.FC = () => {
       worksheet.columns = [
         { header: 'S.No.', key: 'sNo', width: 8 },
         { header: 'Date', key: 'date', width: 14 },
+        { header: 'Unit / Plant', key: 'unitType', width: 14 },
         { header: 'Opening Reading (kW)', key: 'openingReading', width: 22 },
         { header: 'Time (Opening)', key: 'openingTime', width: 16 },
         { header: 'Closing Reading (kW)', key: 'closingReading', width: 22 },
@@ -618,6 +712,7 @@ export const EBMonitoringPage: React.FC = () => {
         worksheet.addRow({
           sNo: idx + 1,
           date: r.date,
+          unitType: r.unitType || 'PTP',
           openingReading: r.openingReading,
           openingTime: r.openingTime || '—',
           closingReading: r.closingReading,
@@ -813,11 +908,59 @@ export const EBMonitoringPage: React.FC = () => {
       </div>
 
       {/* Main Grid Table Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <TableMaximizeWrapper
+        title="Electricity (EB) Daily Monitoring"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredReadings.length} Readings
+          </span>
+        }
+      >
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Filters Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
           {/* Left: Search Bar & Column Filters Toggle */}
           <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            {/* Plant / Unit Filter: PTP vs NTP (Black and Gray) */}
+            <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-300 shadow-2xs gap-1">
+              <button
+                type="button"
+                onClick={() => setSelectedUnit('PTP')}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedUnit === 'PTP'
+                    ? 'bg-black text-white shadow-sm'
+                    : 'bg-transparent text-slate-600 hover:text-black hover:bg-slate-200/70'
+                }`}
+              >
+                <span>PTP</span>
+                <span
+                  className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-semibold ${
+                    selectedUnit === 'PTP' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {readings.filter((r) => (r.unitType || 'PTP') === 'PTP').length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedUnit('NTP')}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedUnit === 'NTP'
+                    ? 'bg-black text-white shadow-sm'
+                    : 'bg-transparent text-slate-600 hover:text-black hover:bg-slate-200/70'
+                }`}
+              >
+                <span>NTP</span>
+                <span
+                  className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-semibold ${
+                    selectedUnit === 'NTP' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {readings.filter((r) => r.unitType === 'NTP').length}
+                </span>
+              </button>
+            </div>
+
             <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs focus-within:ring-1 focus-within:ring-slate-900 focus-within:border-slate-900 w-full sm:w-auto">
               <div className="relative bg-slate-50 border-r border-slate-200 shrink-0">
                 <select
@@ -928,14 +1071,14 @@ export const EBMonitoringPage: React.FC = () => {
         </div>
 
         {/* Grid Table with Sticky Headers & Column Filter Inputs */}
-        <div className="max-h-[620px] overflow-auto relative border border-slate-200 rounded-b-2xl">
-          <table className="w-full text-left text-xs border-collapse">
+        <div data-table-scroll="true" className="max-h-[620px] overflow-auto relative border border-slate-300 rounded-b-2xl">
+          <table className="w-full text-left text-xs border-collapse border border-slate-300">
             <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-3 border-r border-slate-200 text-center w-12 sticky top-0 z-20 bg-slate-50">S.No.</th>
+              <tr className="bg-[#EEF5FB] border-b-2 border-slate-300 text-[#1F4E79] font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-3 border-r border-slate-300 text-center w-12 sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]">S.No.</th>
                 <th
                   onClick={() => handleSort('date', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between">
                     <span>Date</span>
@@ -944,7 +1087,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('openingReading', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 text-right cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end">
                     <span>Opening Reading</span>
@@ -953,7 +1096,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('openingTime')}
-                  className="py-3 px-3 border-r border-slate-200 text-center cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3 border-r border-slate-300 text-center cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center">
                     <span>Time</span>
@@ -962,7 +1105,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('closingReading', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 text-right cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end">
                     <span>Closing Reading</span>
@@ -971,7 +1114,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('closingTime')}
-                  className="py-3 px-3 border-r border-slate-200 text-center cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3 border-r border-slate-300 text-center cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center">
                     <span>Time</span>
@@ -980,7 +1123,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('totalUnits', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 text-right cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end">
                     <span>Total Units Per Day</span>
@@ -989,7 +1132,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('spendingAmountPerUnit', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 text-right cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end">
                     <span>Spending Amount / Unit</span>
@@ -998,7 +1141,7 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('totalCost', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 text-right cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 text-right cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-end">
                     <span>Total Cost of the Day</span>
@@ -1007,14 +1150,14 @@ export const EBMonitoringPage: React.FC = () => {
                 </th>
                 <th
                   onClick={() => handleSort('readingTakenBy')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between">
                     <span>Reading Taken By</span>
                     {renderSortIcon('readingTakenBy')}
                   </div>
                 </th>
-                <th className="py-3 px-3.5 text-center sticky top-0 z-20 bg-slate-50">Action</th>
+                <th className="py-3 px-3.5 text-center sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] min-w-[130px] pr-12">Action</th>
               </tr>
 
               {/* Inline Column Filter Inputs Row */}
@@ -1104,7 +1247,7 @@ export const EBMonitoringPage: React.FC = () => {
                       className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal"
                     />
                   </th>
-                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center">
+                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center min-w-[130px] pr-12">
                     {activeColumnFilterCount > 0 && (
                       <button
                         type="button"
@@ -1131,11 +1274,11 @@ export const EBMonitoringPage: React.FC = () => {
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-xs text-slate-400">
                     <div className="max-w-sm mx-auto space-y-2">
-                      <p className="font-semibold text-slate-700 text-sm">No matching EB readings found</p>
+                      <p className="font-semibold text-slate-700 text-sm">No matching {selectedUnit} EB readings found</p>
                       <p className="text-slate-400 text-xs">
                         {hasAnyFilter
-                          ? 'No records match the active search or column filters.'
-                          : 'No EB readings recorded yet. Click "+ Add EB Reading" to record the first daily meter reading.'}
+                          ? `No ${selectedUnit} records match the active search or column filters.`
+                          : `No ${selectedUnit} EB readings recorded yet. Click "+ Add EB Reading" to record the first daily meter reading.`}
                       </p>
                       {hasAnyFilter && (
                         <button
@@ -1252,6 +1395,22 @@ export const EBMonitoringPage: React.FC = () => {
                 ))
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 6, label: `TOTAL (${filteredReadings.length} readings)` },
+                {
+                  value: `${ebTotals.units.toLocaleString('en-IN', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 2
+                  })} kW`,
+                  isTotal: true
+                },
+                { align: 'center' },
+                { currency: ebTotals.cost, isTotal: true },
+                { align: 'center' },
+                { align: 'center' }
+              ]}
+            />
           </table>
         </div>
 
@@ -1272,6 +1431,7 @@ export const EBMonitoringPage: React.FC = () => {
           )}
         </div>
       </div>
+      </TableMaximizeWrapper>
 
       {/* MODAL: Add / Edit EB Daily Reading */}
       <Modal
@@ -1287,18 +1447,59 @@ export const EBMonitoringPage: React.FC = () => {
             </div>
           )}
 
-          {/* Section 1: Reading Date (Person name collected automatically in the background) */}
-          <div className="max-w-xs">
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Reading Date <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={formDate}
-              onChange={(e) => handleDateChange(e.target.value)}
-              required
-              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-[#1F4E79] focus:outline-none transition shadow-2xs"
-            />
+          {/* Section 1: Reading Date & Plant / Unit Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Reading Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                required
+                className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-[#1F4E79] focus:outline-none transition shadow-2xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Plant / Unit <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2 h-11 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleUnitTypeChange('NTP')}
+                  className={`h-full rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                    formUnitType === 'NTP'
+                      ? 'bg-black text-white shadow-xs'
+                      : 'bg-transparent text-slate-600 hover:bg-white/60'
+                  }`}
+                >
+                  NTP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUnitTypeChange('PTP')}
+                  className={`h-full rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                    formUnitType === 'PTP'
+                      ? 'bg-black text-white shadow-xs'
+                      : 'bg-transparent text-slate-600 hover:bg-white/60'
+                  }`}
+                >
+                  PTP
+                </button>
+              </div>
+            </div>
+
+            {existingReadingForFormDate && (
+              <div className="col-span-1 sm:col-span-2 p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 shadow-2xs">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Daily Reading Already Recorded: </span>
+                  An EB reading for <strong>{formUnitType}</strong> on <strong>{formatDate(formDate)}</strong> has already been entered (<strong>{existingReadingForFormDate.readingNumber}</strong>). Only one reading per day is permitted per unit.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 2: Meter Readings (Opening & Closing) */}
@@ -1510,14 +1711,16 @@ export const EBMonitoringPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={formSubmitting}
-              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+              disabled={formSubmitting || Boolean(existingReadingForFormDate)}
+              className="h-10 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
             >
               {formSubmitting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>Saving...</span>
                 </>
+              ) : existingReadingForFormDate ? (
+                <span>Reading Already Exists</span>
               ) : (
                 <span>{isEditMode ? 'Update Reading' : 'Save Reading'}</span>
               )}

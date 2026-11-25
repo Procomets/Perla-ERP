@@ -11,6 +11,7 @@ import { VehicleService } from '../../services/vehicleService';
 import { DailyExpenseMonitorSection } from './DailyExpenseMonitorSection';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { TableMaximizeWrapper, TableTotalsFooter } from '../../components/ui/TableMaximizeWrapper';
 import {
   Truck,
   Plus,
@@ -701,7 +702,15 @@ export const VehicleMasterPage: React.FC = () => {
       {tabsRow}
 
       {/* Main Grid Table Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <TableMaximizeWrapper
+        title="Vehicle Master & Fleet Management"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredVehicles.length} Vehicles
+          </span>
+        }
+      >
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {/* Filters Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
           {/* Left: Search with Column Selector & Column Filters Toggle */}
@@ -838,14 +847,14 @@ export const VehicleMasterPage: React.FC = () => {
         </div>
 
         {/* Grid Table with Sticky Headers & Inline Column Filters */}
-        <div className="max-h-[620px] overflow-auto relative border border-slate-200 rounded-b-2xl">
-          <table className="w-full text-left text-xs border-collapse">
+        <div data-table-scroll="true" className="max-h-[620px] overflow-auto relative border border-slate-300 rounded-b-2xl">
+          <table className="w-full text-left text-xs border-collapse border border-slate-300">
             <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+              <tr className="bg-[#EEF5FB] border-b-2 border-slate-300 text-[#1F4E79] font-bold uppercase tracking-wider text-[11px]">
                 {/* VEHICLE NO */}
                 <th
                   onClick={() => handleSort('vehicleNo')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>VEHICLE NO</span>
@@ -856,7 +865,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* TYPE OF VEHICLE */}
                 <th
                   onClick={() => handleSort('typeOfVehicle')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>TYPE OF VEHICLE</span>
@@ -867,7 +876,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* MODEL / MAKE */}
                 <th
                   onClick={() => handleSort('modelMake')}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>MODEL / MAKE</span>
@@ -878,7 +887,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* FUEL TYPE */}
                 <th
                   onClick={() => handleSort('fuelType')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-center sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>FUEL TYPE</span>
@@ -889,7 +898,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* MILEAGE */}
                 <th
                   onClick={() => handleSort('mileage', true)}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-center sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>MILEAGE</span>
@@ -900,7 +909,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* PURCHASE YEAR */}
                 <th
                   onClick={() => handleSort('purchaseYear', true)}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-center sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>PURCHASE YEAR</span>
@@ -911,7 +920,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* FC DUE DATE */}
                 <th
                   onClick={() => handleSort('fcDueDate', true)}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>FC DUE DATE</span>
@@ -922,7 +931,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* INS. DUE DATE */}
                 <th
                   onClick={() => handleSort('insuranceDueDate', true)}
-                  className="py-3 px-4 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-4 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-between gap-1.5">
                     <span>INS. DUE DATE</span>
@@ -933,7 +942,7 @@ export const VehicleMasterPage: React.FC = () => {
                 {/* STATUS */}
                 <th
                   onClick={() => handleSort('status')}
-                  className="py-3 px-3.5 border-r border-slate-200 cursor-pointer select-none hover:bg-slate-100 transition whitespace-nowrap text-center sticky top-0 z-20 bg-slate-50"
+                  className="py-3 px-3.5 border-r border-slate-300 cursor-pointer select-none hover:bg-[#DCE9F5] transition whitespace-nowrap text-center sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>STATUS</span>
@@ -942,7 +951,7 @@ export const VehicleMasterPage: React.FC = () => {
                 </th>
 
                 {/* ACTION */}
-                <th className="py-3 px-3.5 text-center whitespace-nowrap sticky top-0 z-20 bg-slate-50">
+                <th className="py-3 px-3.5 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] min-w-[130px] pr-12">
                   ACTIONS
                 </th>
               </tr>
@@ -1031,7 +1040,7 @@ export const VehicleMasterPage: React.FC = () => {
                       className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 font-normal text-center"
                     />
                   </th>
-                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center">
+                  <th className="p-1 sticky top-[41px] z-20 bg-slate-100 text-center min-w-[130px] pr-12">
                     {activeColumnFilterCount > 0 && (
                       <button
                         type="button"
@@ -1230,6 +1239,11 @@ export const VehicleMasterPage: React.FC = () => {
                 })
               )}
             </tbody>
+            <TableTotalsFooter
+              cells={[
+                { colSpan: 10, label: `TOTAL (${filteredVehicles.length} vehicles)` }
+              ]}
+            />
           </table>
         </div>
 
@@ -1250,6 +1264,7 @@ export const VehicleMasterPage: React.FC = () => {
           )}
         </div>
       </div>
+      </TableMaximizeWrapper>
 
       {/* MODAL: Add / Edit Vehicle */}
       <Modal

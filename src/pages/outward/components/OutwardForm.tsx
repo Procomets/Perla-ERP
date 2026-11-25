@@ -930,8 +930,9 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            data-back-button="true"
             className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Back to Outward List"
+            title="Back to Outward Dispatches (Esc)"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>

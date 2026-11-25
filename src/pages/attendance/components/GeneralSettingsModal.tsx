@@ -58,7 +58,7 @@ export const GeneralSettingsModal: React.FC<GeneralSettingsModalProps> = ({
 
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150 text-slate-800">
-          
+
           {/* Header */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">

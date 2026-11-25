@@ -259,7 +259,7 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({
 
       <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
         <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden text-slate-800 animate-in fade-in zoom-in-98 duration-150">
-          
+
           {/* Header */}
           <div className="px-7 pt-6 pb-5 border-b border-slate-100 flex items-center justify-between">
             <div>

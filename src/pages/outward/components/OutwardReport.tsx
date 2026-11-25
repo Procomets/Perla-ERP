@@ -33,6 +33,7 @@ import {
   X
 } from 'lucide-react';
 import { useTableControls, TableColumnConfig } from '../../../hooks/useTableControls';
+import { TableMaximizeWrapper } from '../../../components/ui/TableMaximizeWrapper';
 
 export interface FlattenedOutwardLine {
   id: string;
@@ -597,8 +598,9 @@ export const OutwardReport: React.FC<OutwardReportProps> = ({
           <button
             type="button"
             onClick={onBack}
+            data-back-button="true"
             className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Back to Outward List"
+            title="Back to Outward Dispatches (Esc)"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -1201,228 +1203,270 @@ export const OutwardReport: React.FC<OutwardReportProps> = ({
         // ==========================================
         // VIEW MODE 2: COMPREHENSIVE FLATTENED TABLE WITH TABLE CONTROLS
         // ==========================================
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          {/* Table Controls Bar */}
-          <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
-            {/* Search Bar with Column Selector */}
-            <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
-              <div className="relative">
-                <select
-                  value={outwardTableControls.searchColumn}
-                  onChange={(e) => outwardTableControls.setSearchColumn(e.target.value)}
-                  className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
-                >
-                  <option value="ALL">All Columns</option>
-                  {OUTWARD_REPORT_TABLE_COLUMNS.map((col) => (
-                    <option key={col.key} value={col.key}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+        <TableMaximizeWrapper
+          title="Outward Dispatch Detailed Report"
+          badge={
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+              {outwardTableControls.filteredCount} Lines
+            </span>
+          }
+        >
+          {(isMaximized) => (
+            <div className={`bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col ${isMaximized ? 'flex-1 min-h-0' : ''}`}>
+              {/* Table Controls Bar */}
+              <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+                {/* Search Bar with Column Selector */}
+                <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-2xs divide-x divide-slate-200 flex-1 min-w-[280px] max-w-lg">
+                  <div className="relative">
+                    <select
+                      value={outwardTableControls.searchColumn}
+                      onChange={(e) => outwardTableControls.setSearchColumn(e.target.value)}
+                      className="appearance-none pl-3 pr-7 py-2 text-xs font-semibold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="ALL">All Columns</option>
+                      {OUTWARD_REPORT_TABLE_COLUMNS.map((col) => (
+                        <option key={col.key} value={col.key}>
+                          {col.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
 
-              <div className="relative flex-1 flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={
-                    outwardTableControls.searchColumn === 'ALL'
-                      ? 'Outward #, DC #, Style, PO, Colour...'
-                      : `Search by ${OUTWARD_REPORT_TABLE_COLUMNS.find((c) => c.key === outwardTableControls.searchColumn)?.label}...`
-                  }
-                  value={outwardTableControls.searchQuery}
-                  onChange={(e) => outwardTableControls.setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
-                />
-                {outwardTableControls.searchQuery && (
+                  <div className="relative flex-1 flex items-center">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder={
+                        outwardTableControls.searchColumn === 'ALL'
+                          ? 'Outward #, DC #, Style, PO, Colour...'
+                          : `Search by ${OUTWARD_REPORT_TABLE_COLUMNS.find((c) => c.key === outwardTableControls.searchColumn)?.label}...`
+                      }
+                      value={outwardTableControls.searchQuery}
+                      onChange={(e) => outwardTableControls.setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+                    />
+                    {outwardTableControls.searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => outwardTableControls.setSearchQuery('')}
+                        className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Controls: Toggle Inline Column Filters Button & Reset */}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => outwardTableControls.setSearchQuery('')}
-                    className="absolute right-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                    title="Clear search"
+                    onClick={() => outwardTableControls.setShowColumnFilters(!outwardTableControls.showColumnFilters)}
+                    className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      outwardTableControls.showColumnFilters || Object.values(outwardTableControls.columnFilters).some((v) => (v || '').trim() !== '')
+                        ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                    title="Toggle column-wise search inputs on table header"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Column Filters</span>
+                    {Object.values(outwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                      <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                        {Object.values(outwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
+                      </span>
+                    )}
                   </button>
-                )}
+
+                  {outwardTableControls.isAnyFilterActive && (
+                    <button
+                      type="button"
+                      onClick={outwardTableControls.handleResetFilters}
+                      className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                      title="Reset table search, column filters, and sorting"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Controls: Toggle Inline Column Filters Button & Reset */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => outwardTableControls.setShowColumnFilters(!outwardTableControls.showColumnFilters)}
-                className={`h-9 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                  outwardTableControls.showColumnFilters || Object.values(outwardTableControls.columnFilters).some((v) => (v || '').trim() !== '')
-                    ? 'bg-slate-900 text-white border-slate-900 font-bold'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-                title="Toggle column-wise search inputs on table header"
+              {/* Table Container with Sticky Headers */}
+              <div
+                data-table-scroll="true"
+                className={`overflow-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'}`}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Column Filters</span>
-                {Object.values(outwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
-                  <span className="bg-slate-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                    {Object.values(outwardTableControls.columnFilters).filter((v) => (v || '').trim() !== '').length}
-                  </span>
-                )}
-              </button>
-
-              {outwardTableControls.isAnyFilterActive && (
-                <button
-                  type="button"
-                  onClick={outwardTableControls.handleResetFilters}
-                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                  title="Reset table search, column filters, and sorting"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Table Container with Sticky Headers */}
-          <div className="max-h-[620px] overflow-auto relative">
-            <table className="w-full min-w-max text-left text-xs border-collapse">
-              <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                <tr className="bg-[#1F4E79] text-white font-bold text-[11px] uppercase tracking-wider">
-                  <th
-                    onClick={() => outwardTableControls.handleSort('outwardNo')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Outward #</span>
-                      {outwardTableControls.renderSortIcon('outwardNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('outwardDate')}
-                    className="py-2.5 px-3 text-center whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Date</span>
-                      {outwardTableControls.renderSortIcon('outwardDate')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('ourDcNo')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Our DC #</span>
-                      {outwardTableControls.renderSortIcon('ourDcNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('customerName')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Customer Name</span>
-                      {outwardTableControls.renderSortIcon('customerName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('subcontractorName')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Subcontractor Unit</span>
-                      {outwardTableControls.renderSortIcon('subcontractorName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('styleNo')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Style No</span>
-                      {outwardTableControls.renderSortIcon('styleNo')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('poNumber')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>PO Number</span>
-                      {outwardTableControls.renderSortIcon('poNumber')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('colourName')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Colour Name</span>
-                      {outwardTableControls.renderSortIcon('colourName')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('process')}
-                    className="py-2.5 px-3 text-left whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span>Process</span>
-                      {outwardTableControls.renderSortIcon('process')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('inwardQty')}
-                    className="py-2.5 px-3 text-right whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Inward Qty</span>
-                      {outwardTableControls.renderSortIcon('inwardQty')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('dispatchQty')}
-                    className="py-2.5 px-3 text-right whitespace-nowrap border-r border-white/20 bg-blue-900/60 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Dispatched</span>
-                      {outwardTableControls.renderSortIcon('dispatchQty')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('remainingQty')}
-                    className="py-2.5 px-3 text-right whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Remaining</span>
-                      {outwardTableControls.renderSortIcon('remainingQty')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('unit')}
-                    className="py-2.5 px-3 text-center whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Unit</span>
-                      {outwardTableControls.renderSortIcon('unit')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('vehicleNumber')}
-                    className="py-2.5 px-3 text-center whitespace-nowrap border-r border-white/20 align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Vehicle #</span>
-                      {outwardTableControls.renderSortIcon('vehicleNumber')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => outwardTableControls.handleSort('status')}
-                    className="py-2.5 px-3 text-center whitespace-nowrap align-middle cursor-pointer select-none group"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Status</span>
-                      {outwardTableControls.renderSortIcon('status')}
-                    </div>
-                  </th>
-                </tr>
+                <table className="w-full min-w-max text-left text-xs border-collapse">
+                  <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider border-b-2 border-slate-300">
+                    <tr className="border-b-2 border-slate-300 bg-[#EEF5FB] text-[#1F4E79] font-bold text-[11px] uppercase tracking-wider">
+                      <th
+                        onClick={() => outwardTableControls.handleSort('outwardNo')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'outwardNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Outward #</span>
+                          {outwardTableControls.renderSortIcon('outwardNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('outwardDate')}
+                        className={`py-2.5 px-3 text-center whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'outwardDate' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Date</span>
+                          {outwardTableControls.renderSortIcon('outwardDate')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('ourDcNo')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'ourDcNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Our DC #</span>
+                          {outwardTableControls.renderSortIcon('ourDcNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('customerName')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'customerName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Customer Name</span>
+                          {outwardTableControls.renderSortIcon('customerName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('subcontractorName')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'subcontractorName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Subcontractor Unit</span>
+                          {outwardTableControls.renderSortIcon('subcontractorName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('styleNo')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'styleNo' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Style No</span>
+                          {outwardTableControls.renderSortIcon('styleNo')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('poNumber')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'poNumber' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>PO Number</span>
+                          {outwardTableControls.renderSortIcon('poNumber')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('colourName')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'colourName' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Colour Name</span>
+                          {outwardTableControls.renderSortIcon('colourName')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('process')}
+                        className={`py-2.5 px-3 text-left whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'process' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span>Process</span>
+                          {outwardTableControls.renderSortIcon('process')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('inwardQty')}
+                        className={`py-2.5 px-3 text-right whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'inwardQty' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Inward Qty</span>
+                          {outwardTableControls.renderSortIcon('inwardQty')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('dispatchQty')}
+                        className={`py-2.5 px-3 text-right whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'dispatchQty' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Dispatched</span>
+                          {outwardTableControls.renderSortIcon('dispatchQty')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('remainingQty')}
+                        className={`py-2.5 px-3 text-right whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'remainingQty' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Remaining</span>
+                          {outwardTableControls.renderSortIcon('remainingQty')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('unit')}
+                        className={`py-2.5 px-3 text-center whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'unit' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Unit</span>
+                          {outwardTableControls.renderSortIcon('unit')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('vehicleNumber')}
+                        className={`py-2.5 px-3 text-center whitespace-nowrap border-r border-slate-300 align-middle cursor-pointer select-none group transition-colors ${
+                          outwardTableControls.sortField === 'vehicleNumber' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Vehicle #</span>
+                          {outwardTableControls.renderSortIcon('vehicleNumber')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => outwardTableControls.handleSort('status')}
+                        className={`py-2.5 px-3 text-center whitespace-nowrap align-middle cursor-pointer select-none group transition-colors pr-12 min-w-[130px] ${
+                          outwardTableControls.sortField === 'status' ? 'bg-[#DCE9F5]' : 'hover:bg-[#DCE9F5]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Status</span>
+                          {outwardTableControls.renderSortIcon('status')}
+                        </div>
+                      </th>
+                    </tr>
 
                 {/* Inline Column Filter Row */}
                 {outwardTableControls.showColumnFilters && (
@@ -1770,6 +1814,8 @@ export const OutwardReport: React.FC<OutwardReportProps> = ({
             </span>
           </div>
         </div>
+        )}
+      </TableMaximizeWrapper>
       )}
     </div>
   );

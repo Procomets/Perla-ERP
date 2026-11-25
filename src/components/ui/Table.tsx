@@ -24,10 +24,10 @@ export function Table<T>({
   return (
     <div className="w-full overflow-x-auto bg-white rounded-xl">
       <table className="w-full text-left text-xs text-slate-700 border-collapse">
-        <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200/80 text-[10px]">
+        <thead className="bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider sticky top-0 z-10 border-b-2 border-slate-300 text-[11px]">
           <tr>
             {columns.map((col, idx) => (
-              <th key={idx} className={`px-5 py-3 ${col.className || ''}`}>
+              <th key={idx} className={`px-5 py-3 border-r border-slate-200 last:border-r-0 ${col.className || ''}`}>
                 {col.header}
               </th>
             ))}

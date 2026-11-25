@@ -16,6 +16,10 @@ import { EmployeeService } from '../../services/employeeService';
 import { EmployeeFormModal } from './components/EmployeeFormModal';
 import { EmployeeViewModal } from './components/EmployeeViewModal';
 import { EmployeeDeleteConfirmModal } from './components/EmployeeDeleteConfirmModal';
+import {
+  TableMaximizeWrapper,
+  TableTotalsFooter
+} from '../../components/ui/TableMaximizeWrapper';
 import { useAuth } from '../../context/AuthContext';
 
 export const EmployeeMasterPage: React.FC = () => {
@@ -241,11 +245,10 @@ export const EmployeeMasterPage: React.FC = () => {
       {/* Feedback Toast */}
       {feedbackMessage && (
         <div
-          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-3.5 py-2.5 rounded-xl shadow-lg border text-xs font-semibold animate-in slide-in-from-top-3 duration-150 ${
-            feedbackMessage.type === 'success'
-              ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/25'
-              : 'bg-rose-600 border-rose-500 text-white shadow-rose-600/25'
-          }`}
+          className={`fixed top-5 right-5 z-60 flex items-center gap-2 px-3.5 py-2.5 rounded-xl shadow-lg border text-xs font-semibold animate-in slide-in-from-top-3 duration-150 ${feedbackMessage.type === 'success'
+            ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/25'
+            : 'bg-rose-600 border-rose-500 text-white shadow-rose-600/25'
+            }`}
         >
           {feedbackMessage.type === 'success' ? (
             <CheckCircle className="w-4 h-4 text-white shrink-0" />
@@ -353,147 +356,159 @@ export const EmployeeMasterPage: React.FC = () => {
       </div>
 
       {/* Table Card - Minimal & Clean */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-2xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-3 px-5">Employee ID</th>
-                <th className="py-3 px-5">Name</th>
-                <th className="py-3 px-5">Type</th>
-                <th className="py-3 px-5">Mobile</th>
-                <th className="py-3 px-5">Status</th>
-                <th className="py-3 px-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100/70 text-xs">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                    <span>Loading employees...</span>
-                  </td>
-                </tr>
-              ) : filteredEmployees.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    <Users className="w-7 h-7 mx-auto mb-2 text-slate-300" />
-                    <p className="font-medium text-slate-600 text-xs">No employees found</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {filters.searchQuery || filters.employeeType !== 'all' || filters.status !== 'all'
-                        ? 'Try clearing the search or filters.'
-                        : 'Click "Add Employee" above to register an employee.'}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredEmployees.map((emp) => {
-                  const isActive = emp.employmentStatus === 'Active';
-                  return (
-                    <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
-                      {/* Column 1: Employee ID */}
-                      <td className="py-3.5 px-5 font-mono font-semibold text-slate-800">
-                        {emp.employeeId}
-                      </td>
-
-                      {/* Column 2: Name */}
-                      <td className="py-3.5 px-5 font-medium text-slate-900">
-                        {emp.fullName}
-                      </td>
-
-                      {/* Column 3: Type */}
-                      <td className="py-3.5 px-5">
-                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100">
-                          {emp.employeeType}
-                        </span>
-                      </td>
-
-                      {/* Column 4: Mobile */}
-                      <td className="py-3.5 px-5 text-slate-600">
-                        {emp.mobileNumber || '—'}
-                      </td>
-
-                      {/* Column 5: Status */}
-                      <td className="py-3.5 px-5">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                            isActive
-                              ? 'text-emerald-700 bg-emerald-50/80 border border-emerald-200/60'
-                              : 'text-slate-500 bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                          {emp.employmentStatus}
-                        </span>
-                      </td>
-
-                      {/* Column 6: Actions */}
-                      <td className="py-3.5 px-5">
-                        <div className="flex items-center justify-end gap-2.5">
-                          {/* View */}
-                          <button
-                            title="View Profile"
-                            onClick={() => handleView(emp)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Edit */}
-                          <button
-                            title="Edit"
-                            onClick={() => handleEdit(emp)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Deactivate / Activate link */}
-                          <button
-                            onClick={() => handleToggleStatus(emp)}
-                            className={`text-[11px] font-medium cursor-pointer transition px-1 ${
-                              isActive
-                                ? 'text-slate-500 hover:text-amber-600'
-                                : 'text-emerald-600 hover:text-emerald-700'
-                            }`}
-                          >
-                            {isActive ? 'Deactivate' : 'Activate'}
-                          </button>
-
-                          {/* Delete */}
-                          <button
-                            title="Delete"
-                            onClick={() => handleDeleteClick(emp)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+      <TableMaximizeWrapper
+        title="Employee Master Directory"
+        badge={
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-[#1F4E79]">
+            {filteredEmployees.length} Employees
+          </span>
+        }
+      >
+        {(isMaximized) => (
+          <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-2xs flex-1 flex flex-col min-h-0">
+            <div
+              data-table-scroll="true"
+              className={`overflow-x-auto relative ${isMaximized ? 'flex-1 max-h-none' : 'max-h-[620px]'} overflow-y-auto`}
+            >
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.06)] bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[11px] border-b-2 border-slate-300">
+                  <tr className="border-b border-slate-300 bg-[#EEF5FB] text-[#1F4E79] text-[11px] font-bold uppercase tracking-wider">
+                    <th className="py-3 px-5">Employee ID</th>
+                    <th className="py-3 px-5">Name</th>
+                    <th className="py-3 px-5">Type</th>
+                    <th className="py-3 px-5">Mobile</th>
+                    <th className="py-3 px-5">Status</th>
+                    <th className="py-3 px-5 pr-12 text-right min-w-[130px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100/70 text-xs">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
+                        <span>Loading employees...</span>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ) : filteredEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <Users className="w-7 h-7 mx-auto mb-2 text-slate-300" />
+                        <p className="font-medium text-slate-600 text-xs">No employees found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {filters.searchQuery || filters.employeeType !== 'all' || filters.status !== 'all'
+                            ? 'Try clearing the search or filters.'
+                            : 'Click "Add Employee" above to register an employee.'}
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredEmployees.map((emp) => {
+                      const isActive = emp.employmentStatus === 'Active';
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
+                          {/* Column 1: Employee ID */}
+                          <td className="py-3.5 px-5 font-mono font-semibold text-slate-800">
+                            {emp.employeeId}
+                          </td>
 
-        {/* Footer info */}
-        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-          <div>
-            Showing <span className="font-medium text-slate-700">{filteredEmployees.length}</span> of{' '}
-            <span className="font-medium text-slate-700">{employees.length}</span> employees
+                          {/* Column 2: Name */}
+                          <td className="py-3.5 px-5 font-medium text-slate-900">
+                            {emp.fullName}
+                          </td>
+
+                          {/* Column 3: Type */}
+                          <td className="py-3.5 px-5">
+                            <span className="inline-block px-2.5 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100">
+                              {emp.employeeType}
+                            </span>
+                          </td>
+
+                          {/* Column 4: Mobile */}
+                          <td className="py-3.5 px-5 text-slate-600">
+                            {emp.mobileNumber || '—'}
+                          </td>
+
+                          {/* Column 5: Status */}
+                          <td className="py-3.5 px-5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${isActive
+                                ? 'text-emerald-700 bg-emerald-50/80 border border-emerald-200/60'
+                                : 'text-slate-500 bg-slate-100 border border-slate-200'
+                                }`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                              {emp.employmentStatus}
+                            </span>
+                          </td>
+
+                          {/* Column 6: Actions */}
+                          <td className="py-3.5 px-5">
+                            <div className="flex items-center justify-end gap-2.5">
+                              {/* View */}
+                              <button
+                                title="View Profile"
+                                onClick={() => handleView(emp)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Edit */}
+                              <button
+                                title="Edit"
+                                onClick={() => handleEdit(emp)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Deactivate / Activate link */}
+                              <button
+                                onClick={() => handleToggleStatus(emp)}
+                                className={`text-[11px] font-medium cursor-pointer transition px-1 ${isActive
+                                  ? 'text-slate-500 hover:text-amber-600'
+                                  : 'text-emerald-600 hover:text-emerald-700'
+                                  }`}
+                              >
+                                {isActive ? 'Deactivate' : 'Activate'}
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                title="Delete"
+                                onClick={() => handleDeleteClick(emp)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer info */}
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+              <div>
+                Showing <span className="font-medium text-slate-700">{filteredEmployees.length}</span> of{' '}
+                <span className="font-medium text-slate-700">{employees.length}</span> employees
+              </div>
+
+              <button
+                onClick={loadEmployees}
+                className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 transition cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
-
-          <button
-            onClick={loadEmployees}
-            className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 transition cursor-pointer"
-          >
-            <RefreshCw className="w-3 h-3" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+        )}
+      </TableMaximizeWrapper>
 
       {/* Modals */}
       <EmployeeFormModal
@@ -505,24 +520,24 @@ export const EmployeeMasterPage: React.FC = () => {
         currentUserEmail={currentUserEmail}
       />
 
-      <EmployeeViewModal
-        isOpen={isViewOpen}
-        onClose={() => setIsViewOpen(false)}
-        employee={selectedEmployee}
-        onEdit={(emp) => {
-          setSelectedEmployee(emp);
-          setIsFormOpen(true);
-        }}
-        onToggleStatus={(emp) => handleToggleStatus(emp)}
-      />
+        <EmployeeViewModal
+          isOpen={isViewOpen}
+          onClose={() => setIsViewOpen(false)}
+          employee={selectedEmployee}
+          onEdit={(emp) => {
+            setSelectedEmployee(emp);
+            setIsFormOpen(true);
+          }}
+          onToggleStatus={(emp) => handleToggleStatus(emp)}
+        />
 
-      <EmployeeDeleteConfirmModal
-        isOpen={isDeleteOpen}
-        onClose={() => setIsDeleteOpen(false)}
-        onConfirm={handleConfirmDelete}
-        employee={selectedEmployee}
-        isDeleting={isDeleting}
-      />
-    </div>
+        <EmployeeDeleteConfirmModal
+          isOpen={isDeleteOpen}
+          onClose={() => setIsDeleteOpen(false)}
+          onConfirm={handleConfirmDelete}
+          employee={selectedEmployee}
+          isDeleting={isDeleting}
+        />
+    </div >
   );
 };
