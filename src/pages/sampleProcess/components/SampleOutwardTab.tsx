@@ -31,6 +31,7 @@ import {
 import { SamplePoOutward, SamplePoInward } from '../../../types/samplePo';
 import { Vendor } from '../../../types/vendor';
 import { SamplePoService } from '../../../services/samplePoService';
+import { SamplePoPdfService } from '../../../services/samplePoPdfService';
 import { SampleOutwardModal } from './SampleOutwardModal';
 import { SampleOutwardDetailsModal } from './SampleOutwardDetailsModal';
 
@@ -617,14 +618,8 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                 )}
               </div>
 
-              {/* Right: Export Excel & Add Outward */}
+              {/* Right: Add Outward */}
               <div className="flex items-center gap-2">
-                <ExcelExportButton
-                  onClick={handleExportExcel}
-                  label="Export Excel"
-                  title="Export filtered records to Excel spreadsheet"
-                />
-
                 <Button
                   type="button"
                   variant="primary"
@@ -643,115 +638,97 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
               data-table-scroll="true"
               className="overflow-x-auto overflow-y-auto flex-1 min-h-0 relative"
             >
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse min-w-[1150px]">
                 {/* Standard Blue Table Header with Sticky Positioning */}
                 <thead className="sticky top-0 z-10 bg-[#EEF5FB] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                  <tr className="border-b border-blue-100">
-                    <th className="py-3 px-3 text-center w-12 text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider">
-                      S.No.
-                    </th>
+                  <tr className="border-b border-blue-100 text-[#1F4E79] font-bold uppercase text-[10.5px] tracking-wider select-none">
+                    <th className="py-3 px-3 text-center w-12 whitespace-nowrap">S.No.</th>
 
-                    {/* Entry Number */}
                     <th
                       onClick={() => handleSort('entryNumber')}
-                      className="py-3 px-3 min-w-[150px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[150px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1">
                         <span>Outward No</span>
                         {getSortIcon('entryNumber')}
                       </div>
                     </th>
 
-                    {/* Outward DC No */}
                     <th
                       onClick={() => handleSort('outwardDcNumber')}
-                      className="py-3 px-3 min-w-[130px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[125px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1">
                         <span>Outward DC No</span>
                         {getSortIcon('outwardDcNumber')}
                       </div>
                     </th>
 
-                    {/* Outward DC Date */}
                     <th
                       onClick={() => handleSort('outwardDcDate')}
-                      className="py-3 px-3 min-w-[130px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[120px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1">
                         <span>Outward Date</span>
                         {getSortIcon('outwardDcDate')}
                       </div>
                     </th>
 
-                    {/* Linked Inward PO No */}
                     <th
                       onClick={() => handleSort('inwardEntryNumber')}
-                      className="py-3 px-3 min-w-[150px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[150px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1">
                         <span>Inward PO No</span>
                         {getSortIcon('inwardEntryNumber')}
                       </div>
                     </th>
 
-                    {/* Customer / Company */}
                     <th
                       onClick={() => handleSort('vendorName')}
-                      className="py-3 px-3 min-w-[200px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[180px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <span>Customer / Company</span>
+                      <div className="flex items-center justify-between gap-1">
+                        <span>Company Name</span>
                         {getSortIcon('vendorName')}
                       </div>
                     </th>
 
-                    {/* Customer DC No */}
                     <th
                       onClick={() => handleSort('customerDcNumber')}
-                      className="py-3 px-3 min-w-[130px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[125px] cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <span>Customer DC</span>
+                      <div className="flex items-center justify-between gap-1">
+                        <span>Customer DC No</span>
                         {getSortIcon('customerDcNumber')}
                       </div>
                     </th>
 
-                    {/* Dispatched Quantity */}
+                    <th className="py-3 px-3 min-w-[125px] whitespace-nowrap">
+                      <span>Customer DC Date</span>
+                    </th>
+
                     <th
                       onClick={() => handleSort('totalQuantity')}
-                      className="py-3 px-3 min-w-[120px] text-right text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[120px] text-right cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1">
                         <span>Dispatched Qty</span>
                         {getSortIcon('totalQuantity')}
                       </div>
                     </th>
 
-                    {/* Status */}
                     <th
                       onClick={() => handleSort('status')}
-                      className="py-3 px-3 min-w-[100px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
+                      className="py-3 px-3 min-w-[100px] text-center cursor-pointer hover:bg-blue-100/50 transition-colors whitespace-nowrap group"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
                         <span>Status</span>
                         {getSortIcon('status')}
                       </div>
                     </th>
 
-                    {/* Created Date */}
-                    <th
-                      onClick={() => handleSort('createdAt')}
-                      className="py-3 px-3 min-w-[120px] text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider cursor-pointer hover:bg-blue-100/50 transition-colors select-none group"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>Created Date</span>
-                        {getSortIcon('createdAt')}
-                      </div>
-                    </th>
-
-                    {/* Actions */}
-                    <th className="py-3 px-3 text-center min-w-[110px] pr-12 text-[#1F4E79] font-bold uppercase text-[10px] tracking-wider">
+                    <th className="py-3 px-3 text-center min-w-[210px] pr-12 whitespace-nowrap">
                       Actions
                     </th>
                   </tr>
@@ -763,6 +740,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="Outward..."
                           value={columnFilters.entryNumber}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, entryNumber: e.target.value }))
@@ -773,6 +751,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="DC No..."
                           value={columnFilters.outwardDcNumber}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, outwardDcNumber: e.target.value }))
@@ -784,6 +763,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="PO No..."
                           value={columnFilters.inwardEntryNumber}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, inwardEntryNumber: e.target.value }))
@@ -794,6 +774,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="Company..."
                           value={columnFilters.vendorName}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, vendorName: e.target.value }))
@@ -804,6 +785,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="Cust DC..."
                           value={columnFilters.customerDcNumber}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, customerDcNumber: e.target.value }))
@@ -812,18 +794,36 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                         />
                       </th>
                       <th className="p-1.5"></th>
+                      <th className="p-1.5"></th>
                       <th className="p-1.5">
                         <input
                           type="text"
+                          placeholder="Status..."
                           value={columnFilters.status}
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, status: e.target.value }))
                           }
-                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-normal focus:outline-none"
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-normal text-center focus:outline-none"
                         />
                       </th>
-                      <th className="p-1.5"></th>
-                      <th className="p-1.5"></th>
+                      <th className="p-1.5 pr-12 text-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setColumnFilters({
+                              entryNumber: '',
+                              outwardDcNumber: '',
+                              inwardEntryNumber: '',
+                              vendorName: '',
+                              customerDcNumber: '',
+                              status: ''
+                            })
+                          }
+                          className="text-[11px] text-rose-600 hover:text-rose-700 font-bold underline cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </th>
                     </tr>
                   )}
                 </thead>
@@ -843,97 +843,136 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredAndSortedOutwards.map((outward, idx) => (
-                      <tr
-                        key={outward.id}
-                        className="hover:bg-slate-50/90 transition-colors"
-                      >
-                        {/* S.No */}
-                        <td className="py-3 px-3 text-center text-slate-400 font-mono text-xs">
-                          {idx + 1}
-                        </td>
+                    filteredAndSortedOutwards.map((outward, idx) => {
+                      const items = outward.items && outward.items.length > 0 ? outward.items : [null];
+                      const rowSpan = items.length;
 
-                        {/* Entry Number */}
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                          {outward.entryNumber}
-                        </td>
-
-                        {/* Outward DC No */}
-                        <td className="py-3 px-3 font-bold text-slate-900">
-                          {outward.outwardDcNumber}
-                        </td>
-
-                        {/* Outward DC Date */}
-                        <td className="py-3 px-3 text-slate-600">
-                          {formatDisplayDate(outward.outwardDcDate)}
-                        </td>
-
-                        {/* Inward PO No */}
-                        <td className="py-3 px-3 font-mono font-semibold text-[#1F4E79]">
-                          {outward.inwardEntryNumber || '—'}
-                        </td>
-
-                        {/* Vendor / Company */}
-                        <td className="py-3 px-3">
-                          <span className="font-bold text-slate-900 block">{outward.vendorName}</span>
-                          {outward.items && outward.items.length > 0 && (
-                            <span className="text-[10px] text-slate-400 block truncate max-w-[220px]">
-                              {outward.items.map((i) => `${i.styleNo} (${i.quantity})`).join(', ')}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Customer DC */}
-                        <td className="py-3 px-3 text-slate-600">
-                          {outward.customerDcNumber || '—'}
-                          {outward.customerDcDate && (
-                            <span className="text-[10px] text-slate-400 block">
-                              {formatDisplayDate(outward.customerDcDate)}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Dispatched Quantity */}
-                        <td className="py-3 px-3 text-right font-mono font-bold text-blue-700">
-                          {outward.totalQuantity} PCS
-                        </td>
-
-                        {/* Status */}
-                        <td className="py-3 px-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            {outward.status}
-                          </span>
-                        </td>
-
-                        {/* Created Date */}
-                        <td className="py-3 px-3 text-slate-500 text-xs">
-                          {formatDisplayDate(outward.createdAt)}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3 px-3 text-center pr-12">
-                          <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => setViewDetailsOutward(outward)}
-                              className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
-                              title="View Outward Details"
-                            >
-                              View
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirmOutward(outward)}
-                              className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
-                              title="Delete Outward"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                      return (
+                        <React.Fragment key={outward.id}>
+                          {items.map((item, itemIdx) => {
+                            const isFirst = itemIdx === 0;
+                            const isLast = itemIdx === items.length - 1;
+                            return (
+                              <tr
+                                key={`${outward.id}-${item?.id || itemIdx}`}
+                                className={`hover:bg-slate-50/90 transition-colors ${
+                                  isLast ? 'border-b border-slate-200' : 'border-b border-slate-100'
+                                }`}
+                              >
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center text-slate-400 font-mono font-bold align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {idx + 1}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 font-mono font-bold text-[#1F4E79] align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {outward.entryNumber}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 font-mono font-bold text-slate-900 align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {outward.outwardDcNumber ? `DC #${outward.outwardDcNumber}` : '—'}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-slate-600 align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {formatDisplayDate(outward.outwardDcDate)}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 font-mono font-semibold text-[#1F4E79] align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {outward.inwardEntryNumber || '—'}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 font-bold text-slate-900 align-middle border-r border-slate-100 whitespace-nowrap"
+                                  >
+                                    {outward.vendorName}
+                                  </td>
+                                )}
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-900 align-middle whitespace-nowrap">
+                                  {(item?.customerDcNumber || outward.customerDcNumber)
+                                    ? `DC #${item?.customerDcNumber || outward.customerDcNumber}`
+                                    : '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 align-middle whitespace-nowrap">
+                                  {formatDisplayDate(item?.customerDcDate || outward.customerDcDate)}
+                                </td>
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-right font-mono font-bold text-blue-700 align-middle border-l border-slate-100 whitespace-nowrap"
+                                  >
+                                    {outward.totalQuantity} PCS
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center align-middle border-l border-slate-100 whitespace-nowrap"
+                                  >
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      {outward.status}
+                                    </span>
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center pr-12 align-middle border-l border-slate-100 whitespace-nowrap"
+                                  >
+                                    <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewDetailsOutward(outward)}
+                                        className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
+                                        title="View Outward Details"
+                                      >
+                                        View
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => SamplePoPdfService.downloadSingleSampleOutwardPdf(outward)}
+                                        className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs transition cursor-pointer"
+                                        title="Download Sample Outward as PDF"
+                                      >
+                                        Download
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteConfirmOutward(outward)}
+                                        className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
+                                        title="Delete Outward"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
 
@@ -942,15 +981,15 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                   <tfoot className="sticky bottom-0 z-20 bg-slate-100 shadow-[0_-2px_4px_rgba(0,0,0,0.06)] border-t-2 border-slate-300 text-xs">
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="py-2.5 px-3 font-extrabold uppercase text-[#1F4E79] bg-[#EEF5FB] text-left"
                       >
                         TOTAL ({filteredAndSortedOutwards.length} DISPATCHES)
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-extrabold text-[#1F4E79] bg-blue-100/60">
+                      <td className="py-2.5 px-3 text-right font-mono font-extrabold text-[#1F4E79] bg-blue-100/60 whitespace-nowrap">
                         {filteredTotalQuantity.toLocaleString()} PCS
                       </td>
-                      <td colSpan={3} className="py-2.5 px-3 bg-[#EEF5FB] text-slate-400 text-center">
+                      <td colSpan={2} className="py-2.5 px-3 bg-[#EEF5FB] text-slate-400 text-center pr-12">
                         —
                       </td>
                     </tr>

@@ -397,6 +397,47 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     [stockItems]
   );
 
+  // Match Item Master item to selected Purchase Type
+  const matchesPurchaseType = (item: WarehouseItemStock, pType: PurchaseType): boolean => {
+    const cat = (item.categoryName || '').toLowerCase().trim();
+    const name = (item.itemName || '').toLowerCase().trim();
+    const code = (item.itemCode || '').toUpperCase().trim();
+
+    const isFirewoodItem =
+      cat.includes('firewood') || cat.includes('wood') || name.includes('firewood') || code.startsWith('RWD');
+    const isChemicalItem =
+      cat.includes('chemical') ||
+      cat.includes('dye') ||
+      cat.includes('enzyme') ||
+      cat.includes('acid') ||
+      cat.includes('softener') ||
+      code.startsWith('CHM');
+    const isPackagingItem =
+      cat.includes('pack') || cat.includes('poly') || cat.includes('carton') || cat.includes('bag') || code.startsWith('PKG');
+
+    if (pType === 'Firewood') return isFirewoodItem;
+    if (pType === 'Chemical') return isChemicalItem;
+    if (pType === 'Packaging') return isPackagingItem;
+    if (pType === 'Raw Material') {
+      if (cat.includes('raw')) return true;
+      return !isFirewoodItem && !isChemicalItem && !isPackagingItem;
+    }
+    if (
+      cat.includes('general') ||
+      cat.includes('consumable') ||
+      cat.includes('utility') ||
+      cat.includes('spare')
+    ) {
+      return true;
+    }
+    return !isFirewoodItem && !isChemicalItem && !isPackagingItem;
+  };
+
+  const itemsForSelectedPurchaseType = useMemo(
+    () => validItems.filter((item) => matchesPurchaseType(item, purchaseType)),
+    [validItems, purchaseType]
+  );
+
   // Filter strictly to suppliers and vendors who are both customer and supplier (vendorType === 'supplier' || 'both')
   const supplierVendors = useMemo(() => {
     return vendors.filter((v) => {
@@ -1030,11 +1071,9 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
     setWbMaterialVariety('');
     setWbRemarks('');
 
-    if (validItems.length > 0) {
-      const fwItem = typeToSet === 'Firewood'
-        ? validItems.find((i) => (i.categoryName || '').toLowerCase().includes('firewood') || (i.itemName || '').toLowerCase().includes('firewood') || (i.itemCode || '').toUpperCase().startsWith('RWD'))
-        : null;
-      const first = fwItem || validItems[0];
+    const matchingItems = validItems.filter((i) => matchesPurchaseType(i, typeToSet));
+    if (matchingItems.length > 0) {
+      const first = matchingItems[0];
       setFormLines([
         {
           lineId: `line_1_${Date.now()}`,
@@ -1049,7 +1088,19 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
         }
       ]);
     } else {
-      setFormLines([]);
+      setFormLines([
+        {
+          lineId: `line_1_${Date.now()}`,
+          itemId: '',
+          itemCode: '',
+          itemName: '',
+          categoryName: '',
+          quantity: '',
+          unit: typeToSet === 'Firewood' ? 'T' : 'kg',
+          rate: '',
+          amount: 0
+        }
+      ]);
     }
     setIsPurchaseModalOpen(true);
   };
@@ -1120,11 +1171,11 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
 
   // Material Line Handlers
   const handleAddMaterialLine = () => {
-    if (validItems.length === 0) {
-      showToast('error', 'No active items available in Item Master.');
+    if (itemsForSelectedPurchaseType.length === 0) {
+      showToast('error', `No active ${purchaseType} items available in Item Master.`);
       return;
     }
-    const first = validItems[0];
+    const first = itemsForSelectedPurchaseType[0];
     setFormLines((prev) => [
       ...prev,
       {
@@ -1134,7 +1185,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
         itemName: first.itemName,
         categoryName: first.categoryName || '',
         quantity: '',
-        unit: first.baseUnit || 'kg',
+        unit: first.baseUnit || (purchaseType === 'Firewood' ? 'T' : 'kg'),
         rate: first.averageRate && first.averageRate > 0 ? first.averageRate : '',
         amount: 0
       }
@@ -2769,7 +2820,42 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                 placeholder="Select Purchase Type..."
                 searchPlaceholder="Search purchase type..."
                 groups={purchaseTypeOptionGroups}
-                onSelect={(opt) => setPurchaseType(opt.id as PurchaseType)}
+                onSelect={(opt) => {
+                  const nextType = opt.id as PurchaseType;
+                  setPurchaseType(nextType);
+                  const matching = validItems.filter((item) => matchesPurchaseType(item, nextType));
+                  const fallback = matching[0];
+                  setFormLines((prev) =>
+                    prev.map((line) => {
+                      const stillValid = matching.some((m) => m.itemId === line.itemId);
+                      if (stillValid) return line;
+                      if (fallback) {
+                        const qty = Number(line.quantity) || 0;
+                        const rate = fallback.averageRate && fallback.averageRate > 0 ? fallback.averageRate : 0;
+                        return {
+                          ...line,
+                          itemId: fallback.itemId,
+                          itemCode: fallback.itemCode,
+                          itemName: fallback.itemName,
+                          categoryName: fallback.categoryName || '',
+                          unit: fallback.baseUnit || (nextType === 'Firewood' ? 'T' : 'kg'),
+                          rate: fallback.averageRate && fallback.averageRate > 0 ? fallback.averageRate : '',
+                          amount: Math.round(qty * rate * 100) / 100
+                        };
+                      }
+                      return {
+                        ...line,
+                        itemId: '',
+                        itemCode: '',
+                        itemName: '',
+                        categoryName: '',
+                        unit: nextType === 'Firewood' ? 'T' : 'kg',
+                        rate: '',
+                        amount: 0
+                      };
+                    })
+                  );
+                }}
                 dropdownWidth="trigger"
                 showSearch={false}
                 formatTriggerLabel={(opt) => (
@@ -3079,11 +3165,17 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                           required
                         >
                           <option value="">-- Choose Item from Master --</option>
-                          {validItems.map((s) => (
+                          {itemsForSelectedPurchaseType.map((s) => (
                             <option key={s.itemId} value={s.itemId}>
                               {s.itemName} ({s.itemCode})
                             </option>
                           ))}
+                          {line.itemId &&
+                            !itemsForSelectedPurchaseType.some((s) => s.itemId === line.itemId) && (
+                              <option value={line.itemId}>
+                                {line.itemName} ({line.itemCode})
+                              </option>
+                            )}
                         </select>
                       </td>
                       <td className="p-2 font-bold text-slate-600 text-center uppercase">

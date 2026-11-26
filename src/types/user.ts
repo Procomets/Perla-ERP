@@ -4,6 +4,8 @@ export type ModuleId =
   | 'dashboard'
   | 'po'
   | 'sample-po'
+  | 'sample-outward'
+  | 'sample-invoice'
   | 'inward'
   | 'outward'
   | 'statement'

@@ -60,7 +60,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'invoices', label: 'Invoice Generation', icon: <Receipt className="w-4 h-4" /> },
     ],
     [
-      { id: 'sample-po', label: 'Sample PO', icon: <Shirt className="w-4 h-4" /> },
+      { id: 'sample-po', label: 'Sample PO / Inward', icon: <Shirt className="w-4 h-4" /> },
+      { id: 'sample-outward', label: 'Sample Outward', icon: <Truck className="w-4 h-4" /> },
+      { id: 'sample-invoice', label: 'Sample Invoice', icon: <Receipt className="w-4 h-4" /> },
     ],
     [
       { id: 'chemical', label: 'Process Entry', icon: <FlaskConical className="w-4 h-4" /> },

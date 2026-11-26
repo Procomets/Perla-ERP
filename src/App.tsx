@@ -16,6 +16,8 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { PurchaseOrdersPage } from './pages/purchaseOrders/PurchaseOrdersPage';
 import { SamplePoPage } from './pages/sampleProcess/SamplePoPage';
+import { SampleOutwardPage } from './pages/sampleProcess/SampleOutwardPage';
+import { SampleInvoicePage } from './pages/sampleProcess/SampleInvoicePage';
 import { InwardPage } from './pages/inward/InwardPage';
 import { OutwardPage } from './pages/outward/OutwardPage';
 import { StatementPage } from './pages/statement/StatementPage';
@@ -62,8 +64,10 @@ import { InvoiceService } from './services/invoiceService';
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Executive Dashboard', subtitle: 'Overview of operational trends, PO balances, and quick actions' },
   po: { title: 'Purchase Orders (PO)', subtitle: 'Customer work order creation & style/colour line specifications' },
-  'sample-po': { title: 'Sample PO Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
-  sample: { title: 'Sample PO Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
+  'sample-po': { title: 'Sample PO / Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
+  sample: { title: 'Sample PO / Inward', subtitle: 'Sample process work orders, style specifications, wash types, and line items' },
+  'sample-outward': { title: 'Sample Outward', subtitle: 'Outbound sample dispatches, challan delivery tracking, and inward balance updates' },
+  'sample-invoice': { title: 'Sample Invoice', subtitle: 'Sample inward & outward reconciliation, GST billing, and tax invoice generation' },
   inward: { title: 'Inward Receipt Entry', subtitle: 'Record incoming customer fabric batches against POs' },
   outward: { title: 'Outward Dispatch Entry', subtitle: 'Record finished processed goods dispatched to customers' },
   statement: { title: 'Inward vs Outward Reconciliation Statement', subtitle: 'Colour-wise balance ledger & invoice approval' },
@@ -180,6 +184,8 @@ const ErpLayout: React.FC<ErpLayoutProps> = (props) => {
             {moduleId === 'dashboard' && <DashboardPage pos={props.pos} inventory={props.inventory} onNavigate={(tabId) => navigate(`/erp/${tabId}`)} />}
             {moduleId === 'po' && <PurchaseOrdersPage pos={props.pos} vendors={props.vendors} inwards={props.inwards} outwards={props.outwards} onAddPo={props.onAddPo} onUpdatePo={props.onUpdatePo} />}
             {(moduleId === 'sample-po' || moduleId === 'sample') && <SamplePoPage vendors={props.vendors} />}
+            {moduleId === 'sample-outward' && <SampleOutwardPage vendors={props.vendors} />}
+            {moduleId === 'sample-invoice' && <SampleInvoicePage vendors={props.vendors} />}
             {moduleId === 'inward' && <InwardPage pos={props.pos} inwards={props.inwards} vendors={props.vendors} onAddInward={props.onAddInward} onUpdateInward={props.onUpdateInward} />}
             {moduleId === 'outward' && <OutwardPage pos={props.pos} inwards={props.inwards} outwards={props.outwards} vendors={props.vendors} onAddOutward={props.onAddOutward} onUpdateOutward={props.onUpdateOutward} />}
             {moduleId === 'statement' && (

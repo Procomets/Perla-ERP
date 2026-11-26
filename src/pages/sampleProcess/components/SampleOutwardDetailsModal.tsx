@@ -12,6 +12,7 @@ import {
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { SamplePoOutward } from '../../../types/samplePo';
+import { SamplePoPdfService } from '../../../services/samplePoPdfService';
 
 interface SampleOutwardDetailsModalProps {
   outward: SamplePoOutward | null;
@@ -168,9 +169,19 @@ export const SampleOutwardDetailsModal: React.FC<SampleOutwardDetailsModalProps>
             Created By: <strong className="text-slate-600">{outward.createdByName || 'System'}</strong> on{' '}
             {formatDisplayDate(outward.createdAt)}
           </div>
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => SamplePoPdfService.downloadSingleSampleOutwardPdf(outward)}
+              icon={<Printer className="w-4 h-4 text-rose-600" />}
+            >
+              Download as PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

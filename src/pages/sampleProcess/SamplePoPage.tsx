@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   Search,
@@ -36,8 +37,7 @@ import {
   SamplePoInward,
   SamplePoItem,
   SamplePoDispatchStatus,
-  SamplePoStatus,
-  SamplePoOutward
+  SamplePoStatus
 } from '../../types/samplePo';
 import { SamplePoService } from '../../services/samplePoService';
 import { SamplePoPdfService } from '../../services/samplePoPdfService';
@@ -48,7 +48,7 @@ import {
   TableMaximizeWrapper,
   TableTotalsFooter
 } from '../../components/ui/TableMaximizeWrapper';
-import { SampleOutwardTab } from './components/SampleOutwardTab';
+import { SamplePoReport } from './components/SamplePoReport';
 
 interface SamplePoPageProps {
   vendors?: Vendor[];
@@ -123,17 +123,14 @@ function formatDisplayDate(dateStr?: string): string {
 export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
   const { user, isDemoMode, isAdmin } = useAuth();
   const userIsAdmin = Boolean(isAdmin || isUserAdmin(user));
-
-  // Top Level Tab: Inward vs Outward
-  const [activeProcessTab, setActiveProcessTab] = useState<'inward' | 'outward'>('inward');
-  const [sampleOutwards, setSampleOutwards] = useState<SamplePoOutward[]>(() => SamplePoService.getOutwardCache());
-  const [outwardPreSelectedInward, setOutwardPreSelectedInward] = useState<SamplePoInward | null>(null);
+  const navigate = useNavigate();
 
   // Data State
   const [samplePos, setSamplePos] = useState<SamplePoInward[]>(() => SamplePoService.getCache());
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showReport, setShowReport] = useState<boolean>(false);
 
   // Table Controls State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -236,29 +233,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
             setSamplePos(data);
             setLoading(false);
           }
-        });
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, [isDemoMode]);
-
-  // Subscribe to real-time Sample Outwards
-  useEffect(() => {
-    let isMounted = true;
-    const unsubscribe = SamplePoService.subscribeSampleOutwards(
-      (data) => {
-        if (isMounted) {
-          setSampleOutwards(data);
-        }
-      },
-      (err) => {
-        console.warn('Real-time fallback for Sample Outwards:', err);
-        SamplePoService.getSampleOutwards(isDemoMode).then((data) => {
-          if (isMounted) setSampleOutwards(data);
         });
       }
     );
@@ -887,62 +861,43 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
   }, [filteredAndSortedPos]);
 
   return (
-    <div className="space-y-5">
-      {/* Top Navigation Switcher: Sample Inward vs Sample Outward */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2">
+    <div className="space-y-6">
+      {/* Top Header & Navigation Tabs (matching Purchase Orders) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Sample PO / Inward</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Manage sample purchase orders, inward challans, and generate consolidated reports
+          </p>
+        </div>
+
+        {/* Section Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto border border-slate-200/80 shadow-2xs">
           <button
             type="button"
-            onClick={() => {
-              setActiveProcessTab('inward');
-              setOutwardPreSelectedInward(null);
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeProcessTab === 'inward'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            onClick={() => setShowReport(false)}
+            className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+              !showReport
+                ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FileText className="w-4 h-4" />
-            <span>Sample Inward</span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                activeProcessTab === 'inward'
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-slate-100 text-slate-700'
-              }`}
-            >
+            <span>All Orders</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold border border-slate-200">
               {samplePos.length}
             </span>
           </button>
-
           <button
             type="button"
-            onClick={() => setActiveProcessTab('outward')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeProcessTab === 'outward'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            onClick={() => setShowReport(true)}
+            className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+              showReport
+                ? 'bg-white text-[#1F4E79] shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Truck className="w-4 h-4" />
-            <span>Sample Outward (Dispatch)</span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                activeProcessTab === 'outward'
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {sampleOutwards.length}
-            </span>
+            <span>Report Generation</span>
           </button>
-        </div>
-
-        <div className="text-[11px] text-slate-400 font-medium">
-          {activeProcessTab === 'inward'
-            ? 'Manage sample inward entries & item specifications'
-            : 'Track outbound dispatches and challan delivery data'}
         </div>
       </div>
 
@@ -972,21 +927,12 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
         </div>
       )}
 
-      {/* Render Active View */}
-      {activeProcessTab === 'outward' ? (
-        <SampleOutwardTab
-          sampleOutwards={sampleOutwards}
+      {showReport ? (
+        <SamplePoReport
           samplePos={samplePos}
           vendors={vendors}
-          user={user}
-          isDemoMode={isDemoMode}
-          onRefresh={() => {
-            SamplePoService.getSampleOutwards(isDemoMode).then(setSampleOutwards);
-            SamplePoService.getSamplePos(isDemoMode).then(setSamplePos);
-          }}
-          onNotice={(n) => setNotice(n)}
-          preSelectedInward={outwardPreSelectedInward}
-          onClearPreSelectedInward={() => setOutwardPreSelectedInward(null)}
+          onBack={() => setShowReport(false)}
+          onViewPo={(po) => setViewDetailsPo(po)}
         />
       ) : (
         <>
@@ -1183,26 +1129,8 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                 )}
               </div>
 
-              {/* Right: Export Excel, Download PDF & Add Sample PO */}
+              {/* Right: Add Sample PO */}
               <div className="flex items-center gap-2">
-                <ExcelExportButton
-                  onClick={handleExportExcel}
-                  label="Export Excel"
-                  title="Export filtered records to Excel spreadsheet"
-                />
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => SamplePoPdfService.downloadSamplePoTableReportPdf(filteredAndSortedPos, dateFrom, dateTo)}
-                  icon={<Printer className="w-4 h-4 text-rose-600" />}
-                  className="h-9 font-bold border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
-                  title="Download entire table as PDF report"
-                >
-                  Download PDF
-                </Button>
-
                 <Button
                   type="button"
                   variant="primary"
@@ -1254,15 +1182,12 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                     </th>
                     <th
                       onClick={() => handleSort('vendorName')}
-                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[200px]"
+                      className="py-3 px-3 cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[220px]"
                     >
                       <div className="flex items-center justify-between">
                         <span>Customer / Vendor</span>
                         {renderSortIcon('vendorName')}
                       </div>
-                    </th>
-                    <th className="py-3 px-3 min-w-[220px]">
-                      <span>Items &amp; Styles</span>
                     </th>
                     <th
                       onClick={() => handleSort('totalQuantity')}
@@ -1278,17 +1203,8 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                       className="py-3 px-3 text-center cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[120px] whitespace-nowrap"
                     >
                       <div className="flex items-center justify-center">
-                        <span>Dispatch</span>
-                        {renderSortIcon('dispatchStatus')}
-                      </div>
-                    </th>
-                    <th
-                      onClick={() => handleSort('status')}
-                      className="py-3 px-3 text-center cursor-pointer group hover:bg-[#DCE9F5] transition-colors min-w-[90px] whitespace-nowrap"
-                    >
-                      <div className="flex items-center justify-center">
                         <span>Status</span>
-                        {renderSortIcon('status')}
+                        {renderSortIcon('dispatchStatus')}
                       </div>
                     </th>
                     <th className="py-3 px-3 pr-12 text-center whitespace-nowrap min-w-[220px]">Actions</th>
@@ -1346,17 +1262,6 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                       </th>
                       <th className="p-1.5">
                         <input
-                          type="text"
-                          placeholder="Filter Items / Styles..."
-                          value={columnFilters.itemSummary}
-                          onChange={(e) =>
-                            setColumnFilters((prev) => ({ ...prev, itemSummary: e.target.value }))
-                          }
-                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                        />
-                      </th>
-                      <th className="p-1.5">
-                        <input
                           type="number"
                           placeholder="Min Qty"
                           value={columnFilters.totalQuantity}
@@ -1374,21 +1279,10 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                           onChange={(e) =>
                             setColumnFilters((prev) => ({ ...prev, dispatchStatus: e.target.value }))
                           }
-                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                        />
-                      </th>
-                      <th className="p-1.5">
-                        <input
-                          type="text"
-                          placeholder="Active..."
-                          value={columnFilters.status}
-                          onChange={(e) =>
-                            setColumnFilters((prev) => ({ ...prev, status: e.target.value }))
-                          }
                           className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 placeholder-slate-400 text-center focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
                         />
                       </th>
-                      <th className="p-1.5 text-right">
+                      <th className="p-1.5 pr-12 text-center">
                         <button
                           type="button"
                           onClick={() =>
@@ -1403,7 +1297,7 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                               status: ''
                             })
                           }
-                          className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
+                          className="text-[11px] text-rose-600 hover:text-rose-700 font-bold underline cursor-pointer"
                         >
                           Clear
                         </button>
@@ -1447,226 +1341,146 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                   ) : (
                     filteredAndSortedPos.map((po, idx) => {
                       const sNo = idx + 1;
-                      const isExpanded = expandedId === po.id;
-                      const itemsCount = po.items?.length || 0;
+                      const items = po.items && po.items.length > 0 ? po.items : [null];
+                      const rowSpan = items.length;
                       const firstItem = po.items?.[0];
 
                       return (
                         <React.Fragment key={po.id}>
-                          <tr
-                            className={`hover:bg-slate-50/80 transition-colors ${isExpanded ? 'bg-blue-50/30' : ''
-                              }`}
-                          >
-                            <td className="py-3 px-3 text-center text-slate-400 font-mono font-bold align-middle whitespace-nowrap">
-                              {sNo}
-                            </td>
-                            <td className="py-3 px-3 align-middle whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => setExpandedId(isExpanded ? null : po.id)}
-                                className="font-bold font-mono text-[#1F4E79] hover:underline inline-flex items-center gap-1.5 text-left cursor-pointer text-xs"
+                          {items.map((item, itemIdx) => {
+                            const isFirst = itemIdx === 0;
+                            const isLast = itemIdx === items.length - 1;
+                            return (
+                              <tr
+                                key={`${po.id}-${item?.id || itemIdx}`}
+                                className={`hover:bg-slate-50/80 transition-colors ${
+                                  isLast ? 'border-b border-slate-200' : 'border-b border-slate-100'
+                                }`}
                               >
-                                <ChevronRight
-                                  className={`w-3.5 h-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90 text-[#1F4E79]' : 'text-slate-400'
-                                    }`}
-                                />
-                                <span>{po.entryNumber}</span>
-                              </button>
-                            </td>
-                            {/* Separate Customer DC No */}
-                            <td className="py-3 px-3 align-middle whitespace-nowrap font-mono font-bold text-slate-900">
-                              {(() => {
-                                const dcs = Array.from(
-                                  new Set(
-                                    (po.items || [])
-                                      .map((i) => i.customerDcNumber)
-                                      .filter(Boolean)
-                                  )
-                                );
-                                const primaryDc = dcs.length > 0 ? dcs[0] : (po.customerDcNumber || '—');
-                                const moreCount = dcs.length > 1 ? dcs.length - 1 : 0;
-                                return (
-                                  <div className="flex items-center gap-1">
-                                    <span>{primaryDc !== '—' ? `DC #${primaryDc}` : '—'}</span>
-                                    {moreCount > 0 && (
-                                      <span
-                                        className="text-[10px] font-sans font-bold px-1.5 py-0.2 rounded bg-sky-100 text-sky-800"
-                                        title={`All DCs: ${dcs.map((d) => `#${d}`).join(', ')}`}
-                                      >
-                                        +{moreCount} more
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            {/* Separate Customer DC Date */}
-                            <td className="py-3 px-3 align-middle whitespace-nowrap text-slate-600">
-                              {(() => {
-                                const primaryDate = (po.items && po.items[0]?.customerDcDate) || po.customerDcDate;
-                                return formatDisplayDate(primaryDate);
-                              })()}
-                            </td>
-                            <td className="py-3 px-3 align-middle">
-                              <div className="font-bold text-slate-900 leading-snug line-clamp-1 max-w-[220px]" title={po.vendorName}>
-                                {po.vendorName || '—'}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 align-middle">
-                              {itemsCount > 0 ? (
-                                <div>
-                                  <div className="flex items-center gap-1.5 flex-nowrap">
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-bold text-[10.5px] whitespace-nowrap shrink-0">
-                                      {itemsCount} {itemsCount === 1 ? 'Item' : 'Items'}:
-                                    </span>
-                                    <span className="font-semibold text-slate-900 truncate max-w-[190px]" title={`${firstItem?.itemName} (${firstItem?.styleNo || '—'})`}>
-                                      {firstItem?.itemName} <span className="font-mono text-slate-500 font-normal">({firstItem?.styleNo || '—'})</span>
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 font-medium truncate max-w-[250px] mt-0.5">
-                                    Wash: <span className="text-slate-700 font-semibold">{firstItem?.washType || '—'}</span>
-                                    {itemsCount > 1 && (
-                                      <span className="text-[#1F4E79] font-bold ml-1">+{itemsCount - 1} more</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 italic">No lines</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="font-black font-mono text-slate-900 text-sm block">
-                                {po.totalQuantity.toLocaleString()}
-                              </span>
-                              <span className="text-[10.5px] text-slate-500 font-bold block uppercase tracking-wider">
-                                {firstItem?.unit || 'PCS'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
-                              {getDispatchBadge(po.dispatchStatus)}
-                            </td>
-                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap">
-                              {getStatusBadge(po.status)}
-                            </td>
-                            <td className="py-3 px-3 text-center align-middle whitespace-nowrap pr-12">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {/* Create Outward / Dispatch Action in words */}
-                                {(po.dispatchStatus || '').toLowerCase() !== 'completed' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOutwardPreSelectedInward(po);
-                                      setActiveProcessTab('outward');
-                                    }}
-                                    className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs transition cursor-pointer"
-                                    title="Create Sample Outward (Dispatch) for this PO"
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center text-slate-400 font-mono font-bold align-middle whitespace-nowrap border-r border-slate-100"
                                   >
-                                    Dispatch
-                                  </button>
+                                    {sNo}
+                                  </td>
                                 )}
-
-                                {/* View Details in words */}
-                                <button
-                                  type="button"
-                                  onClick={() => setViewDetailsPo(po)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
-                                  title="View full sample details"
-                                >
-                                  View
-                                </button>
-
-                                {/* Edit Action in words */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditModal(po)}
-                                  className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
-                                  title="Edit Sample PO"
-                                >
-                                  Edit
-                                </button>
-
-                                {/* Delete Action in words */}
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteConfirmPo(po)}
-                                  className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
-                                  title="Delete Sample PO"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* Expanded Line Items Detail Row */}
-                          {isExpanded && (
-                            <tr className="bg-slate-50/70 border-b border-slate-200">
-                              <td colSpan={9} className="p-4 pl-12">
-                                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 space-y-3">
-                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                    <div className="flex items-center gap-2">
-                                      <Layers className="w-4 h-4 text-[#1F4E79]" />
-                                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                                        Sample Line Items Breakdown ({po.items?.length || 0})
-                                      </h4>
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 align-middle whitespace-nowrap font-bold font-mono text-[#1F4E79] border-r border-slate-100"
+                                  >
+                                    {po.entryNumber}
+                                  </td>
+                                )}
+                                {/* Separate Customer DC No per inward line */}
+                                <td className="py-2.5 px-3 align-middle whitespace-nowrap font-mono font-bold text-slate-900">
+                                  {(item?.customerDcNumber || po.customerDcNumber)
+                                    ? `DC #${item?.customerDcNumber || po.customerDcNumber}`
+                                    : '—'}
+                                </td>
+                                {/* Separate Customer DC Date per inward line */}
+                                <td className="py-2.5 px-3 align-middle whitespace-nowrap text-slate-600">
+                                  {formatDisplayDate(item?.customerDcDate || po.customerDcDate)}
+                                </td>
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 align-middle border-l border-slate-100"
+                                  >
+                                    <div className="font-bold text-slate-900 leading-snug line-clamp-1 max-w-[240px]" title={po.vendorName}>
+                                      {po.vendorName || '—'}
                                     </div>
-                                    {po.remarks && (
-                                      <span className="text-xs text-slate-500 italic">
-                                        Remarks: "{po.remarks}"
-                                      </span>
-                                    )}
-                                  </div>
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-right align-middle whitespace-nowrap border-l border-slate-100"
+                                  >
+                                    <span className="font-black font-mono text-slate-900 text-sm block">
+                                      {po.totalQuantity.toLocaleString()}
+                                    </span>
+                                    <span className="text-[10.5px] text-slate-500 font-bold block uppercase tracking-wider">
+                                      {firstItem?.unit || 'PCS'}
+                                    </span>
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center align-middle whitespace-nowrap border-l border-slate-100"
+                                  >
+                                    {(po.status || '').toLowerCase() === 'cancelled'
+                                      ? getStatusBadge(po.status)
+                                      : getDispatchBadge(po.dispatchStatus)}
+                                  </td>
+                                )}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={rowSpan}
+                                    className="py-3 px-3 text-center align-middle whitespace-nowrap pr-12 border-l border-slate-100"
+                                  >
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      {/* Create Outward / Dispatch Action in words */}
+                                      {(po.dispatchStatus || '').toLowerCase() !== 'completed' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigate('/erp/sample-outward', { state: { preSelectedInward: po } });
+                                          }}
+                                          className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs transition cursor-pointer"
+                                          title="Create Sample Outward (Dispatch) for this PO"
+                                        >
+                                          Dispatch
+                                        </button>
+                                      )}
 
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs border border-slate-100 rounded-lg">
-                                      <thead>
-                                        <tr className="bg-slate-100/70 text-slate-600 font-bold uppercase text-[10px]">
-                                          <th className="py-1.5 px-2.5">#</th>
-                                          <th className="py-1.5 px-2.5">Customer DC No</th>
-                                          <th className="py-1.5 px-2.5">Customer DC Date</th>
-                                          <th className="py-1.5 px-2.5">Item Name</th>
-                                          <th className="py-1.5 px-2.5">Style No</th>
-                                          <th className="py-1.5 px-2.5">Wash / Process Type</th>
-                                          <th className="py-1.5 px-2.5 text-right">Quantity</th>
-                                          <th className="py-1.5 px-2.5 text-right">Dispatched</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {(po.items || []).map((it, iIdx) => (
-                                          <tr key={it.id || iIdx} className="hover:bg-slate-50/50">
-                                            <td className="py-1.5 px-2.5 text-slate-400 font-mono">
-                                              {iIdx + 1}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 font-bold font-mono text-slate-900">
-                                              DC #{it.customerDcNumber || po.customerDcNumber || '—'}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 text-slate-600">
-                                              {formatDisplayDate(it.customerDcDate || po.customerDcDate)}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 font-bold text-slate-800">
-                                              {it.itemName}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 font-mono font-semibold text-slate-700">
-                                              {it.styleNo || '—'}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 text-slate-700 font-medium">
-                                              {it.washType || '—'}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 text-right font-black font-mono text-slate-900">
-                                              {it.quantity} {it.unit || 'PCS'}
-                                            </td>
-                                            <td className="py-1.5 px-2.5 text-right font-mono text-slate-600">
-                                              {it.dispatchedQuantity || 0} {it.unit || 'PCS'}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
+                                      {/* View Details in words */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewDetailsPo(po)}
+                                        className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
+                                        title="View full sample details"
+                                      >
+                                        View
+                                      </button>
+
+                                      {/* Download PDF Action in words */}
+                                      <button
+                                        type="button"
+                                        onClick={() => SamplePoPdfService.downloadSingleSamplePoPdf(po)}
+                                        className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs transition cursor-pointer"
+                                        title="Download Sample PO as PDF"
+                                      >
+                                        Download
+                                      </button>
+
+                                      {/* Edit Action in words */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditModal(po)}
+                                        className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
+                                        title="Edit Sample PO"
+                                      >
+                                        Edit
+                                      </button>
+
+                                      {/* Delete Action in words */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteConfirmPo(po)}
+                                        className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
+                                        title="Delete Sample PO"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
                         </React.Fragment>
                       );
                     })
@@ -1674,9 +1488,8 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                 </tbody>
                 <TableTotalsFooter
                   cells={[
-                    { colSpan: 6, label: `Total (${filteredAndSortedPos.length} Sample Orders)`, isTotal: true },
+                    { colSpan: 5, label: `Total (${filteredAndSortedPos.length} Sample Orders)`, isTotal: true },
                     { quantity: sampleTotals, unit: 'piece', isTotal: true },
-                    { content: '—', align: 'center' },
                     { content: '—', align: 'center' },
                     { content: '—', align: 'center', className: 'pr-12' }
                   ]}
@@ -1701,7 +1514,7 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
           </div>
         )}
       </TableMaximizeWrapper>
-      </>
+        </>
       )}
 
       {/* ========================================================================= */}
@@ -1737,7 +1550,7 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                 </div>
 
                 {/* Customer / Vendor Selection */}
-                <div className="sm:col-span-5">
+                <div className="sm:col-span-9">
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                     Customer / Vendor <span className="text-rose-500">*</span>
                   </label>
@@ -1771,62 +1584,68 @@ export const SamplePoPage: React.FC<SamplePoPageProps> = ({ vendors = [] }) => {
                       })}
                     </select>
                   ) : (
-                    <input
-                      type="text"
-                      required
-                      value={formState.vendorName}
-                      onChange={(e) => setFormState({ ...formState, vendorName: e.target.value })}
-                      className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
-                    />
+                    <div className="space-y-2.5 bg-white p-3 rounded-lg border border-slate-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[10.5px] font-semibold text-slate-600 mb-1">
+                            Company Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formState.vendorName}
+                            onChange={(e) => setFormState({ ...formState, vendorName: e.target.value })}
+                            className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10.5px] font-semibold text-slate-600 mb-1">
+                            GST No (If Registered)
+                          </label>
+                          <input
+                            type="text"
+                            value={formState.vendorGst}
+                            onChange={(e) =>
+                              setFormState({ ...formState, vendorGst: e.target.value.toUpperCase() })
+                            }
+                            className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-mono font-semibold uppercase"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10.5px] font-semibold text-slate-600 mb-1">
+                          Full Address <span className="text-rose-500">*</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          required
+                          value={formState.vendorAddress}
+                          onChange={(e) => setFormState({ ...formState, vendorAddress: e.target.value })}
+                          className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-medium"
+                        />
+                      </div>
+                    </div>
                   )}
                   <button
                     type="button"
                     onClick={() =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        isManualVendor: !prev.isManualVendor,
-                        vendorId: prev.isManualVendor ? getVendorId(vendors[0]) : ''
-                      }))
+                      setFormState((prev) => {
+                        const nextManual = !prev.isManualVendor;
+                        const firstV = vendors[0];
+                        return {
+                          ...prev,
+                          isManualVendor: nextManual,
+                          vendorId: nextManual ? '' : getVendorId(firstV),
+                          vendorName: nextManual ? '' : getVendorName(firstV),
+                          vendorAddress: nextManual ? '' : formatVendorAddress(firstV?.address),
+                          vendorGst: nextManual ? '' : getVendorGst(firstV)
+                        };
+                      })
                     }
-                    className="text-[10px] text-[#1F4E79] underline mt-1 block cursor-pointer"
+                    className="text-[10px] text-[#1F4E79] underline mt-1.5 block cursor-pointer"
                   >
                     {formState.isManualVendor ? '← Select from Master List' : '+ Enter Customer Manually'}
                   </button>
-                </div>
-
-                {/* Dispatch Status */}
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Dispatch Status
-                  </label>
-                  <select
-                    value={formState.dispatchStatus}
-                    onChange={(e) =>
-                      setFormState({ ...formState, dispatchStatus: e.target.value as SamplePoDispatchStatus })
-                    }
-                    className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="partial">Partial</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                </div>
-
-                {/* Status */}
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={formState.status}
-                    onChange={(e) =>
-                      setFormState({ ...formState, status: e.target.value as SamplePoStatus })
-                    }
-                    className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-semibold"
-                  >
-                    <option value="active">Active</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
                 </div>
               </div>
             </div>

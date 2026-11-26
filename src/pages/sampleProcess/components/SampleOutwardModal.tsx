@@ -81,44 +81,75 @@ export const SampleOutwardModal: React.FC<SampleOutwardModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
 
-  // Derive unique companies from samplePos & vendors
+  const getPoVendorKey = (p: SamplePoInward): string => {
+    return p.vendorId || `MANUAL_${(p.vendorName || '').trim().toUpperCase()}`;
+  };
+
+  const getPoRemainingBalance = (p: SamplePoInward): number => {
+    if (p.items && p.items.length > 0) {
+      return p.items.reduce(
+        (sum, it) => sum + Math.max(0, Number(it.quantity || 0) - Number(it.dispatchedQuantity || 0)),
+        0
+      );
+    }
+    return Math.max(0, Number(p.totalQuantity || 0) - Number(p.totalDispatchedQuantity || 0));
+  };
+
+  // Only non-cancelled, non-completed Sample POs with remaining balance > 0
+  const pendingSamplePos = useMemo(() => {
+    return samplePos.filter((p) => {
+      if (initialInward && p.id === initialInward.id) return true;
+      const status = (p.status || '').toLowerCase();
+      const dispatchStatus = (p.dispatchStatus || '').toLowerCase();
+      if (status === 'cancelled' || status === 'completed' || dispatchStatus === 'completed') {
+        return false;
+      }
+      return getPoRemainingBalance(p) > 0;
+    });
+  }, [samplePos, initialInward]);
+
+  // Derive unique companies ONLY from pending Sample POs (including manually entered companies)
   const availableCompanies = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; address?: string; gst?: string }>();
+    const vendorById = new Map<string, Vendor>();
     vendors.forEach((v) => {
       const vid = v.vendorId || v.id;
-      const vname = v.companyName || (v as any).name;
-      if (vid && vname) {
-        map.set(vid, {
-          id: vid,
-          name: vname,
-          address: typeof v.address === 'string' ? v.address : '',
-          gst: v.taxDetails?.gstin || (v as any).gstin || ''
-        });
-      }
+      if (vid) vendorById.set(vid, v);
     });
-    samplePos.forEach((p) => {
-      if (p.vendorId && p.vendorName && !map.has(p.vendorId)) {
-        map.set(p.vendorId, {
-          id: p.vendorId,
-          name: p.vendorName,
-          address: p.vendorAddress,
-          gst: p.vendorGst
-        });
-      }
+
+    const map = new Map<string, { id: string; name: string; address?: string; gst?: string }>();
+    pendingSamplePos.forEach((p) => {
+      const compId = getPoVendorKey(p);
+      const compName = (p.vendorName || '').trim();
+      if (!compId || !compName || map.has(compId)) return;
+
+      const matchedVendor = p.vendorId ? vendorById.get(p.vendorId) : undefined;
+      map.set(compId, {
+        id: compId,
+        name: compName,
+        address:
+          p.vendorAddress ||
+          (matchedVendor && typeof matchedVendor.address === 'string' ? matchedVendor.address : '') ||
+          '',
+        gst:
+          p.vendorGst ||
+          matchedVendor?.taxDetails?.gstin ||
+          (matchedVendor as any)?.gstin ||
+          ''
+      });
     });
+
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [vendors, samplePos]);
+  }, [vendors, pendingSamplePos]);
 
   // Available Sample POs filtered by selected Company (if company selected)
   const eligibleSamplePos = useMemo(() => {
-    return samplePos.filter((p) => {
-      if ((p.status || '').toLowerCase() === 'cancelled') return false;
+    return pendingSamplePos.filter((p) => {
       if (selectedVendorId) {
-        return p.vendorId === selectedVendorId;
+        return getPoVendorKey(p) === selectedVendorId;
       }
       return true;
     });
-  }, [samplePos, selectedVendorId]);
+  }, [pendingSamplePos, selectedVendorId]);
 
   // Selected Inward Record
   const activeInward = useMemo(() => {
@@ -159,7 +190,7 @@ export const SampleOutwardModal: React.FC<SampleOutwardModalProps> = ({
         inwardQuantity: Number(it.quantity || 0),
         alreadyDispatched: dispatched,
         balanceQuantity: balance,
-        dispatchQuantity: balance > 0 ? balance : 0,
+        dispatchQuantity: '',
         customerDcNumber: it.customerDcNumber || activeInward.customerDcNumber || '',
         customerDcDate: it.customerDcDate || activeInward.customerDcDate || ''
       };
@@ -311,7 +342,7 @@ export const SampleOutwardModal: React.FC<SampleOutwardModalProps> = ({
                   const comp = availableCompanies.find((c) => c.id === vid);
                   setSelectedVendorName(comp ? comp.name : '');
                   // Reset inward if not belonging to this company
-                  if (activeInward && activeInward.vendorId !== vid) {
+                  if (activeInward && getPoVendorKey(activeInward) !== vid) {
                     setSelectedInwardId('');
                   }
                 }}
@@ -336,9 +367,9 @@ export const SampleOutwardModal: React.FC<SampleOutwardModalProps> = ({
                 onChange={(e) => {
                   const inwId = e.target.value;
                   setSelectedInwardId(inwId);
-                  const inw = samplePos.find((p) => p.id === inwId);
+                  const inw = pendingSamplePos.find((p) => p.id === inwId);
                   if (inw && !selectedVendorId) {
-                    setSelectedVendorId(inw.vendorId);
+                    setSelectedVendorId(getPoVendorKey(inw));
                     setSelectedVendorName(inw.vendorName);
                   }
                 }}
@@ -346,12 +377,10 @@ export const SampleOutwardModal: React.FC<SampleOutwardModalProps> = ({
               >
                 <option value="">Select Sample PO...</option>
                 {eligibleSamplePos.map((p) => {
-                  const bal = (p.totalQuantity || 0) - (p.totalDispatchedQuantity || 0);
-                  const isCompleted = (p.dispatchStatus || '').toLowerCase() === 'completed' || bal <= 0;
+                  const bal = getPoRemainingBalance(p);
                   return (
                     <option key={p.id} value={p.id}>
-                      {p.entryNumber} — {p.vendorName} (Inw: {p.totalQuantity}, Bal: {bal}{' '}
-                      {isCompleted ? '✓ Completed' : ''})
+                      {p.entryNumber} — {p.vendorName} (Inw: {p.totalQuantity}, Bal: {bal})
                     </option>
                   );
                 })}
