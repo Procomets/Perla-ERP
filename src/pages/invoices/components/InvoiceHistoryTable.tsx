@@ -162,8 +162,10 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first
       return [...filteredInvoices].sort((a, b) => {
-        const timeA = new Date(a.createdAt || a.updatedAt || a.invoiceDate || 0).getTime();
-        const timeB = new Date(b.createdAt || b.updatedAt || b.invoiceDate || 0).getTime();
+        const toMs = (v: any) =>
+          !v ? 0 : typeof v?.toMillis === 'function' ? v.toMillis() : typeof v?.seconds === 'number' ? v.seconds * 1000 : (new Date(v).getTime() || 0);
+        const timeA = toMs(a.createdAt) || toMs(a.updatedAt) || toMs(a.invoiceDate);
+        const timeB = toMs(b.createdAt) || toMs(b.updatedAt) || toMs(b.invoiceDate);
         return timeB - timeA;
       });
     }
@@ -303,9 +305,15 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
   const historyTotals = useMemo(() => {
     return sortedInvoices.reduce(
       (acc, inv: any) => {
-        acc.taxableSubtotal += Number(inv.taxableSubtotal || inv.taxableAmount || inv.subTotal || 0);
-        acc.gstTotal += Number(inv.gstTotal || inv.totalGst || inv.taxTotal || 0);
-        acc.grandTotal += Number(inv.grandTotal || inv.totalAmount || 0);
+        const taxable = Number(inv.subtotal ?? inv.taxableSubtotal ?? inv.taxableAmount ?? inv.subTotal ?? 0) || 0;
+        const componentGst =
+          (Number(inv.totalCgst) || 0) + (Number(inv.totalSgst) || 0) + (Number(inv.totalIgst) || 0);
+        const gst = componentGst > 0 ? componentGst : Number(inv.gstTotal || inv.totalGst || inv.taxTotal || 0) || 0;
+        const grand = Number(inv.finalTotal ?? inv.grandTotal ?? inv.totalAmount ?? 0) || 0;
+
+        acc.taxableSubtotal += taxable;
+        acc.gstTotal += gst;
+        acc.grandTotal += grand;
         return acc;
       },
       { taxableSubtotal: 0, gstTotal: 0, grandTotal: 0 }
@@ -509,7 +517,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                   </th>
 
                   {/* 9. Actions */}
-                  <th className="py-3 px-4 pr-12 min-w-[180px] border-b-2 border-slate-300 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">
+                  <th className="py-3 px-4 pr-12 min-w-[220px] border-b-2 border-slate-300 text-left whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB]">
                     Actions
                   </th>
                 </tr>
@@ -696,40 +704,39 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                         <td className="py-3.5 px-3 text-center whitespace-nowrap border-r border-slate-200">
                           {renderStatus(inv.status)}
                         </td>
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
+                        <td className="py-3.5 px-4 text-left whitespace-nowrap">
+                          <div className="flex items-center justify-start gap-1.5">
+                            <button
+                              type="button"
                               onClick={() => onDownloadPdf(inv)}
-                              className="text-xs font-bold text-black border-slate-300 hover:bg-black hover:text-white bg-white h-auto py-1 px-2.5 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs transition-colors cursor-pointer"
                             >
                               Download
-                            </Button>
+                            </button>
                             <button
                               type="button"
                               onClick={() => onViewInvoice(inv)}
                               title="View Invoice Details"
-                              className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition-colors cursor-pointer"
                             >
-                              <Eye className="w-4 h-4" />
+                              View
                             </button>
                             <button
                               type="button"
                               onClick={() => onPrintPdf(inv)}
                               title="Print Tax Invoice"
-                              className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs transition-colors cursor-pointer"
                             >
-                              <Printer className="w-4 h-4" />
+                              Print
                             </button>
                             {isAdmin && (
                               <button
                                 type="button"
                                 onClick={() => onEditInvoice?.(inv)}
                                 title="Edit Invoice Data (Admin Only)"
-                                className="p-1.5 text-black hover:text-white hover:bg-black rounded-md border border-slate-200 transition-colors cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition-colors cursor-pointer"
                               >
-                                <Pencil className="w-4 h-4" />
+                                Edit
                               </button>
                             )}
                           </div>

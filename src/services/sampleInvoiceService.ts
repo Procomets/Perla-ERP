@@ -1,17 +1,19 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
   runTransaction,
   serverTimestamp,
+  Timestamp,
   onSnapshot,
   query
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { SampleInvoice } from '../types/sampleInvoice';
-import { parseFirestoreTimestamp, SAMPLE_COUNTERS_COLLECTION } from './samplePoService';
+import { parseFirestoreTimestamp } from './samplePoService';
 
 export const SAMPLE_INVOICE_COLLECTION = 'sample_invoices';
 export const SAMPLE_INVOICE_CACHE_KEY = 'perla_sample_invoices_cache_v1';
@@ -53,58 +55,101 @@ export class SampleInvoiceService {
     }
   }
 
+  private static getMaxLocalSeqForFY(fy: string): number {
+    let maxSeq = 0;
+    const ptpRegex = new RegExp(`^PTP\\/${fy.replace('-', '\\-')}\\/(\\d+)$`, 'i');
+
+    // 1. Check sample invoices cache
+    for (const inv of this.getCache()) {
+      const m = inv.invoiceNo?.trim().match(ptpRegex);
+      if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10) || 0);
+    }
+
+    // 2. Check main tax invoice counter & cached main invoices in localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const counterVal = localStorage.getItem(`perla_inv_counter_${fy}`);
+        if (counterVal) {
+          maxSeq = Math.max(maxSeq, parseInt(counterVal, 10) || 0);
+        }
+        const mainInvRaw = localStorage.getItem('perla_erp_invoices_v1') || localStorage.getItem('perla_erp_invoices');
+        if (mainInvRaw) {
+          const parsed = JSON.parse(mainInvRaw);
+          if (Array.isArray(parsed)) {
+            for (const inv of parsed) {
+              const no = (inv?.invoiceNo || inv?.invoiceNumber || '').trim();
+              const m = no.match(ptpRegex);
+              if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10) || 0);
+            }
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    return maxSeq;
+  }
+
   /**
-   * Generates next Sample Invoice Number e.g. "2026-27/S-0001"
+   * Previews the next shared running Invoice Number (e.g. "PTP/2026-27/0008")
+   * without incrementing the counter until the invoice is actually created.
+   */
+  static async peekNextInvoiceNo(): Promise<string> {
+    const fy = getCurrentIndianFY();
+    let maxSeq = this.getMaxLocalSeqForFY(fy);
+
+    try {
+      const counterRef = doc(db, 'invoice_counters', `invoice_${fy}`);
+      const snap = await getDoc(counterRef);
+      if (snap.exists()) {
+        maxSeq = Math.max(maxSeq, Number(snap.data()?.currentSequence || 0));
+      }
+    } catch {
+      // Fallback to local maxSeq
+    }
+
+    const nextSeq = maxSeq + 1;
+    return `PTP/${fy}/${String(nextSeq).padStart(4, '0')}`;
+  }
+
+  /**
+   * Generates next atomic running Invoice Number shared with Main Tax Invoices: "PTP/2026-27/0008"
    */
   static async generateNextInvoiceNo(): Promise<string> {
     const fy = getCurrentIndianFY();
-    const counterDocId = `smp_inv_${fy}`;
-    const counterRef = doc(db, SAMPLE_COUNTERS_COLLECTION, counterDocId);
+    const counterRef = doc(db, 'invoice_counters', `invoice_${fy}`);
+    const localMax = this.getMaxLocalSeqForFY(fy);
 
     try {
-      let nextSeq = 1;
+      let nextSeq = localMax + 1;
       await runTransaction(db, async (txn) => {
         const snap = await txn.get(counterRef);
-        if (snap.exists()) {
-          const currentSeq = Number(snap.data()?.currentSeq || 0);
-          nextSeq = currentSeq + 1;
-          txn.update(counterRef, { currentSeq: nextSeq, updatedAt: serverTimestamp() });
-        } else {
-          nextSeq = 1;
-          txn.set(counterRef, { currentSeq: nextSeq, fy, createdAt: serverTimestamp() });
-        }
+        const firestoreCurrent = snap.exists() ? Number(snap.data()?.currentSequence || 0) : 0;
+        nextSeq = Math.max(firestoreCurrent, localMax) + 1;
+        txn.set(
+          counterRef,
+          { currentSequence: nextSeq, financialYear: fy, series: 'PTP', updatedAt: Timestamp.now() },
+          { merge: true }
+        );
       });
 
-      const cached = this.getCache();
-      const prefix = `${fy}/S-`;
-      const existingSeqs = cached
-        .filter((inv) => inv.invoiceNo && inv.invoiceNo.startsWith(prefix))
-        .map((inv) => {
-          const match = inv.invoiceNo.match(/\/S-(\d+)/i);
-          return match ? parseInt(match[1], 10) : 0;
-        });
-
-      const maxExisting = existingSeqs.length > 0 ? Math.max(...existingSeqs) : 0;
-      if (nextSeq <= maxExisting) {
-        nextSeq = maxExisting + 1;
+      if (typeof window !== 'undefined' && window.localStorage) {
         try {
-          await setDoc(counterRef, { currentSeq: nextSeq, fy, updatedAt: serverTimestamp() }, { merge: true });
+          localStorage.setItem(`perla_inv_counter_${fy}`, String(nextSeq));
         } catch {}
       }
 
-      return `${fy}/S-${String(nextSeq).padStart(4, '0')}`;
+      return `PTP/${fy}/${String(nextSeq).padStart(4, '0')}`;
     } catch (err) {
       console.warn('Failed atomic sequence generation for sample invoice, using local fallback:', err);
-      const cached = this.getCache();
-      const prefix = `${fy}/S-`;
-      const existingSeqs = cached
-        .filter((inv) => inv.invoiceNo && inv.invoiceNo.startsWith(prefix))
-        .map((inv) => {
-          const match = inv.invoiceNo.match(/\/S-(\d+)/i);
-          return match ? parseInt(match[1], 10) : 0;
-        });
-      const nextSeq = (existingSeqs.length > 0 ? Math.max(...existingSeqs) : 0) + 1;
-      return `${fy}/S-${String(nextSeq).padStart(4, '0')}`;
+      const nextSeq = localMax + 1;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          localStorage.setItem(`perla_inv_counter_${fy}`, String(nextSeq));
+        } catch {}
+      }
+      return `PTP/${fy}/${String(nextSeq).padStart(4, '0')}`;
     }
   }
 
@@ -242,6 +287,40 @@ export class SampleInvoiceService {
       payload.invoiceNo && payload.invoiceNo.trim()
         ? payload.invoiceNo.trim()
         : await this.generateNextInvoiceNo();
+
+    // If a PTP/YYYY-YY/XXXX invoice number was supplied (e.g. from peekNextInvoiceNo),
+    // sync the shared main invoice counter so the next Main or Sample invoice advances cleanly.
+    const fy = getCurrentIndianFY();
+    const ptpMatch = invoiceNo.match(new RegExp(`^PTP\\/${fy.replace('-', '\\-')}\\/(\\d+)$`, 'i'));
+    if (ptpMatch) {
+      const usedSeq = parseInt(ptpMatch[1], 10) || 0;
+      if (usedSeq > 0) {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            const prevLocal = parseInt(localStorage.getItem(`perla_inv_counter_${fy}`) || '0', 10) || 0;
+            if (usedSeq > prevLocal) {
+              localStorage.setItem(`perla_inv_counter_${fy}`, String(usedSeq));
+            }
+          } catch {}
+        }
+        if (!isDemo) {
+          try {
+            const counterRef = doc(db, 'invoice_counters', `invoice_${fy}`);
+            await runTransaction(db, async (txn) => {
+              const snap = await txn.get(counterRef);
+              const cur = snap.exists() ? Number(snap.data()?.currentSequence || 0) : 0;
+              if (usedSeq > cur) {
+                txn.set(
+                  counterRef,
+                  { currentSequence: usedSeq, financialYear: fy, series: 'PTP', updatedAt: Timestamp.now() },
+                  { merge: true }
+                );
+              }
+            });
+          } catch {}
+        }
+      }
+    }
 
     const now = new Date().toISOString();
     const docId = doc(collection(db, SAMPLE_INVOICE_COLLECTION)).id;

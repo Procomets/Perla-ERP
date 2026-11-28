@@ -654,3 +654,4 @@ export const AttendancePage: React.FC<AttendancePageProps> = () => {
     </div>
   );
 };
+

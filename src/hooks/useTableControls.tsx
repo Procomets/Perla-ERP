@@ -1,6 +1,34 @@
 import React, { useState, useMemo } from 'react';
 import { ArrowUpDown, ChevronDown, ChevronUp } from 'lucide-react';
 
+export function toTimestampMs(val: any): number {
+  if (!val) return 0;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (typeof val?.toMillis === 'function') return val.toMillis();
+  if (typeof val?.toDate === 'function') return val.toDate().getTime();
+  if (typeof val === 'object' && typeof val.seconds === 'number') {
+    return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1e6);
+  }
+  const ms = new Date(val).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export function getRecordTimestampMs(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  return (
+    toTimestampMs(item.createdAt) ||
+    toTimestampMs(item.updatedAt) ||
+    toTimestampMs(item.inwardTime) ||
+    toTimestampMs(item.outwardTime) ||
+    toTimestampMs(item.invoiceDate) ||
+    toTimestampMs(item.orderDate) ||
+    toTimestampMs(item.outwardDate) ||
+    toTimestampMs(item.inwardDate) ||
+    toTimestampMs(item.purchaseDate) ||
+    0
+  );
+}
+
 export type SortDirection = 'asc' | 'desc' | 'normal';
 
 export interface TableColumnConfig<T> {
@@ -135,10 +163,10 @@ export function useTableControls<T>(data: T[], options: UseTableControlsOptions<
     });
   }, [data, searchQuery, searchColumn, columnFilters, options.columns]);
 
-  // Sort filtered data based on active sort field & direction
+  // Sort filtered data based on active sort field & direction (default: most recent timestamp first)
   const processedData = useMemo(() => {
     if (!sortField || sortDirection === 'normal') {
-      return filteredData;
+      return [...filteredData].sort((a, b) => getRecordTimestampMs(b) - getRecordTimestampMs(a));
     }
 
     const col = options.columns.find((c) => c.key === sortField);

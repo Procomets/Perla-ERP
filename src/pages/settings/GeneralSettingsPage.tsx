@@ -814,7 +814,7 @@ export const GeneralSettingsPage: React.FC = () => {
                           <th className="py-3 px-4 border-r border-slate-200">Normalized Key</th>
                           <th className="py-3 px-4 border-r border-slate-200">Status</th>
                           <th className="py-3 px-4 border-r border-slate-200">Created Info</th>
-                          <th className="py-3 px-4 text-right pr-12 min-w-[130px]">Actions</th>
+                          <th className="py-3 px-4 text-left pr-12 min-w-[140px]">Actions</th>
                         </tr>
                       </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -890,21 +890,21 @@ export const GeneralSettingsPage: React.FC = () => {
                           </td>
 
                           {/* Actions */}
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-3.5 px-4 text-left">
+                            <div className="flex items-center justify-start gap-1.5">
                               <button
                                 onClick={() => handleOpenEdit(colour)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                                 title="Edit Name"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                Edit
                               </button>
                               <button
                                 onClick={() => handleOpenDelete(colour)}
-                                className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
                                 title="Delete Colour"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
                               </button>
                             </div>
                           </td>
@@ -1022,7 +1022,7 @@ export const GeneralSettingsPage: React.FC = () => {
                           <th className="py-3 px-4 border-r border-slate-200">Category</th>
                           <th className="py-3 px-4 border-r border-slate-200">Status</th>
                           <th className="py-3 px-4 border-r border-slate-200">Created Info</th>
-                          <th className="py-3 px-4 text-right pr-12 min-w-[130px]">Actions</th>
+                          <th className="py-3 px-4 text-left pr-12 min-w-[140px]">Actions</th>
                         </tr>
                       </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -1095,21 +1095,21 @@ export const GeneralSettingsPage: React.FC = () => {
                           </td>
 
                           {/* Actions */}
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-3.5 px-4 text-left">
+                            <div className="flex items-center justify-start gap-1.5">
                               <button
                                 onClick={() => handleOpenEditProcess(proc)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                                 title="Edit Process"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                Edit
                               </button>
                               <button
                                 onClick={() => handleOpenDeleteProcess(proc)}
-                                className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
                                 title="Delete Process"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
                               </button>
                             </div>
                           </td>

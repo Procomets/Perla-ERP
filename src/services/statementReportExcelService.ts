@@ -88,8 +88,8 @@ export class StatementReportExcelService {
       'Order Qty',
       'Received Qty (Inward)',
       'Dispatch Qty (Outward)',
-      'Dispatch Balance',
-      'Receive Balance',
+      'Received Balance',
+      'Order Balance',
       'Reconciliation Status'
     ];
 

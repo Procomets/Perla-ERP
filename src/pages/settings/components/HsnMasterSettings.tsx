@@ -302,7 +302,7 @@ export const HsnMasterSettings: React.FC<HsnMasterSettingsProps> = ({
                       <th className="py-3 px-4 w-36 border-r border-slate-200">HSN No.</th>
                       <th className="py-3 px-4 border-r border-slate-200">Description</th>
                       <th className="py-3 px-4 w-28 text-center border-r border-slate-200">Status</th>
-                      <th className="py-3 px-4 w-28 text-right pr-12 min-w-[130px]">Actions</th>
+                      <th className="py-3 px-4 w-28 text-left pr-12 min-w-[140px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -343,23 +343,23 @@ export const HsnMasterSettings: React.FC<HsnMasterSettingsProps> = ({
                             )}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
+                        <td className="py-3 px-4 text-left">
+                          <div className="flex items-center justify-start gap-1.5">
                             <button
                               type="button"
                               onClick={() => handleOpenEdit(item)}
-                              className="p-1.5 text-slate-400 hover:text-[#1F4E79] hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                               title="Edit HSN"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => handleOpenDelete(item)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
                               title="Delete HSN"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
                             </button>
                           </div>
                         </td>

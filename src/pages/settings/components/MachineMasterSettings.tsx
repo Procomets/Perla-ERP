@@ -745,7 +745,7 @@ export const MachineMasterSettings: React.FC<MachineMasterSettingsProps> = ({
                 </th>
 
                 {/* 8. Actions */}
-                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] w-28 pr-12 min-w-[130px]">
+                <th className="py-3 px-3.5 border-b-2 border-slate-300 text-left whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] w-28 pr-12 min-w-[140px]">
                   Actions
                 </th>
               </tr>
@@ -938,23 +938,23 @@ export const MachineMasterSettings: React.FC<MachineMasterSettingsProps> = ({
                     </td>
 
                     {/* 8. Actions */}
-                    <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="py-3 px-3.5 text-left whitespace-nowrap">
+                      <div className="flex items-center justify-start gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(m)}
-                          className="p-1.5 text-slate-600 hover:text-[#1F4E79] hover:bg-slate-100 rounded-md transition cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                           title="Edit Machine Details"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => handleOpenDelete(m)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
                           title="Delete Machine"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
                         </button>
                       </div>
                     </td>

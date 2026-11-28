@@ -505,11 +505,18 @@ export class SamplePoService {
 
     const totalQuantity = updatedItems.reduce((sum, it) => sum + (it.quantity || 0), 0);
     const totalDispatchedQuantity = updatedItems.reduce((sum, it) => sum + (it.dispatchedQuantity || 0), 0);
+    const computedDispatchStatus: SamplePoInward['dispatchStatus'] =
+      totalDispatchedQuantity <= 0
+        ? 'pending'
+        : totalDispatchedQuantity >= totalQuantity
+        ? 'completed'
+        : 'partial';
 
     const now = new Date().toISOString();
     const merged: SamplePoInward = {
       ...existing,
       ...updates,
+      dispatchStatus: updates.items ? computedDispatchStatus : (updates.dispatchStatus || existing.dispatchStatus),
       items: updatedItems,
       totalQuantity,
       totalDispatchedQuantity,
@@ -522,6 +529,7 @@ export class SamplePoService {
       try {
         await updateDoc(doc(db, SAMPLE_PO_COLLECTION, id), {
           ...updates,
+          dispatchStatus: merged.dispatchStatus,
           items: updatedItems,
           totalQuantity,
           totalDispatchedQuantity,

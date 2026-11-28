@@ -138,16 +138,24 @@ export class InvoiceService {
       if (v.vendorId) vendorMap.set(v.vendorId, v.companyName);
     });
 
-    const approvalMap = new Map<string, InvoiceApprovalRecord>();
+    const approvalsByKey = new Map<string, InvoiceApprovalRecord[]>();
+    const addApprovalKey = (key: string, app: InvoiceApprovalRecord) => {
+      const existing = approvalsByKey.get(key) || [];
+      if (!existing.some((e) => e.approvalId === app.approvalId)) {
+        existing.push(app);
+        approvalsByKey.set(key, existing);
+      }
+    };
     approvals.forEach((app) => {
+      if (app.status === 'cancelled') return;
       if (app.poColourLineId) {
-        approvalMap.set(app.poColourLineId, app);
+        addApprovalKey(app.poColourLineId, app);
       }
       if (app.purchaseOrderId && app.colourName) {
-        approvalMap.set(`${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`, app);
+        addApprovalKey(`${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`, app);
       }
       if (app.poNumber && app.colourName) {
-        approvalMap.set(`${(app.poNumber || '').trim().toLowerCase()}:::${app.colourName.trim().toLowerCase()}`, app);
+        addApprovalKey(`${(app.poNumber || '').trim().toLowerCase()}:::${app.colourName.trim().toLowerCase()}`, app);
       }
     });
 
@@ -243,19 +251,36 @@ export class InvoiceService {
         const orderedVsInwardDiff = orderedQty - cumulativeInward;
         const balanceQty = cumulativeInward - cumulativeOutward;
 
-        const approvalRecord =
-          approvalMap.get(lineId) ||
-          approvalMap.get(`${poKeyId}:::${colourLower}`) ||
-          approvalMap.get(`${poKeyNum}:::${colourLower}`);
+        const candidateApprovals = [
+          ...(approvalsByKey.get(lineId) || []),
+          ...(approvalsByKey.get(`${poKeyId}:::${colourLower}`) || []),
+          ...(approvalsByKey.get(`${poKeyNum}:::${colourLower}`) || [])
+        ];
+        const lineApprovalsMap = new Map<string, InvoiceApprovalRecord>();
+        candidateApprovals.forEach((app) => {
+          lineApprovalsMap.set(app.approvalId, app);
+        });
+        const lineApprovals = Array.from(lineApprovalsMap.values());
 
-        const isApprovedForInvoice = Boolean(approvalRecord && approvalRecord.status === 'approved' && !approvalRecord.invoiceId);
-        const isInvoiced = Boolean(approvalRecord && (approvalRecord.status === 'invoiced' || Boolean(approvalRecord.invoiceId)));
+        const pendingApproval = lineApprovals.find((a) => a.status === 'approved' && !a.invoiceId);
+        const invoicedApprovals = lineApprovals.filter((a) => a.status === 'invoiced' || Boolean(a.invoiceId));
+        const previouslyInvoicedQty = invoicedApprovals.reduce(
+          (sum, a) => sum + (Number(a.approvedQuantity) || 0),
+          0
+        );
+        const pendingApprovedQty = pendingApproval ? Number(pendingApproval.approvedQuantity) || 0 : 0;
+        const readyForInvoiceQty = Math.max(0, cumulativeOutward - previouslyInvoicedQty - pendingApprovedQty);
+
+        const approvalRecord = pendingApproval || invoicedApprovals[0];
+
+        const isApprovedForInvoice = Boolean(pendingApproval);
+        const isInvoiced = invoicedApprovals.length > 0 && !isApprovedForInvoice && readyForInvoiceQty <= 0;
 
         const isReadyForInvoice =
           cumulativeInward > 0 &&
           cumulativeInward === cumulativeOutward &&
           !isApprovedForInvoice &&
-          !isInvoiced;
+          readyForInvoiceQty > 0;
 
         const isUnfinished = !isReadyForInvoice && !isApprovedForInvoice && !isInvoiced;
 
@@ -284,6 +309,9 @@ export class InvoiceService {
           isApprovedForInvoice,
           isInvoiced,
           isUnfinished,
+          previouslyInvoicedQty,
+          pendingApprovedQty,
+          readyForInvoiceQty,
           approvalId: approvalRecord?.approvalId,
           approvedAt: approvalRecord?.approvedAt,
           approvedByName: approvalRecord?.approvedByName,
@@ -665,36 +693,65 @@ export class InvoiceService {
 
   /**
    * Generates next atomic unique invoice number for the given financial year
-   * Pattern: PTP/2026-27/0001
+   * Export (With GST): PTP/2026-27/0001
+   * Domestic (Without GST): DOM/2026-27/0001
    */
-  static async getNextInvoiceNumber(financialYear: string, isDemo: boolean = false): Promise<string> {
+  static async getNextInvoiceNumber(
+    financialYear: string,
+    isDemo: boolean = false,
+    isDomestic: boolean = false
+  ): Promise<string> {
+    const prefix = isDomestic ? 'DOM' : 'PTP';
+    const counterDocId = isDomestic
+      ? `invoice_domestic_${financialYear}`
+      : `invoice_${financialYear}`;
+
     if (!isDemo) {
       try {
-        const counterRef = doc(db, 'invoice_counters', `invoice_${financialYear}`);
+        let minSeq = 0;
+        if (!isDomestic && typeof localStorage !== 'undefined') {
+          try {
+            const smpRaw = localStorage.getItem('perla_sample_invoices_cache_v1');
+            if (smpRaw) {
+              const smpList = JSON.parse(smpRaw);
+              if (Array.isArray(smpList)) {
+                const ptpRegex = new RegExp(`^PTP\\/${financialYear.replace('-', '\\-')}\\/(\\d+)$`, 'i');
+                for (const s of smpList) {
+                  const m = (s?.invoiceNo || '').trim().match(ptpRegex);
+                  if (m) minSeq = Math.max(minSeq, parseInt(m[1], 10) || 0);
+                }
+              }
+            }
+          } catch {}
+        }
+
+        const counterRef = doc(db, 'invoice_counters', counterDocId);
         const newCount = await runTransaction(db, async (txn) => {
           const snap = await txn.get(counterRef);
           let current = 0;
           if (snap.exists()) {
             current = snap.data().currentSequence || 0;
           }
-          const next = current + 1;
+          const next = Math.max(current, minSeq) + 1;
           txn.set(
             counterRef,
-            { currentSequence: next, financialYear, updatedAt: Timestamp.now() },
+            { currentSequence: next, financialYear, series: prefix, updatedAt: Timestamp.now() },
             { merge: true }
           );
           return next;
         });
 
         const padded = String(newCount).padStart(4, '0');
-        return `PTP/${financialYear}/${padded}`;
+        return `${prefix}/${financialYear}/${padded}`;
       } catch (err) {
         console.warn('Firestore atomic invoice counter failed, falling back to local counter:', err);
       }
     }
 
     // Local sequence counter fallback
-    const key = `perla_inv_counter_${financialYear}`;
+    const key = isDomestic
+      ? `perla_inv_domestic_counter_${financialYear}`
+      : `perla_inv_counter_${financialYear}`;
     let count = 1;
     try {
       const stored = safeGetStorage(key);
@@ -706,7 +763,7 @@ export class InvoiceService {
       count = getLocalInvoices().length + 1;
     }
 
-    return `PTP/${financialYear}/${String(count).padStart(4, '0')}`;
+    return `${prefix}/${financialYear}/${String(count).padStart(4, '0')}`;
   }
 
   /**
@@ -733,13 +790,15 @@ export class InvoiceService {
         ? draftInvoice.invoiceNo
         : null;
 
-    const finalInvoiceNo = userChosenInvoiceNo || (await this.getNextInvoiceNumber(financialYear, isDemo));
-    const finalInvoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const isWithoutGst = Boolean(
       draftInvoice.isWithoutGst ||
       draftInvoice.gstType === 'without_gst' ||
       (Number(draftInvoice.totalCgst) === 0 && Number(draftInvoice.totalSgst) === 0 && Number(draftInvoice.totalIgst) === 0 && Number(draftInvoice.cgstRate) === 0)
     );
+
+    const finalInvoiceNo =
+      userChosenInvoiceNo || (await this.getNextInvoiceNumber(financialYear, isDemo, isWithoutGst));
+    const finalInvoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const finalizedInvoice: Invoice = {
       ...draftInvoice,

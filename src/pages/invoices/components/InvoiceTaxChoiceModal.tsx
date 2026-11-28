@@ -97,13 +97,13 @@ export const InvoiceTaxChoiceModal: React.FC<InvoiceTaxChoiceModalProps> = ({
                     <Percent className="w-4 h-4 stroke-[2.5]" />
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#1F4E79]">
-                    Tax Invoice
+                    With GST • Tax Invoice
                   </span>
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">With GST</h4>
+                  <h4 className="font-bold text-slate-900 text-sm">Export</h4>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Standard GST (CGST/SGST 5% or IGST 5%) applied. Full HSN &amp; tax schedule.
+                    With GST (CGST/SGST 5% or IGST 5%) applied. Uses Export Tax Invoice series.
                   </p>
                 </div>
               </div>
@@ -131,13 +131,13 @@ export const InvoiceTaxChoiceModal: React.FC<InvoiceTaxChoiceModalProps> = ({
                     <Ban className="w-4 h-4 stroke-[2.5]" />
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                    Non-GST / Commercial
+                    Without GST • Separate Series
                   </span>
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">Without GST</h4>
+                  <h4 className="font-bold text-slate-900 text-sm">Domestic</h4>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    0% tax applied. Subtotal equals final amount. Data stored only in Firebase.
+                    Without GST (0% tax applied). Generates under a separate Domestic invoice number series.
                   </p>
                 </div>
               </div>
@@ -157,11 +157,11 @@ export const InvoiceTaxChoiceModal: React.FC<InvoiceTaxChoiceModalProps> = ({
           <p className="text-[11px] leading-relaxed">
             {selectedGstType === 'without_gst' ? (
               <span>
-                <strong>Non-GST Invoicing:</strong> This invoice will be registered without tax lines and stored directly in your Firebase cloud database. Approved line quantities in the Statement ledger will be marked as invoiced.
+                <strong>Domestic Invoicing (Without GST):</strong> This invoice will be generated without GST under the separate Domestic invoice number series (DOM) and stored in your Firebase cloud database.
               </span>
             ) : (
               <span>
-                <strong>Official Tax Invoicing:</strong> This invoice will compute standard tax rates according to buyer state location and will be stored in your Firebase cloud database.
+                <strong>Export Invoicing (With GST):</strong> This invoice will compute standard GST rates according to buyer state location under the Export Tax Invoice series (PTP) and be stored in your Firebase cloud database.
               </span>
             )}
           </p>

@@ -103,7 +103,7 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                     <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Rate</th>
                     <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Amount (₹)</th>
                     <th className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Status</th>
-                    <th className="py-2.5 px-3 pr-12 border border-slate-300 text-center whitespace-nowrap min-w-[130px]">Action</th>
+                    <th className="py-2.5 px-3 pr-12 border border-slate-300 text-left whitespace-nowrap min-w-[130px]">Actions</th>
                   </tr>
                 </thead>
             <tbody>
@@ -145,28 +145,24 @@ export const InvoiceHistoryTable: React.FC<InvoiceHistoryTableProps> = ({
                   <td className="py-2 px-3 border border-slate-200 text-center whitespace-nowrap">
                     <StatusChip status="Invoiced" variant="slate" />
                   </td>
-                  <td className="py-2 px-3 border border-slate-200 text-center whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        className="text-xs flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold"
+                  <td className="py-2 px-3 border border-slate-200 text-left whitespace-nowrap">
+                    <div className="flex items-center justify-start gap-1.5">
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs cursor-pointer"
                         onClick={() => handleDownloadInvoice(item)}
                         title="Download Tax Invoice PDF"
                       >
-                        <Download className="w-3.5 h-3.5" />
                         Download
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs flex items-center gap-1"
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs cursor-pointer"
                         onClick={() => navigate('/erp/invoices')}
                         title="Open Invoice module"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
                         View
-                      </Button>
+                      </button>
                     </div>
                   </td>
                 </tr>

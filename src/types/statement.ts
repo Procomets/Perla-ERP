@@ -62,6 +62,9 @@ export interface StatementColourLineDetail {
   isReadyForInvoice: boolean;
   isApprovedForInvoice: boolean;
   isInvoiced: boolean;
+  previouslyInvoicedQty?: number;
+  pendingApprovedQty?: number;
+  readyForInvoiceQty?: number;
   approvalId?: string;
   approvedAt?: string;
   invoiceId?: string;
@@ -109,6 +112,7 @@ export interface InvoiceApprovalRecord {
   totalInwardAtApproval: number;
   totalOutwardAtApproval: number;
   status: 'approved' | 'invoiced' | 'cancelled';
+  isFinalizedPO?: boolean;
   approvedBy: string;
   approvedByName: string;
   approvedAt: string;

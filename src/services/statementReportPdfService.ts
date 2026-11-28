@@ -269,8 +269,8 @@ export class StatementReportPdfService {
           'Order Qty',
           'Received Qty (Inward)',
           'Dispatch Qty',
-          'Dispatch Balance',
-          'Receive Balance',
+          'Received Balance',
+          'Order Balance',
           'Status'
         ]
       ],

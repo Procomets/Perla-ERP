@@ -253,6 +253,9 @@ export interface InvoiceReadinessLine {
   isApprovedForInvoice: boolean;
   isInvoiced: boolean;
   isUnfinished: boolean;
+  previouslyInvoicedQty?: number;
+  pendingApprovedQty?: number;
+  readyForInvoiceQty?: number;
   approvalId?: string;
   approvedAt?: string;
   approvedByName?: string;

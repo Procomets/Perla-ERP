@@ -104,8 +104,8 @@ const STATEMENT_TABLE_COLUMNS: TableColumnConfig<FlattenedStatementRow>[] = [
   { key: 'orderQty', label: 'Order Qty', type: 'number', getValue: (r) => r.orderQty },
   { key: 'receivedQty', label: 'Received Qty (Inward)', type: 'number', getValue: (r) => r.receivedQty },
   { key: 'dispatchQty', label: 'Dispatch Qty (Outward)', type: 'number', getValue: (r) => r.dispatchQty },
-  { key: 'dispatchBalance', label: 'Dispatch Balance', type: 'number', getValue: (r) => r.dispatchBalance },
-  { key: 'receiveBalance', label: 'Receive Balance', type: 'number', getValue: (r) => r.receiveBalance },
+  { key: 'dispatchBalance', label: 'Received Balance', type: 'number', getValue: (r) => r.dispatchBalance },
+  { key: 'receiveBalance', label: 'Order Balance', type: 'number', getValue: (r) => r.receiveBalance },
   { key: 'status', label: 'Status', type: 'text', getValue: (r) => r.status }
 ];
 
@@ -681,7 +681,7 @@ export const StatementReport: React.FC<StatementReportProps> = ({
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Dispatch Balance</div>
+          <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Received Balance</div>
           <div className="text-xl font-bold text-amber-700 mt-1">{summaryMetrics.dispatchBalance.toLocaleString()}</div>
           <div className="text-[10px] text-amber-600 mt-0.5">Inward pending delivery</div>
         </div>
@@ -1111,8 +1111,8 @@ export const StatementReport: React.FC<StatementReportProps> = ({
                                 <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Order Qty</th>
                                 <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Received Qty (Inward)</th>
                                 <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Qty</th>
-                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Dispatch Balance</th>
-                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Receive Balance</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Received Balance</th>
+                                <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-right whitespace-nowrap">Order Balance</th>
                                 <th style={{ backgroundColor: '#EEF5FB', color: '#1F4E79' }} className="py-2.5 px-3 border border-slate-300 text-center whitespace-nowrap">Reconciliation Status</th>
                               </tr>
                             </thead>
@@ -1609,7 +1609,7 @@ export const StatementReport: React.FC<StatementReportProps> = ({
                     <div className="relative flex items-center">
                       <input
                         type="text"
-                        placeholder="Disp Bal..."
+                        placeholder="Recv Bal..."
                         value={tableControls.columnFilters['dispatchBalance'] || ''}
                         onChange={(e) =>
                           tableControls.setColumnFilters((prev) => ({
@@ -1643,7 +1643,7 @@ export const StatementReport: React.FC<StatementReportProps> = ({
                     <div className="relative flex items-center">
                       <input
                         type="text"
-                        placeholder="Recv Bal..."
+                        placeholder="Order Bal..."
                         value={tableControls.columnFilters['receiveBalance'] || ''}
                         onChange={(e) =>
                           tableControls.setColumnFilters((prev) => ({

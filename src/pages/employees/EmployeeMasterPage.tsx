@@ -378,7 +378,7 @@ export const EmployeeMasterPage: React.FC = () => {
                     <th className="py-3 px-5">Type</th>
                     <th className="py-3 px-5">Mobile</th>
                     <th className="py-3 px-5">Status</th>
-                    <th className="py-3 px-5 pr-12 text-right min-w-[130px]">Actions</th>
+                    <th className="py-3 px-5 pr-12 text-left min-w-[180px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100/70 text-xs">
@@ -442,24 +442,24 @@ export const EmployeeMasterPage: React.FC = () => {
                           </td>
 
                           {/* Column 6: Actions */}
-                          <td className="py-3.5 px-5">
-                            <div className="flex items-center justify-end gap-2.5">
+                          <td className="py-3.5 px-5 text-left">
+                            <div className="flex items-center justify-start gap-1.5">
                               {/* View */}
                               <button
                                 title="View Profile"
                                 onClick={() => handleView(emp)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition cursor-pointer"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                View
                               </button>
 
                               {/* Edit */}
                               <button
                                 title="Edit"
                                 onClick={() => handleEdit(emp)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                               >
-                                <Edit className="w-3.5 h-3.5" />
+                                Edit
                               </button>
 
                               {/* Deactivate / Activate link */}

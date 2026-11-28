@@ -194,56 +194,94 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
     }
   }, [initialOutwards]);
 
-  // Load single outward details
-  const loadSingleOutward = async (outwardId: string) => {
-    setLoading(true);
+  // Load single outward details (instant from in-memory list when available, hydrate logs in background)
+  const loadSingleOutward = async (outwardId: string, background: boolean = false) => {
+    const cached = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId) || null;
+    if (cached) {
+      setSelectedOutwardDetails((prev) => ({
+        outward: cached,
+        logs: prev.outward?.outwardId === outwardId || prev.outward?.id === outwardId ? prev.logs : []
+      }));
+      setSelectedOutwardId(outwardId);
+    } else if (!background) {
+      setLoading(true);
+    }
+
     try {
       const result = await OutwardService.getOutwardEntryById(outwardId, isDemoMode);
-      setSelectedOutwardDetails(result);
-      setSelectedOutwardId(outwardId);
+      if (result.outward) {
+        setSelectedOutwardDetails(result);
+        setSelectedOutwardId(outwardId);
+      }
     } catch (err) {
       console.error('Failed to load outward dispatch details:', err);
     } finally {
-      setLoading(false);
+      if (!cached && !background) {
+        setLoading(false);
+      }
     }
   };
 
-  // View handlers
-  const handleViewDetails = async (outwardId: string) => {
-    await loadSingleOutward(outwardId);
-    setCurrentView('details');
+  // View handlers (instant navigation using cached record; audit logs hydrate in background)
+  const handleViewDetails = (outwardId: string) => {
+    const cached = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId);
+    if (cached) {
+      setSelectedOutwardDetails({ outward: cached, logs: [] });
+      setSelectedOutwardId(outwardId);
+      setCurrentView('details');
+      loadSingleOutward(outwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleOutward(outwardId).then(() => setCurrentView('details'));
   };
 
-  const handlePrint = async (outwardId: string) => {
-    await loadSingleOutward(outwardId);
-    setCurrentView('print');
+  const handlePrint = (outwardId: string) => {
+    const cached = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId);
+    if (cached) {
+      setSelectedOutwardDetails({ outward: cached, logs: [] });
+      setSelectedOutwardId(outwardId);
+      setCurrentView('print');
+      loadSingleOutward(outwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleOutward(outwardId).then(() => setCurrentView('print'));
   };
 
-  const handleEdit = async (outwardId: string) => {
+  const handleEdit = (outwardId: string) => {
     const target = outwards.find((o) => o.outwardId === outwardId || o.id === outwardId);
     const lock = POLockService.isLocked(target, lockedPOMap);
     if (lock) {
       alert(lock.reason);
       return;
     }
-    await loadSingleOutward(outwardId);
-    setCurrentView('edit');
+    if (target) {
+      setSelectedOutwardDetails({ outward: target, logs: [] });
+      setSelectedOutwardId(outwardId);
+      setCurrentView('edit');
+      loadSingleOutward(outwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleOutward(outwardId).then(() => setCurrentView('edit'));
   };
 
   const handleNewOutward = () => {
     setSelectedOutwardDetails({ outward: null, logs: [] });
     setSelectedOutwardId(null);
     setPreselectedPoId(null);
-    loadData();
     setCurrentView('add');
+    if (pos.length === 0 || inwards.length === 0) {
+      loadData().catch(console.warn);
+    }
   };
 
   const handleSelectQuickOutwardPo = (po: PurchaseOrder) => {
     setSelectedOutwardDetails({ outward: null, logs: [] });
     setSelectedOutwardId(null);
     setPreselectedPoId(po.id || po.poId);
-    loadData();
     setCurrentView('add');
+    if (pos.length === 0 || inwards.length === 0) {
+      loadData().catch(console.warn);
+    }
   };
 
   // Action: Save Draft
@@ -318,7 +356,7 @@ export const OutwardContainer: React.FC<OutwardContainerProps> = ({
 
       // Refresh data in background non-blocking
       loadData().catch(console.warn);
-      loadSingleOutward(postedEntry.outwardId || postedEntry.id).catch(console.warn);
+      loadSingleOutward(postedEntry.outwardId || postedEntry.id, true).catch(console.warn);
     } catch (err: any) {
       console.error('Failed to post outward dispatch:', err);
       setIsSaving(false);

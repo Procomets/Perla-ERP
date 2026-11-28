@@ -1362,7 +1362,7 @@ export const InwardReport: React.FC<InwardReportProps> = ({
                           {inwardTableControls.renderSortIcon('status')}
                         </div>
                       </th>
-                      <th className="py-2.5 px-3 text-center align-middle pr-12 min-w-[130px]">Action</th>
+                      <th className="py-2.5 px-3 text-left align-middle pr-12 min-w-[130px]">Action</th>
                     </tr>
 
                 {/* Inline Column Filter Row */}
@@ -1620,12 +1620,12 @@ export const InwardReport: React.FC<InwardReportProps> = ({
                           {row.status}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-center">
+                      <td className="py-2 px-3 text-left">
                         {onViewInward && (
                           <button
                             type="button"
                             onClick={() => onViewInward(row.inwardId)}
-                            className="text-xs text-[#1F4E79] hover:underline font-semibold cursor-pointer"
+                            className="px-2.5 py-1 rounded bg-slate-100 text-[#1F4E79] hover:bg-slate-200 font-bold text-xs cursor-pointer"
                           >
                             View
                           </button>

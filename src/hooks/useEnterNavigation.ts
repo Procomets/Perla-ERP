@@ -41,12 +41,44 @@ export function useEnterNavigation() {
       // Find the most appropriate container: closest modal dialog, form, or main content container
       const container =
         activeEl.closest('[role="dialog"]') ||
+        activeEl.closest('[aria-modal="true"]') ||
         activeEl.closest('.modal-content') ||
         activeEl.closest('form') ||
+        activeEl.closest('.fixed.inset-0') ||
         activeEl.closest('main') ||
         document.body;
 
       if (!container) return;
+
+      const isVisible = (el: HTMLElement) =>
+        el.offsetParent !== null &&
+        el.tabIndex >= 0 &&
+        window.getComputedStyle(el).visibility !== 'hidden' &&
+        window.getComputedStyle(el).display !== 'none';
+
+      const isCancelOrUtilityButton = (btn: HTMLElement) => {
+        if (btn.tagName.toLowerCase() !== 'button') return false;
+        const typeAttr = (btn.getAttribute('type') || '').toLowerCase();
+        if (typeAttr === 'reset') return true;
+        if (typeAttr === 'submit') return false;
+        const text = (btn.textContent || '').trim();
+        if (!text) return true;
+        if (
+          /^(cancel|close|back|clear|reset|dismiss|no|×|✕|delete|remove|edit|preview|refresh|print|download|export)$/i.test(
+            text
+          )
+        ) {
+          return true;
+        }
+        if (/^(\+\s*)?(add\s+(line|colour|color|item|row|dc|more|entry)|remove\s+)/i.test(text)) {
+          return true;
+        }
+        const aria = (btn.getAttribute('aria-label') || '').trim();
+        if (/^(close|cancel|delete|remove)/i.test(aria)) return true;
+        const title = (btn.getAttribute('title') || '').trim();
+        if (/^(delete|remove|close)/i.test(title)) return true;
+        return false;
+      };
 
       // Select all interactive focusable elements within the container
       const selector = [
@@ -56,20 +88,41 @@ export function useEnterNavigation() {
         'button:not([disabled])'
       ].join(', ');
 
-      const focusableElements = Array.from(container.querySelectorAll<HTMLElement>(selector)).filter((el) => {
-        // Element must be visible, not display:none or visibility:hidden
-        return (
-          el.offsetParent !== null &&
-          el.tabIndex >= 0 &&
-          window.getComputedStyle(el).visibility !== 'hidden' &&
-          window.getComputedStyle(el).display !== 'none'
-        );
-      });
+      const focusableElements = Array.from(container.querySelectorAll<HTMLElement>(selector)).filter(isVisible);
 
       const currentIndex = focusableElements.indexOf(activeEl);
       if (currentIndex === -1) return;
 
-      const nextEl = focusableElements[currentIndex + 1];
+      const remainingElements = focusableElements.slice(currentIndex + 1);
+      const nextFieldInput = remainingElements.find((el) => {
+        const tag = el.tagName.toLowerCase();
+        return tag === 'input' || tag === 'select' || tag === 'textarea';
+      });
+
+      let nextEl: HTMLElement | undefined;
+
+      if (nextFieldInput) {
+        // Move directly to the next input/select/textarea field
+        nextEl = nextFieldInput;
+      } else {
+        // Reached the last input field: land on the primary Submit button, never Cancel
+        const remainingButtons = remainingElements.filter(
+          (el) => el.tagName.toLowerCase() === 'button' && !isCancelOrUtilityButton(el)
+        );
+        const submitBtn =
+          remainingButtons.find((b) => (b.getAttribute('type') || '').toLowerCase() === 'submit') ||
+          remainingButtons.find((b) =>
+            /save|submit|approve|create|update|confirm|generate|post|proceed|finish|record|apply|add/i.test(
+              (b.textContent || '').trim()
+            )
+          ) ||
+          remainingButtons[remainingButtons.length - 1] ||
+          Array.from(container.querySelectorAll<HTMLElement>('button[type="submit"]:not([disabled])')).find(
+            isVisible
+          );
+
+        nextEl = submitBtn;
+      }
 
       if (nextEl) {
         e.preventDefault();

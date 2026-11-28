@@ -258,14 +258,25 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
   // If there is NO inward entry for PO OR all the inward is outwarded, DO NOT SHOW!
   const eligiblePos = useMemo(() => {
     return allPosWithInwardSources.filter((p) => {
-      const s = String(p.status || '').toLowerCase();
-      if (s === 'cancelled' || s === 'rejected') return false;
-
       // Allow current PO if editing an existing outward dispatch
       const isCurrentEditingPo = Boolean(
         initialOutward && (p.id === initialOutward.poId || p.poId === initialOutward.poId)
       );
       if (isCurrentEditingPo) return true;
+
+      const s = String(p.status || '').toLowerCase().trim();
+      const ds = String((p as any).dispatchStatus || '').toLowerCase().trim();
+      if (
+        s === 'cancelled' ||
+        s === 'rejected' ||
+        s === 'completed' ||
+        s === 'closed' ||
+        s === 'dispatched' ||
+        s === 'fully_dispatched' ||
+        ds === 'completed'
+      ) {
+        return false;
+      }
 
       // Allow preselected PO if redirected from Quick Outward
       if (initialPoId && (p.id === initialPoId || p.poId === initialPoId)) {
@@ -435,7 +446,7 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
 
   // Dispatch Details
   const [outwardDate, setOutwardDate] = useState<string>(
-    initialOutward?.outwardDate || ''
+    () => initialOutward?.outwardDate || new Date().toLocaleDateString('en-CA')
   );
   const [ourDcNo, setOurDcNo] = useState<string>(
     initialOutward?.ourDcNo || ''
@@ -534,12 +545,52 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
            pos.find((p) => p.id === selectedPoId || p.poId === selectedPoId);
   }, [eligiblePos, allPosWithInwardSources, pos, selectedPoId]);
 
-  // Find eligible subcontractors: ONLY show the selected parent's subcompany/subcontractor!
-  const eligibleSubcontractors = useMemo(() => {
-    if (!selectedCustomerId) return [];
-    return vendors.filter(
-      (v) => v.parentVendorId === selectedCustomerId
+  // Subcontractor / Subcompany options: show ALL companies (prioritizing linked subcompanies of selected customer)
+  const subcontractorSelectGroups: SelectOptionGroup[] = useMemo(() => {
+    const directOption: SelectOption = {
+      id: 'direct',
+      primaryText: 'Direct Dispatch to Customer',
+      secondaryText: 'Dispatch directly to main customer'
+    };
+
+    const linkedSubs = selectedCustomerId
+      ? vendors.filter((v) => v.parentVendorId === selectedCustomerId)
+      : [];
+    const otherCompanies = vendors.filter(
+      (v) => !selectedCustomerId || v.parentVendorId !== selectedCustomerId
     );
+
+    const toSubOption = (sub: Vendor, variant: 'emerald' | 'slate'): SelectOption => ({
+      id: sub.id || sub.vendorId || '',
+      primaryText: sub.companyName,
+      secondaryText: sub.address?.city
+        ? `${sub.address.city} • Code: ${sub.vendorCode || '—'}`
+        : `Code: ${sub.vendorCode || '—'}`,
+      badge: sub.vendorCategory === 'subcompany' ? 'Subcompany' : sub.vendorCategory || sub.vendorCode || 'Company',
+      badgeVariant: variant,
+      meta: sub
+    });
+
+    const groups: SelectOptionGroup[] = [];
+    if (linkedSubs.length > 0) {
+      groups.push({
+        title: 'Linked Subcompanies of Selected Customer',
+        isHighlighted: true,
+        options: [directOption, ...linkedSubs.map((s) => toSubOption(s, 'emerald'))]
+      });
+      if (otherCompanies.length > 0) {
+        groups.push({
+          title: `All Other Companies (${otherCompanies.length})`,
+          options: otherCompanies.map((s) => toSubOption(s, 'slate'))
+        });
+      }
+    } else {
+      groups.push({
+        title: `All Companies / Subcontractors (${vendors.length})`,
+        options: [directOption, ...vendors.map((s) => toSubOption(s, 'slate'))]
+      });
+    }
+    return groups;
   }, [vendors, selectedCustomerId]);
 
   // Removed auto-generating useEffect so Our DC Number starts completely empty without predefined data
@@ -637,31 +688,23 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
            (p.customerCompanyNameSnapshot && p.customerCompanyNameSnapshot.trim().toLowerCase() === selectedCustomer.companyName.trim().toLowerCase())
          )));
 
-      const bal =
-        poBalanceMap[p.id] ||
-        poBalanceMap[p.poId || ''] ||
-        (p.poNumber ? poBalanceMap[p.poNumber.trim().toLowerCase()] : null);
-      const availText =
-        bal && bal.availableQty > 0
-          ? `Available Inward: ${bal.availableQty} ${bal.primaryUnit}`
-          : 'Available Inward';
-
+      const styleLabel = p.styleNo || (p as any).styleNumber || 'N/A';
+      const companyLabel = p.customerName || p.customerCompanyNameSnapshot || 'Customer';
       const optionId = p.id || p.poId || '';
       const option: SelectOption = {
         id: optionId,
-        primaryText: `Style: ${p.styleNo || 'N/A'} — ${p.poNumber}`,
+        primaryText: `Style: ${styleLabel}, ${p.poNumber}`,
         primaryNode: (
-          <span className="flex items-center gap-1.5 truncate">
-            <span className="text-xs text-slate-900 truncate">
-              Style: <strong className="font-extrabold text-slate-950">{p.styleNo || 'N/A'}</strong>
+          <div className="flex items-center gap-1.5 min-w-0 truncate">
+            <span className="text-xs text-slate-600 shrink-0">Style:</span>
+            <strong className="font-bold text-slate-950 text-xs truncate">{styleLabel}</strong>
+            <span className="text-slate-400 shrink-0">,</span>
+            <span className="text-xs text-[#1F4E79] font-mono font-semibold shrink-0">
+              {p.poNumber}
             </span>
-            <span className="text-slate-300 font-light">—</span>
-            <span className="text-[11px] text-slate-500 font-normal shrink-0">{p.poNumber}</span>
-          </span>
+          </div>
         ),
-        secondaryText: `${availText} • ${p.customerName || 'Customer'}`,
-        badge: isCurrentCustomer ? (selectedCustomer?.companyName || 'Selected Company') : (p.customerName || 'Other Company'),
-        badgeVariant: isCurrentCustomer ? 'emerald' : 'slate',
+        secondaryText: companyLabel,
         meta: p
       };
 
@@ -681,12 +724,6 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             : 'Purchase Orders For Selected Company (Available Stock)',
           isHighlighted: true,
           options: matchingCurrentCustomer
-        });
-      }
-      if (otherCustomers.length > 0) {
-        groups.push({
-          title: 'Other Available Purchase Orders',
-          options: otherCustomers
         });
       }
     } else {
@@ -981,29 +1018,17 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
           />
 
           {/* Subcontractor / Subcompany */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-               Subcontractor / Subcompany (Optional)
-            </label>
-            <select
-              value={selectedSubcontractorId}
-              onChange={(e) => setSelectedSubcontractorId(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-lg text-xs p-2.5 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-            >
-              <option value=""></option>
-              <option value="direct">Direct Dispatch to Customer</option>
-              {eligibleSubcontractors.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.companyName} {sub.vendorCategory ? `(${sub.vendorCategory})` : ''}
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1">
-              {eligibleSubcontractors.length > 0
-                ? `Only showing subcompanies of selected customer (${eligibleSubcontractors.length} found)`
-                : 'No subcompany registered under selected customer'}
-            </p>
-          </div>
+          <SearchableSelect
+            label="Subcontractor / Subcompany (Optional)"
+            value={selectedSubcontractorId}
+            placeholder=""
+            searchPlaceholder=""
+            groups={subcontractorSelectGroups}
+            onSelect={(opt) => setSelectedSubcontractorId(opt.id)}
+            onClear={selectedSubcontractorId ? () => setSelectedSubcontractorId('') : undefined}
+            dropdownWidth="wide"
+            helperText="All companies visible and searchable"
+          />
 
           {/* Purchase Order Selection */}
           <SearchableSelect
@@ -1013,16 +1038,25 @@ export const OutwardForm: React.FC<OutwardFormProps> = ({
             placeholder=""
             searchPlaceholder=""
             groups={poOptionGroups}
+            dropdownWidth="trigger"
+            align="right"
             onSelect={handleSelectPO}
             formatTriggerLabel={(opt) => {
               const p = opt.meta as any;
               if (p) {
                 const sNo = p.styleNo || p.styleNumber || '—';
+                const cName = p.customerName || p.customerCompanyNameSnapshot || '';
                 return (
-                  <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    <span className="text-xs text-slate-900 font-bold">Style: {sNo}</span>
-                    <span className="text-slate-300 font-light">—</span>
-                    <span className="text-xs text-slate-600 font-mono font-medium">{p.poNumber}</span>
+                  <span className="flex items-center gap-2 min-w-0 truncate">
+                    <span className="text-xs text-slate-950 font-bold shrink-0">{sNo}</span>
+                    <span className="text-slate-300 font-light shrink-0">|</span>
+                    <span className="text-xs text-[#1F4E79] font-mono font-semibold shrink-0">{p.poNumber}</span>
+                    {cName && (
+                      <>
+                        <span className="text-slate-300 font-light shrink-0">|</span>
+                        <span className="text-xs text-slate-600 truncate">{cName}</span>
+                      </>
+                    )}
                   </span>
                 );
               }

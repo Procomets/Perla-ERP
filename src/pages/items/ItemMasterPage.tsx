@@ -654,7 +654,7 @@ export const ItemMasterPage: React.FC = () => {
                       </th>
 
                       {/* Actions */}
-                      <th className="p-3.5 pr-12 whitespace-nowrap text-right min-w-[130px] bg-[#EEF5FB]">Actions</th>
+                      <th className="p-3.5 pr-12 whitespace-nowrap text-left min-w-[200px] bg-[#EEF5FB]">Actions</th>
                     </tr>
 
                     {/* Sticky Inline Column Filters Row */}
@@ -818,8 +818,8 @@ export const ItemMasterPage: React.FC = () => {
                           </td>
 
                           {/* Actions */}
-                          <td className="p-3.5 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="p-3.5 text-left whitespace-nowrap">
+                            <div className="flex items-center justify-start gap-1.5">
                               <button
                                 onClick={() => handleViewItem(item)}
                                 className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-[#1F4E79] transition-colors border border-slate-200 shadow-2xs cursor-pointer"

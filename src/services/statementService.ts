@@ -474,6 +474,7 @@ export class StatementService {
       poId: string;
       poLineId: string;
       companyId?: string;
+      isFinalizedPO?: boolean;
     },
     user: { uid: string; displayName?: string },
     isDemo: boolean = false
@@ -493,29 +494,6 @@ export class StatementService {
       throw new Error(`Colour line with ID ${params.poLineId} was not found on Purchase Order.`);
     }
 
-    if (line.isInvoiced) {
-      throw new Error(`This colour line is already invoiced (Invoice: ${line.invoiceNo || 'Billed'}).`);
-    }
-
-    if (line.isApprovedForInvoice) {
-      throw new Error('This colour line has already been approved for invoice.');
-    }
-
-    // Direct check against existing approvals to guard against concurrent clicks
-    const existingApprovals = await this.getInvoiceApprovals(params.companyId, isDemo);
-    const alreadyApproved = existingApprovals.find(
-      (a) =>
-        a.poColourLineId === params.poLineId ||
-        (a.purchaseOrderId === line.poId && a.colourName?.toLowerCase() === line.colour?.toLowerCase()) ||
-        (a.poNumber === line.poNumber && a.colourName?.toLowerCase() === line.colour?.toLowerCase())
-    );
-    if (alreadyApproved) {
-      if (alreadyApproved.status === 'invoiced') {
-        throw new Error(`This colour line is already invoiced (Invoice: ${alreadyApproved.invoiceNo || 'Billed'}).`);
-      }
-      throw new Error('This colour line has already been approved for invoice.');
-    }
-
     if (line.cumulativeInward <= 0) {
       throw new Error('Cannot approve for invoice: No inward receipts recorded.');
     }
@@ -526,9 +504,37 @@ export class StatementService {
       );
     }
 
+    // Direct check against existing approvals to guard against duplicate pending approvals
+    // while allowing incremental mid-PO approvals when new inward/outward arrives.
+    const existingApprovals = await this.getInvoiceApprovals(companyId || params.companyId, isDemo);
+    const lineApprovals = existingApprovals.filter(
+      (a) =>
+        a.status !== 'cancelled' &&
+        (a.poColourLineId === params.poLineId ||
+          (a.purchaseOrderId === line.poId && a.colourName?.toLowerCase() === line.colour?.toLowerCase()) ||
+          (a.poNumber === line.poNumber && a.colourName?.toLowerCase() === line.colour?.toLowerCase()))
+    );
+
+    const pendingApproval = lineApprovals.find((a) => a.status === 'approved' && !a.invoiceId);
+    if (pendingApproval) {
+      throw new Error('This colour line already has a pending approval in Invoice Generation.');
+    }
+
+    const previouslyInvoicedQty = lineApprovals
+      .filter((a) => a.status === 'invoiced' || Boolean(a.invoiceId))
+      .reduce((sum, a) => sum + (Number(a.approvedQuantity) || 0), 0);
+
+    const incrementalReadyQty = Math.max(0, (Number(line.cumulativeOutward) || 0) - previouslyInvoicedQty);
+    if (incrementalReadyQty <= 0) {
+      const lastInv = lineApprovals.find((a) => a.status === 'invoiced' || Boolean(a.invoiceId));
+      throw new Error(
+        `All dispatched quantity (${line.cumulativeOutward} ${line.unit}) is already invoiced${lastInv?.invoiceNo ? ` (Invoice: ${lastInv.invoiceNo})` : ''}.`
+      );
+    }
+
     const now = new Date().toISOString();
-    // Deterministic approval ID based on PO and colour line to prevent duplicate document creation
-    const approvalId = `appr_${line.poId}_${params.poLineId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    // Unique approval ID per incremental batch so multiple mid-PO invoices can be approved for the same colour line
+    const approvalId = `appr_${line.poId}_${params.poLineId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     const approvalRecord: InvoiceApprovalRecord = {
       approvalId,
@@ -543,10 +549,11 @@ export class StatementService {
       hsnNo: (line as any).hsnNo || undefined,
       unit: line.unit,
       rate: line.rate,
-      approvedQuantity: line.cumulativeOutward,
+      approvedQuantity: incrementalReadyQty,
       totalInwardAtApproval: line.cumulativeInward,
       totalOutwardAtApproval: line.cumulativeOutward,
       status: 'approved',
+      isFinalizedPO: Boolean(params.isFinalizedPO),
       approvedBy: user.uid,
       approvedByName: user.displayName || 'Authorized User',
       approvedAt: now,
@@ -563,17 +570,88 @@ export class StatementService {
       }
     }
 
-    // Persist locally, removing any stale record for this line
-    const current = getLocalApprovals().filter(
-      (a) =>
-        a.approvalId !== approvalId &&
-        a.poColourLineId !== params.poLineId &&
-        !(a.purchaseOrderId === line.poId && a.colourName?.toLowerCase() === line.colour?.toLowerCase())
-    );
+    // Persist locally while preserving historical 'invoiced' records for this line
+    const current = getLocalApprovals().filter((a) => a.approvalId !== approvalId);
     current.push(approvalRecord);
     saveLocalApprovals(current);
 
     return approvalRecord;
+  }
+
+  /**
+   * Approves selected colour lines for Invoice Generation, optionally finalizing the PO(s)
+   * and syncing PO order quantities to dispatched quantities when requested.
+   */
+  static async approveSelectedLinesForInvoice(
+    params: {
+      items: { poId: string; poLineId: string; companyId?: string }[];
+      isFinalizedPO: boolean;
+      syncPoQtyToDispatched?: boolean;
+    },
+    user: { uid: string; displayName?: string; role?: string },
+    isDemo: boolean = false
+  ): Promise<{ approvedRecords: InvoiceApprovalRecord[] }> {
+    // Update PO quantity & status BEFORE writing isFinalizedPO approval so POLockService does not block updatePurchaseOrder
+    if (params.isFinalizedPO) {
+      const distinctPoIds = Array.from(new Set(params.items.map((i) => i.poId).filter(Boolean)));
+      for (const poId of distinctPoIds) {
+        const poRes = await POService.getPurchaseOrderById(poId, isDemo);
+        if (!poRes.po) continue;
+
+        const companyId = poRes.po.customerId || poRes.po.customerVendorId || '';
+        const statement = params.syncPoQtyToDispatched
+          ? await this.getStatementData({ companyId, poId }, isDemo)
+          : null;
+
+        let updatedColourLines = poRes.po.colourLines || poRes.po.lines || [];
+        if (params.syncPoQtyToDispatched && statement) {
+          updatedColourLines = updatedColourLines.map((cl) => {
+            const clId = cl.id || cl.lineId;
+            const stmtLine = statement.colourLines.find(
+              (sl) =>
+                sl.poLineId === clId ||
+                sl.colour?.trim().toLowerCase() === cl.colourName?.trim().toLowerCase()
+            );
+            if (stmtLine && stmtLine.cumulativeOutward > 0 && Number(cl.quantity) !== Number(stmtLine.cumulativeOutward)) {
+              return {
+                ...cl,
+                quantity: stmtLine.cumulativeOutward
+              };
+            }
+            return cl;
+          });
+        }
+
+        await POService.updatePurchaseOrder(
+          poId,
+          {
+            ...(params.syncPoQtyToDispatched ? { colourLines: updatedColourLines } : {}),
+            status: 'Completed',
+            isFinalized: true,
+            finalizedAt: new Date().toISOString()
+          } as any,
+          user,
+          isDemo
+        );
+      }
+    }
+
+    const approvedRecords: InvoiceApprovalRecord[] = [];
+    for (const item of params.items) {
+      const rec = await this.approveStatementLineForInvoice(
+        {
+          poId: item.poId,
+          poLineId: item.poLineId,
+          companyId: item.companyId,
+          isFinalizedPO: params.isFinalizedPO
+        },
+        user,
+        isDemo
+      );
+      approvedRecords.push(rec);
+    }
+
+    return { approvedRecords };
   }
 
   /**
@@ -672,23 +750,15 @@ export class StatementService {
     // Sort chronologically descending in memory
     list.sort((a, b) => (b.approvedAt || b.createdAt || '').localeCompare(a.approvedAt || a.createdAt || ''));
 
-    // Deduplicate approvals by PO Colour Line to guarantee no duplicate entries
+    // Deduplicate approvals by approvalId so multiple incremental invoices on the same PO colour line are preserved
     const dedupedMap = new Map<string, InvoiceApprovalRecord>();
     for (const app of list) {
-      const lineKey =
-        app.poColourLineId ||
-        (app.purchaseOrderId && app.colourName
-          ? `${app.purchaseOrderId}:::${app.colourName.trim().toLowerCase()}`
-          : app.approvalId);
-
-      const existing = dedupedMap.get(lineKey);
+      const appKey = app.approvalId || (app as any).id || `${app.poColourLineId}_${app.createdAt}`;
+      const existing = dedupedMap.get(appKey);
       if (!existing) {
-        dedupedMap.set(lineKey, app);
-      } else {
-        // If an approval is already 'invoiced', that takes precedence over 'approved'
-        if (app.status === 'invoiced' && existing.status !== 'invoiced') {
-          dedupedMap.set(lineKey, app);
-        }
+        dedupedMap.set(appKey, app);
+      } else if (app.status === 'invoiced' && existing.status !== 'invoiced') {
+        dedupedMap.set(appKey, app);
       }
     }
 
@@ -725,11 +795,13 @@ export class StatementService {
     const approvalIds = new Set(items.map((i) => i.approvalId).filter(Boolean));
 
     const updated = list.map((app) => {
-      if (
-        (app.poColourLineId && poLineIds.has(app.poColourLineId)) ||
-        (app.approvalId && approvalIds.has(app.approvalId)) ||
-        (app.approvalId && items.some((i) => i.poLineId && app.approvalId.includes(i.poLineId)))
-      ) {
+      const matchesByApprovalId = Boolean(app.approvalId && approvalIds.has(app.approvalId));
+      const matchesPendingByLineId =
+        app.status === 'approved' &&
+        ((app.poColourLineId && poLineIds.has(app.poColourLineId)) ||
+          (app.approvalId && items.some((i) => i.poLineId && app.approvalId.includes(i.poLineId))));
+
+      if (matchesByApprovalId || matchesPendingByLineId) {
         return {
           ...app,
           status: 'invoiced' as const,
@@ -753,15 +825,22 @@ export class StatementService {
           if (id) docIdsToUpdate.add(id);
         }
 
-        // Query by poColourLineId in parallel for any missing doc IDs
-        const missingLineIds = Array.from(poLineIds);
+        // Query by poColourLineId in parallel only for items missing an explicit approvalId (and only pending 'approved' docs)
+        const missingLineIds = Array.from(
+          new Set(items.filter((i) => !i.approvalId && i.poLineId).map((i) => i.poLineId as string))
+        );
         if (missingLineIds.length > 0) {
           await Promise.all(
             missingLineIds.map(async (lineId) => {
               try {
                 const q = query(collection(db, 'invoice_approvals'), where('poColourLineId', '==', lineId));
                 const snap = await getDocs(q);
-                snap.docs.forEach((d) => docIdsToUpdate.add(d.id));
+                snap.docs.forEach((d) => {
+                  const data = d.data() as any;
+                  if (data?.status === 'approved') {
+                    docIdsToUpdate.add(d.id);
+                  }
+                });
               } catch (e) {
                 console.warn('Error querying approvals for lineId:', lineId, e);
               }

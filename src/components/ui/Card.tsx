@@ -20,7 +20,15 @@ export const Card: React.FC<CardProps> = ({ title, subtitle, action, children, c
           {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      <div className="p-4 sm:p-5">{children}</div>
+      <div
+        className={`p-4 sm:p-5 ${
+          className.includes('flex-col') || className.includes('flex-1')
+            ? 'flex-1 flex flex-col min-h-0'
+            : ''
+        }`}
+      >
+        {children}
+      </div>
     </div>
   );
 };

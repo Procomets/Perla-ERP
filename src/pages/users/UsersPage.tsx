@@ -721,7 +721,7 @@ export const UsersPage: React.FC = () => {
                   </th>
 
                   {/* Actions */}
-                  <th className="px-5 py-3.5 text-center whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] min-w-[130px] pr-12">Actions</th>
+                  <th className="px-5 py-3.5 text-left whitespace-nowrap bg-[#EEF5FB] text-[#1F4E79] min-w-[140px] pr-12">Actions</th>
                 </tr>
 
                 {/* Sticky Column Filter Input Row */}
@@ -933,20 +933,20 @@ export const UsersPage: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-5 py-3.5 text-right">
-                            <div className="flex items-center justify-end space-x-2">
+                          <td className="px-5 py-3.5 text-left">
+                            <div className="flex items-center justify-start gap-1.5">
                               <button
                                 onClick={() => openEditModal(targetUser)}
-                                className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                                className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition cursor-pointer"
                                 title="Edit User & Permissions"
                               >
-                                <Edit className="w-3.5 h-3.5" />
+                                Edit
                               </button>
                               <button
                                 onClick={() => handleDeleteUser(targetUser)}
-                                className={`p-1.5 rounded-lg transition ${currentUser?.uid === targetUser.id
-                                  ? 'text-slate-200 cursor-not-allowed'
-                                  : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                                className={`px-2.5 py-1 rounded font-bold text-xs transition ${currentUser?.uid === targetUser.id
+                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer'
                                   }`}
                                 title={
                                   currentUser?.uid === targetUser.id
@@ -955,7 +955,7 @@ export const UsersPage: React.FC = () => {
                                 }
                                 disabled={currentUser?.uid === targetUser.id}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
                               </button>
                             </div>
                           </td>

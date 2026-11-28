@@ -141,24 +141,55 @@ export class SampleInvoicePdfService {
 
     y += metaHeight + 2.5;
 
-    // --- 3. Line Items Table (13 columns from template, larger font & spacing) ---
-    const colWidths = [8, 18, 13, 17, 21, 24, 13, 9, 18, 13, 12, 13, 15]; // sum = 194mm
+    // --- 3. Line Items Table (14 columns, row-spanned by Inward Line: Total Qty, Rate & Amount once per inward) ---
+    const colWidths = [6.5, 17.5, 10.5, 15.5, 18, 26, 11, 9.5, 17.5, 10.5, 10.5, 12, 12.5, 16.5]; // sum = 194mm
 
-    const bodyRows = (invoice.items || []).map((it, idx) => [
-      String(idx + 1),
-      formatSlashDate(it.custDcDate),
-      it.custDcNo || '—',
-      it.styleNo || '—',
-      it.itemName || '—',
-      it.washType || '—',
-      formatNum2(it.inwQty),
-      it.unit || 'PCS',
-      formatSlashDate(it.outDcDate),
-      it.outDcNo || '—',
-      formatNum2(it.qty),
-      formatNum2(it.rate),
-      formatNum2(it.amount)
-    ]);
+    const inwardGroupMap = new Map<string, typeof invoice.items>();
+    (invoice.items || []).forEach((it) => {
+      const key = `${it.inwardId || ''}__${
+        it.inwardItemId ||
+        `${(it.custDcNo || '').trim().toLowerCase()}||${(it.styleNo || '').trim().toLowerCase()}||${(it.itemName || '').trim().toLowerCase()}||${(it.washType || '').trim().toLowerCase()}`
+      }`;
+      const list = inwardGroupMap.get(key);
+      if (list) list.push(it);
+      else inwardGroupMap.set(key, [it]);
+    });
+
+    const bodyRows: any[] = [];
+    let groupSn = 0;
+    inwardGroupMap.forEach((grpItems) => {
+      groupSn += 1;
+      const span = grpItems.length;
+      const grpTotalOutQty = grpItems.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+      const grpRate = Number(grpItems[0]?.rate || 0);
+      const grpAmount = Number((grpTotalOutQty * grpRate).toFixed(2));
+      grpItems.forEach((it, lIdx) => {
+        if (lIdx === 0) {
+          bodyRows.push([
+            { content: String(groupSn), rowSpan: span, styles: { valign: 'middle', halign: 'center' } },
+            { content: formatSlashDate(it.custDcDate), rowSpan: span, styles: { valign: 'middle' } },
+            { content: it.custDcNo || '—', rowSpan: span, styles: { valign: 'middle' } },
+            { content: it.styleNo || '—', rowSpan: span, styles: { valign: 'middle' } },
+            { content: it.itemName || '—', rowSpan: span, styles: { valign: 'middle' } },
+            { content: it.washType || '—', rowSpan: span, styles: { valign: 'middle' } },
+            { content: formatNum2(it.inwQty), rowSpan: span, styles: { valign: 'middle', halign: 'right' } },
+            { content: it.unit || 'PCS', rowSpan: span, styles: { valign: 'middle', halign: 'center' } },
+            formatSlashDate(it.outDcDate),
+            it.outDcNo || '—',
+            formatNum2(it.qty),
+            { content: formatNum2(grpTotalOutQty), rowSpan: span, styles: { valign: 'middle', halign: 'right', fontStyle: 'bold' } },
+            { content: formatNum2(grpRate), rowSpan: span, styles: { valign: 'middle', halign: 'right' } },
+            { content: formatNum2(grpAmount), rowSpan: span, styles: { valign: 'middle', halign: 'right', fontStyle: 'bold' } }
+          ]);
+        } else {
+          bodyRows.push([
+            formatSlashDate(it.outDcDate),
+            it.outDcNo || '—',
+            formatNum2(it.qty)
+          ]);
+        }
+      });
+    });
 
     runAutoTable(doc, {
       startY: y,
@@ -176,6 +207,7 @@ export class SampleInvoicePdfService {
           'Out DC Date',
           'Out DC No',
           'Qty',
+          'Total Qty',
           'Rate',
           'Amount'
         ]
@@ -191,14 +223,14 @@ export class SampleInvoicePdfService {
         fillColor: [242, 244, 247],
         textColor: [0, 0, 0],
         fontStyle: 'bold',
-        fontSize: 8.5,
-        cellPadding: { top: 2.8, right: 1.4, bottom: 2.8, left: 1.4 },
+        fontSize: 7.3,
+        cellPadding: { top: 2.5, right: 0.8, bottom: 2.5, left: 0.8 },
         halign: 'center',
         valign: 'middle'
       },
       bodyStyles: {
-        fontSize: 8.5,
-        cellPadding: { top: 3.0, right: 1.4, bottom: 3.0, left: 1.4 },
+        fontSize: 7.5,
+        cellPadding: { top: 2.6, right: 0.9, bottom: 2.6, left: 0.9 },
         valign: 'middle'
       },
       columnStyles: {
@@ -214,7 +246,8 @@ export class SampleInvoicePdfService {
         9: { halign: 'left', cellWidth: colWidths[9] },
         10: { halign: 'right', cellWidth: colWidths[10] },
         11: { halign: 'right', cellWidth: colWidths[11] },
-        12: { halign: 'right', cellWidth: colWidths[12] }
+        12: { halign: 'right', cellWidth: colWidths[12] },
+        13: { halign: 'right', cellWidth: colWidths[13] }
       }
     });
 
@@ -248,22 +281,22 @@ export class SampleInvoicePdfService {
     // Draw Total Row
     doc.setLineWidth(0.25);
     doc.rect(margin, footTopY, contentWidth, footHeight);
-    // Vertical dividers in Total row matching col 6 (Inw Qty) and col 10 (Qty)
+    // Vertical dividers in Total row matching col 6 (Inw Qty) and col 11 (Total Qty)
     const xCol6Start = margin + colWidths.slice(0, 6).reduce((a, b) => a + b, 0);
     const xCol6End = xCol6Start + colWidths[6];
-    const xCol10Start = margin + colWidths.slice(0, 10).reduce((a, b) => a + b, 0);
-    const xCol10End = xCol10Start + colWidths[10];
+    const xCol11Start = margin + colWidths.slice(0, 11).reduce((a, b) => a + b, 0);
+    const xCol11End = xCol11Start + colWidths[11];
     doc.line(xCol6Start, footTopY, xCol6Start, footTopY + footHeight);
     doc.line(xCol6End, footTopY, xCol6End, footTopY + footHeight);
-    doc.line(xCol10Start, footTopY, xCol10Start, footTopY + footHeight);
-    doc.line(xCol10End, footTopY, xCol10End, footTopY + footHeight);
+    doc.line(xCol11Start, footTopY, xCol11Start, footTopY + footHeight);
+    doc.line(xCol11End, footTopY, xCol11End, footTopY + footHeight);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.text('Total:', xCol6Start - 2, footTopY + 6.2, { align: 'right' });
     doc.text(formatNum2(invoice.totalInwQty), xCol6End - 1.5, footTopY + 6.2, { align: 'right' });
-    doc.text('Total:', xCol10Start - 2, footTopY + 6.2, { align: 'right' });
-    doc.text(formatNum2(invoice.totalOutQty), xCol10End - 1.5, footTopY + 6.2, { align: 'right' });
+    doc.text('Total:', xCol11Start - 2, footTopY + 6.2, { align: 'right' });
+    doc.text(formatNum2(invoice.totalOutQty), xCol11End - 1.5, footTopY + 6.2, { align: 'right' });
 
     y = footTopY + footHeight;
 
@@ -309,40 +342,54 @@ export class SampleInvoicePdfService {
       dy += 4.3;
     });
 
-    // Right: Totals Breakdown
-    const rxLabel = margin + sumLeftW + 2.5;
-    const rxColon = margin + sumLeftW + 38;
-    const rxVal = margin + contentWidth - 2.5;
-
-    let ry = y + 6.5;
-    doc.setFontSize(9.5);
-    const drawSummaryRow = (label: string, valStr: string, bold = false) => {
-      doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.text(label, rxLabel, ry);
-      doc.text(':', rxColon, ry);
-      doc.text(valStr, rxVal, ry, { align: 'right' });
-      ry += 6.8;
-    };
-
-    drawSummaryRow('TOTAL', formatNum2(invoice.subtotal), true);
-    drawSummaryRow('Discount', formatNum2(invoice.discount));
+    // Right: Totals Breakdown with full table grid
+    const summaryRows: { label: string; value: string; bold?: boolean }[] = [
+      { label: 'TOTAL', value: formatNum2(invoice.subtotal), bold: true },
+      { label: 'Discount', value: formatNum2(invoice.discount) }
+    ];
 
     if (invoice.gstMode === 'cgst_sgst') {
-      drawSummaryRow(`CGST ${invoice.cgstRate.toFixed(2)}%`, formatNum2(invoice.cgstAmount));
-      drawSummaryRow(`SGST ${invoice.sgstRate.toFixed(2)}%`, formatNum2(invoice.sgstAmount));
+      summaryRows.push({ label: `CGST ${invoice.cgstRate.toFixed(2)}%`, value: formatNum2(invoice.cgstAmount) });
+      summaryRows.push({ label: `SGST ${invoice.sgstRate.toFixed(2)}%`, value: formatNum2(invoice.sgstAmount) });
     } else if (invoice.gstMode === 'igst') {
-      drawSummaryRow(`IGST ${invoice.igstRate.toFixed(2)}%`, formatNum2(invoice.igstAmount));
+      summaryRows.push({ label: `IGST ${invoice.igstRate.toFixed(2)}%`, value: formatNum2(invoice.igstAmount) });
     } else {
-      drawSummaryRow('GST (Exempt)', '0.00');
+      summaryRows.push({ label: 'GST (Exempt)', value: '0.00' });
     }
 
-    drawSummaryRow('Forwarding', formatNum2(invoice.forwarding));
+    summaryRows.push({ label: 'Forwarding', value: formatNum2(invoice.forwarding) });
+    summaryRows.push({ label: 'Round Off', value: formatNum2(invoice.roundOff) });
 
-    doc.line(margin + sumLeftW, y + 45.5, margin + contentWidth, y + 45.5);
+    const gridTopHeight = 44.5;
+    const rowH = gridTopHeight / summaryRows.length;
+    const rightBoxStartX = margin + sumLeftW;
+    const rightBoxEndX = margin + contentWidth;
+    const xGridMid = rightBoxStartX + sumRightW * 0.56;
+    const rxLabel = rightBoxStartX + 2.5;
+    const rxVal = rightBoxEndX - 2.5;
+
+    // Vertical divider inside the right totals box from top to bottom
+    doc.setLineWidth(0.25);
+    doc.line(xGridMid, y, xGridMid, y + bottomBoxHeight);
+
+    doc.setFontSize(9);
+    summaryRows.forEach((row, idx) => {
+      const rowTop = y + idx * rowH;
+      const textY = rowTop + rowH / 2 + 1.2;
+      doc.setFont('helvetica', row.bold ? 'bold' : 'normal');
+      doc.text(row.label, rxLabel, textY);
+      doc.text(row.value, rxVal, textY, { align: 'right' });
+
+      // Horizontal grid line at the bottom of each row
+      const rowBottom = y + (idx + 1) * rowH;
+      doc.setLineWidth(idx === summaryRows.length - 1 ? 0.32 : 0.25);
+      doc.line(rightBoxStartX, rowBottom, rightBoxEndX, rowBottom);
+    });
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('Total Amt:', rxLabel, y + 52);
-    doc.text(formatNum2(invoice.totalAmount), rxVal, y + 52, { align: 'right' });
+    doc.setFontSize(10.5);
+    doc.text('Total Amt:', rxLabel, y + 51.5);
+    doc.text(formatNum2(invoice.totalAmount), rxVal, y + 51.5, { align: 'right' });
 
     // Signature Block
     doc.setFont('helvetica', 'bold');

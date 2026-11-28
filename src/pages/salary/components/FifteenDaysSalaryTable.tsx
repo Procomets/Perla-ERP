@@ -281,7 +281,7 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
                 <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[85px] bg-[#EEF5FB] text-[#1F4E79]">NET<br />AMOUNT</th>
                 <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[75px] bg-[#EEF5FB] text-[#1F4E79]">HOLDING<br />AMOUNT</th>
                 <th className="py-2.5 px-2 text-right border-r border-slate-300 min-w-[90px] bg-[#EEF5FB] text-[#1F4E79]">PAYABLE<br />AMOUNT</th>
-                <th className="py-2.5 px-2 pr-12 text-center min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">ACTION</th>
+                <th className="py-2.5 px-2 pr-12 text-left min-w-[130px] bg-[#EEF5FB] text-[#1F4E79]">ACTION</th>
               </tr>
             </thead>
           <tbody className="divide-y divide-slate-100">
@@ -385,15 +385,15 @@ export const FifteenDaysSalaryTable = React.forwardRef<SalaryTableRef, FifteenDa
                       {payableAmount.toFixed(2)}
                     </td>
                     {/* ACTION */}
-                    <td className="py-1.5 px-2 text-center">
+                    <td className="py-1.5 px-2 text-left">
                       <button
                         type="button"
                         disabled={savingId === emp.employeeId}
                         onClick={() => handleSave(emp.employeeId)}
                         title="Save Labour Wage Record"
-                        className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition cursor-pointer disabled:opacity-50"
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition cursor-pointer disabled:opacity-50"
                       >
-                        <Save className="w-3.5 h-3.5" />
+                        {savingId === emp.employeeId ? 'Saving...' : 'Save'}
                       </button>
                     </td>
                   </tr>

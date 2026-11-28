@@ -411,8 +411,10 @@ export const OutwardList: React.FC<OutwardListProps> = ({
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first based on timestamp
       return [...filteredOutwards].sort((a, b) => {
-        const timeA = new Date((a as any).outwardTime || a.createdAt || a.updatedAt || a.outwardDate || 0).getTime();
-        const timeB = new Date((b as any).outwardTime || b.createdAt || b.updatedAt || b.outwardDate || 0).getTime();
+        const toMs = (v: any) =>
+          !v ? 0 : typeof v?.toMillis === 'function' ? v.toMillis() : typeof v?.seconds === 'number' ? v.seconds * 1000 : (new Date(v).getTime() || 0);
+        const timeA = toMs((a as any).outwardTime) || toMs(a.createdAt) || toMs(a.updatedAt) || toMs(a.outwardDate);
+        const timeB = toMs((b as any).outwardTime) || toMs(b.createdAt) || toMs(b.updatedAt) || toMs(b.outwardDate);
         return timeB - timeA;
       });
     }
@@ -1158,6 +1160,37 @@ export const OutwardList: React.FC<OutwardListProps> = ({
               {sortedOutwards.length} {sortedOutwards.length === 1 ? 'entry' : 'entries'}
             </span>
           }
+          extraHeaderActions={
+            <div className="flex items-center gap-2">
+              {Object.values(columnFilters).some((v) => (v || '').trim() !== '') && (
+                <button
+                  type="button"
+                  onClick={() => setColumnFilters({})}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                >
+                  Clear Filters
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowColumnFilters(!showColumnFilters)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  showColumnFilters || Object.values(columnFilters).some((v) => (v || '').trim() !== '')
+                    ? 'bg-blue-50 text-[#1F4E79] border-blue-300'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+                title="Toggle column-wise filters"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span>Column Filters</span>
+                {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-bold bg-[#1F4E79] text-white rounded-full">
+                    {Object.values(columnFilters).filter((v) => (v || '').trim() !== '').length}
+                  </span>
+                )}
+              </button>
+            </div>
+          }
         >
           {(isMaximized) => (
             <Card className={`border border-slate-200 shadow-2xs overflow-hidden flex-1 flex flex-col min-h-0 ${isMaximized ? 'rounded-xl' : ''}`}>
@@ -1342,7 +1375,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                         </th>
 
                         {/* 12. Actions */}
-                        <th className="p-2.5 border border-slate-200 text-center whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] min-w-[130px] pr-12">Actions</th>
+                        <th className="p-2.5 border border-slate-200 text-left whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] min-w-[130px] pr-12">Actions</th>
                       </tr>
 
                       {/* Inline Column Filter Inputs Row */}
@@ -1570,14 +1603,10 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                                 )}
                               </td>
 
-                              {/* 4. Customer / Company (with Hover details) */}
+                              {/* 4. Customer / Company */}
                               <td className="p-2.5 border border-slate-200 min-w-[240px]">
-                                <div
-                                  onMouseEnter={(e) => handleMouseEnter(e, 'company', row)}
-                                  onMouseLeave={handleMouseLeave}
-                                  className="cursor-pointer group/comp inline-block"
-                                >
-                                  <div className="font-semibold text-slate-900 group-hover/comp:text-[#1F4E79] group-hover/comp:underline transition-colors">
+                                <div className="inline-block">
+                                  <div className="font-semibold text-slate-900">
                                     {row.customerCompanyNameSnapshot || row.customerName || 'Customer'}
                                   </div>
                                   {row.subcontractorNameSnapshot && (
@@ -1640,9 +1669,9 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                                 )}
                               </td>
 
-                              {/* 12. Actions: Clean text buttons matching Inward (View, Edit, Delete, Print) */}
-                              <td className="p-2.5 border border-slate-200 text-center whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1.5">
+                              {/* 12. Actions: Clean text buttons, Left Aligned */}
+                              <td className="p-2.5 border border-slate-200 text-left whitespace-nowrap">
+                                <div className="flex items-center justify-start gap-1.5">
                                   <button
                                     onClick={() => onViewDetails(row.outwardId || row.id)}
                                     className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#1F4E79] bg-slate-100 hover:bg-slate-200 rounded transition-colors"
@@ -1699,9 +1728,8 @@ export const OutwardList: React.FC<OutwardListProps> = ({
                                   <button
                                     onClick={() => onPrint(row.outwardId || row.id)}
                                     title="Generate Delivery Challan"
-                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:text-black bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:text-black bg-slate-100 hover:bg-slate-200 rounded transition-colors whitespace-nowrap cursor-pointer"
                                   >
-                                    <FileText className="w-3 h-3 text-slate-600" />
                                     Generate Challan
                                   </button>
                                 </div>
@@ -1745,7 +1773,7 @@ export const OutwardList: React.FC<OutwardListProps> = ({
       )}
 
       {/* Hover Floating Details Card */}
-      {hoverCard && (
+      {hoverCard && hoverCard.type === 'po' && (
         <div
           style={{
             position: 'fixed',
@@ -1756,138 +1784,36 @@ export const OutwardList: React.FC<OutwardListProps> = ({
           }}
           className="w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 text-xs space-y-3 pointer-events-none animate-in fade-in zoom-in-95 duration-150"
         >
-          {hoverCard.type === 'company' ? (() => {
-            const row = hoverCard.row;
-            const vendor = vendors.find(
-              (v) =>
-                v.vendorId === row.customerVendorId ||
-                v.id === row.customerVendorId ||
-                v.companyName === row.customerCompanyNameSnapshot ||
-                v.companyName === row.customerName
-            );
-
-            const companyName =
-              vendor?.companyName ||
-              row.customerCompanyNameSnapshot ||
-              row.customerName ||
-              'Customer Company';
-
-            // Address
-            const addressParts = [
-              vendor?.address?.addressLine1,
-              vendor?.address?.addressLine2,
-              vendor?.address?.city || vendor?.city,
-              vendor?.address?.district,
-              vendor?.address?.state || vendor?.state,
-              vendor?.address?.pinCode || vendor?.pinCode
-            ].filter(Boolean);
-            const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : (vendor?.city ? `${vendor.city}, ${vendor.state || 'Tamil Nadu'}` : 'N/A');
-
-            // Primary Contact Person & Contact No
-            const primaryContact = vendor?.contacts?.find((c) => c.isPrimary && c.status !== 'inactive') || vendor?.contacts?.[0];
-            const personName = vendor?.primaryContactName || primaryContact?.personName || 'N/A';
-            const primaryContactNo = vendor?.primaryContactPhone || primaryContact?.contactNumber || vendor?.communication?.mobileNumber || vendor?.communication?.officePhone || vendor?.phone || 'N/A';
-
-            // GST No
-            const gstNo = vendor?.taxDetails?.gstin || vendor?.gstin || 'Unregistered / N/A';
-
-            return (
-              <div className="space-y-2.5">
-                <div className="border-b border-slate-100 pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Customer / Company Overview
-                    </p>
-                    {vendor?.vendorCode && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-700">
-                        {vendor.vendorCode}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5 leading-snug">
-                    {companyName}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5 text-[11px] text-slate-600">
-                  {/* Address */}
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">Address</span>
-                    <span className="font-medium text-slate-800 leading-relaxed block">{fullAddress}</span>
-                  </div>
-
-                  {/* Person Name & Primary Contact No */}
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-50">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Contact Person</span>
-                      <span className="font-semibold text-slate-800">{personName}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Primary Contact No.</span>
-                      <span className="font-semibold text-slate-800">{primaryContactNo}</span>
-                    </div>
-                  </div>
-
-                  {/* GST NO */}
-                  <div className="pt-1 border-t border-slate-50">
-                    <span className="text-slate-400 block text-[10px] uppercase font-medium">GST No.</span>
-                    <span className="font-mono font-bold text-slate-800">{gstNo}</span>
-                  </div>
-
-                  {/* Subcontractor (if present on this dispatch) */}
-                  {row.subcontractorNameSnapshot && (
-                    <div className="pt-1.5 border-t border-slate-100 flex justify-between">
-                      <span className="text-slate-400">Subcontractor:</span>
-                      <span className="font-semibold text-slate-800">
-                        {row.subcontractorNameSnapshot}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Destination (if present on this dispatch) */}
-                  {row.destination && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Destination:</span>
-                      <span className="font-medium text-slate-800 text-right">
-                        {row.destination}
-                      </span>
-                    </div>
-                  )}
-                </div>
+          <>
+            <div className="border-b border-slate-100 pb-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Purchase Order Overview
+              </p>
+              <p className="text-sm font-bold text-[#1F4E79] mt-0.5">
+                {hoverCard.row.poNumberSnapshot || hoverCard.row.poNumber}
+              </p>
+            </div>
+            <div className="space-y-1.5 text-slate-600">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Style Number:</span>
+                <span className="font-semibold text-slate-800">
+                  {hoverCard.row.styleNoSnapshot || hoverCard.row.styleNo}
+                </span>
               </div>
-            );
-          })() : (
-            <>
-              <div className="border-b border-slate-100 pb-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Purchase Order Overview
-                </p>
-                <p className="text-sm font-bold text-[#1F4E79] mt-0.5">
-                  {hoverCard.row.poNumberSnapshot || hoverCard.row.poNumber}
-                </p>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Item Name:</span>
+                <span className="font-medium text-slate-800">
+                  {hoverCard.row.itemNameSnapshot || hoverCard.row.itemName}
+                </span>
               </div>
-              <div className="space-y-1.5 text-slate-600">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Style Number:</span>
-                  <span className="font-semibold text-slate-800">
-                    {hoverCard.row.styleNoSnapshot || hoverCard.row.styleNo}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Item Name:</span>
-                  <span className="font-medium text-slate-800">
-                    {hoverCard.row.itemNameSnapshot || hoverCard.row.itemName}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Process Category:</span>
-                  <span className="font-semibold uppercase text-slate-800">
-                    {hoverCard.row.processCategorySnapshot || hoverCard.row.processCategory}
-                  </span>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Process Category:</span>
+                <span className="font-semibold uppercase text-slate-800">
+                  {hoverCard.row.processCategorySnapshot || hoverCard.row.processCategory}
+                </span>
               </div>
-            </>
-          )}
+            </div>
+          </>
         </div>
       )}
 

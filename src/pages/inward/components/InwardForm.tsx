@@ -295,6 +295,28 @@ export const InwardForm: React.FC<InwardFormProps> = ({
 
   // Purchase Order selection groups (supports search by PO # and Style #)
   const poSelectGroups: SelectOptionGroup[] = useMemo(() => {
+    const toPoOption = (p: PurchaseOrder, fallbackCompany?: string): SelectOption => {
+      const pId = p.id || p.poId || '';
+      const sNo = p.styleNo || p.styleNumber || '—';
+      const cName = p.customerCompanyNameSnapshot || p.customerName || fallbackCompany || 'Customer';
+      return {
+        id: pId,
+        primaryText: `Style: ${sNo}, ${p.poNumber}`,
+        primaryNode: (
+          <div className="flex items-center gap-1.5 min-w-0 truncate">
+            <span className="text-xs text-slate-600 shrink-0">Style:</span>
+            <strong className="font-bold text-slate-950 text-xs truncate">{sNo}</strong>
+            <span className="text-slate-400 shrink-0">,</span>
+            <span className="text-xs text-[#1F4E79] font-mono font-semibold shrink-0">
+              {p.poNumber}
+            </span>
+          </div>
+        ),
+        secondaryText: cName,
+        meta: p
+      };
+    };
+
     if (selectedCustomerId) {
       const companyPOs = eligiblePos.filter(
         (p) => p.customerId === selectedCustomerId || p.customerVendorId === selectedCustomerId
@@ -307,27 +329,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
       return [
         {
           title: `POs for ${currentCompanyName} (${companyPOs.length})`,
-          options: companyPOs.map((p) => {
-            const pId = p.id || p.poId || '';
-            const sNo = p.styleNo || p.styleNumber || '—';
-            return {
-              id: pId,
-              primaryText: `Style: ${sNo} — ${p.poNumber}`,
-              primaryNode: (
-                <span className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-xs text-slate-900 font-medium">
-                    Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
-                  </span>
-                  <span className="text-slate-300 font-light">—</span>
-                  <span className="text-[11px] text-slate-600 font-mono font-medium">{p.poNumber}</span>
-                </span>
-              ),
-              secondaryText: `${p.itemName} • ${String(p.processCategory || '').toUpperCase()} • Ordered: ${formatDate(p.orderDate)}`,
-              badge: `${p.totalQuantity?.toLocaleString() || ''} ${p.lines?.[0]?.unit || 'pcs'}`,
-              badgeVariant: 'slate' as const,
-              meta: p
-            };
-          })
+          options: companyPOs.map((p) => toPoOption(p, currentCompanyName))
         }
       ];
     }
@@ -336,28 +338,7 @@ export const InwardForm: React.FC<InwardFormProps> = ({
     return [
       {
         title: `All Available Style Numbers / Purchase Orders (${eligiblePos.length})`,
-        options: eligiblePos.map((p) => {
-          const pId = p.id || p.poId || '';
-          const sNo = p.styleNo || p.styleNumber || '—';
-          const cName = p.customerCompanyNameSnapshot || p.customerName || 'Client';
-          return {
-            id: pId,
-            primaryText: `Style: ${sNo} — ${p.poNumber}`,
-            primaryNode: (
-              <span className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="text-xs text-slate-900 font-medium">
-                  Style: <strong className="font-extrabold text-slate-950">{sNo}</strong>
-                </span>
-                <span className="text-slate-300 font-light">—</span>
-                <span className="text-[11px] text-slate-600 font-mono font-medium">{p.poNumber}</span>
-              </span>
-            ),
-            secondaryText: `${p.itemName} • Company: ${cName}`,
-            badge: cName,
-            badgeVariant: 'blue' as const,
-            meta: p
-          };
-        })
+        options: eligiblePos.map((p) => toPoOption(p))
       }
     ];
   }, [eligiblePos, selectedCustomerId, eligibleCustomers]);
@@ -703,17 +684,26 @@ export const InwardForm: React.FC<InwardFormProps> = ({
             placeholder=""
             searchPlaceholder=""
             groups={poSelectGroups}
+            dropdownWidth="trigger"
+            align="right"
             onSelect={handleSelectPo}
             onClear={() => setSelectedPoId('')}
             formatTriggerLabel={(opt) => {
               const p = opt.meta as PurchaseOrder | undefined;
               if (p) {
                 const sNo = p.styleNo || p.styleNumber || '—';
+                const cName = p.customerCompanyNameSnapshot || p.customerName || '';
                 return (
-                  <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    <span className="text-xs text-slate-900 font-bold">Style: {sNo}</span>
-                    <span className="text-slate-300 font-light">—</span>
-                    <span className="text-xs text-slate-600 font-mono font-medium">{p.poNumber}</span>
+                  <span className="flex items-center gap-2 min-w-0 truncate">
+                    <span className="text-xs text-slate-950 font-bold shrink-0">{sNo}</span>
+                    <span className="text-slate-300 font-light shrink-0">|</span>
+                    <span className="text-xs text-[#1F4E79] font-mono font-semibold shrink-0">{p.poNumber}</span>
+                    {cName && (
+                      <>
+                        <span className="text-slate-300 font-light shrink-0">|</span>
+                        <span className="text-xs text-slate-600 truncate">{cName}</span>
+                      </>
+                    )}
                   </span>
                 );
               }

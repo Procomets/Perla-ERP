@@ -647,7 +647,7 @@ export const VendorList: React.FC<VendorListProps> = ({
                 </th>
 
                 {/* Actions */}
-                <th className="p-3.5 pr-12 whitespace-nowrap text-right bg-[#EEF5FB] min-w-[130px]">Actions</th>
+                <th className="p-3.5 pr-12 whitespace-nowrap text-left bg-[#EEF5FB] min-w-[260px]">Actions</th>
               </tr>
 
               {/* Sticky Inline Column Filters Row */}
@@ -894,54 +894,50 @@ export const VendorList: React.FC<VendorListProps> = ({
                     </td>
 
                     {/* Actions */}
-                    <td className="p-3.5 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="p-3.5 text-left whitespace-nowrap">
+                      <div className="flex items-center justify-start gap-1.5">
                         <button
                           title="View Details"
                           onClick={() => onViewVendor(vendor.vendorId)}
-                          className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs transition-colors cursor-pointer"
                         >
-                          <Eye className="w-4 h-4" />
+                          View
                         </button>
 
                         <button
                           title="Edit Vendor"
                           onClick={() => onEditVendor(vendor.vendorId)}
-                          className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold text-xs transition-colors cursor-pointer"
                         >
-                          <Edit className="w-4 h-4" />
+                          Edit
                         </button>
 
                         <button
                           title="Add Contact"
                           onClick={() => onAddContact(vendor.vendorId)}
-                          className="p-1.5 hover:bg-purple-50 text-purple-600 rounded-lg transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs transition-colors cursor-pointer"
                         >
-                          <UserPlus className="w-4 h-4" />
+                          Add Contact
                         </button>
 
                         <button
                           title={vendor.status === 'active' ? 'Deactivate' : 'Activate'}
                           onClick={() => onToggleStatus(vendor.vendorId, vendor.status)}
-                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded font-bold text-xs transition-colors cursor-pointer ${
                             vendor.status === 'active'
-                              ? 'hover:bg-rose-50 text-rose-600'
-                              : 'hover:bg-emerald-50 text-emerald-600'
+                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                           }`}
                         >
-                          {vendor.status === 'active' ? (
-                            <XCircle className="w-4 h-4" />
-                          ) : (
-                            <CheckCircle2 className="w-4 h-4" />
-                          )}
+                          {vendor.status === 'active' ? 'Deactivate' : 'Activate'}
                         </button>
 
                         <button
                           title="View Activity History"
                           onClick={() => onViewHistory(vendor.vendorId)}
-                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold text-xs transition-colors cursor-pointer"
                         >
-                          <History className="w-4 h-4" />
+                          History
                         </button>
                       </div>
                     </td>

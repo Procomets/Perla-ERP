@@ -22,10 +22,12 @@ import {
   SampleInvoiceGstMode
 } from '../../types/sampleInvoice';
 import { CompanyInvoiceSettings } from '../../types/invoice';
+import { HsnItem } from '../../types/hsnMaster';
 import { SamplePoService } from '../../services/samplePoService';
 import { SampleInvoiceService } from '../../services/sampleInvoiceService';
 import { SampleInvoicePdfService } from '../../services/sampleInvoicePdfService';
 import { InvoiceSettingsService, DEFAULT_INVOICE_SETTINGS } from '../../services/invoiceSettingsService';
+import { HsnMasterService } from '../../services/hsnMasterService';
 import { convertNumberToIndianWords } from '../../utils/taxCalculations';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -125,6 +127,9 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
   const [draftIgstRate, setDraftIgstRate] = useState<number>(5.0);
   const [draftDiscount, setDraftDiscount] = useState<number>(0);
   const [draftForwarding, setDraftForwarding] = useState<number>(0);
+  const [draftRoundOffPaise, setDraftRoundOffPaise] = useState<boolean>(false);
+  const [hsnMasterItems, setHsnMasterItems] = useState<HsnItem[]>([]);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [savingInvoice, setSavingInvoice] = useState<boolean>(false);
 
   // History Tab Controls
@@ -172,11 +177,24 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
       InvoiceSettingsService.getSettings(true).then(applySettings);
     }
 
+    const unsubHsn = HsnMasterService.subscribeHsnItems(
+      (items) => {
+        const active = (items || [])
+          .filter((h) => h.isActive !== false && Boolean(h.hsnNo?.trim()))
+          .sort((a, b) =>
+            a.hsnNo.localeCompare(b.hsnNo, undefined, { numeric: true, sensitivity: 'base' })
+          );
+        setHsnMasterItems(active);
+      },
+      (err) => console.warn('HSN Master subscription error:', err)
+    );
+
     return () => {
       unsubPo();
       unsubOut();
       unsubInv();
       unsubSettings();
+      unsubHsn();
     };
   }, [isDemoMode]);
 
@@ -324,7 +342,20 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
     });
   }, [allEligibleLines, selectedVendorId, selectedPoId, genStartDate, genEndDate, genSearch]);
 
-  // Group filtered eligible lines PO-wise (matching Invoice Generation table)
+  const getInwardLineGroupKey = (l: {
+    inwardId?: string;
+    inwardItemId?: string;
+    custDcNo?: string;
+    styleNo?: string;
+    itemName?: string;
+    washType?: string;
+  }) =>
+    `${l.inwardId || ''}__${
+      l.inwardItemId ||
+      `${(l.custDcNo || '').trim().toLowerCase()}||${(l.styleNo || '').trim().toLowerCase()}||${(l.itemName || '').trim().toLowerCase()}||${(l.washType || '').trim().toLowerCase()}`
+    }`;
+
+  // Group filtered eligible lines PO-wise -> Inward-line-wise (so multiple outwards for one inward colour/item span cleanly)
   const groupedEligiblePOs = useMemo(() => {
     const map = new Map<
       string,
@@ -335,6 +366,11 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
         vendorId: string;
         vendorName: string;
         lines: EligibleSampleOutwardLine[];
+        inwardGroups: {
+          inwLineKey: string;
+          inwQty: number;
+          lines: EligibleSampleOutwardLine[];
+        }[];
         totalInwQty: number;
         totalOutQty: number;
       }
@@ -345,7 +381,6 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
       const existing = map.get(poKey);
       if (existing) {
         existing.lines.push(line);
-        existing.totalInwQty += line.inwQty;
         existing.totalOutQty += line.qty;
       } else {
         map.set(poKey, {
@@ -355,14 +390,39 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
           vendorId: line.vendorId,
           vendorName: line.vendorName,
           lines: [line],
-          totalInwQty: line.inwQty,
+          inwardGroups: [],
+          totalInwQty: 0,
           totalOutQty: line.qty
         });
       }
     });
 
+    map.forEach((poGroup) => {
+      const inwMap = new Map<
+        string,
+        { inwLineKey: string; inwQty: number; lines: EligibleSampleOutwardLine[] }
+      >();
+      poGroup.lines.forEach((l) => {
+        const k = getInwardLineGroupKey(l);
+        const existingInw = inwMap.get(k);
+        if (existingInw) {
+          existingInw.lines.push(l);
+        } else {
+          inwMap.set(k, { inwLineKey: k, inwQty: l.inwQty, lines: [l] });
+        }
+      });
+      poGroup.inwardGroups = Array.from(inwMap.values());
+      poGroup.lines = poGroup.inwardGroups.flatMap((g) => g.lines);
+      poGroup.totalInwQty = poGroup.inwardGroups.reduce((s, g) => s + g.inwQty, 0);
+    });
+
     return Array.from(map.values());
   }, [filteredEligibleLines]);
+
+  const totalEligibleInwQty = useMemo(
+    () => groupedEligiblePOs.reduce((sum, g) => sum + g.totalInwQty, 0),
+    [groupedEligiblePOs]
+  );
 
   // Selected Lines array
   const selectedLines = useMemo(() => {
@@ -436,7 +496,7 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
 
   const handleOpenGenerateModal = async () => {
     if (selectedLines.length === 0) return;
-    const nextNo = await SampleInvoiceService.generateNextInvoiceNo();
+    const nextNo = await SampleInvoiceService.peekNextInvoiceNo();
     setDraftInvoiceNo(nextNo);
     setDraftInvoiceDate(new Date().toISOString().split('T')[0]);
     setDraftDiscount(0);
@@ -444,9 +504,18 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
     setIsGenerateModalOpen(true);
   };
 
-  // Draft Invoice Calculations
+  // Draft Invoice Calculations (grouped by inward line so spanned lines stay together & inwQty counts once)
   const draftCalculations = useMemo(() => {
-    const items: SampleInvoiceItem[] = selectedLines.map((l) => {
+    const inwGroupMap = new Map<string, EligibleSampleOutwardLine[]>();
+    selectedLines.forEach((l) => {
+      const k = getInwardLineGroupKey(l);
+      const list = inwGroupMap.get(k);
+      if (list) list.push(l);
+      else inwGroupMap.set(k, [l]);
+    });
+    const orderedSelected = Array.from(inwGroupMap.values()).flat();
+
+    const items: SampleInvoiceItem[] = orderedSelected.map((l) => {
       const rate = Number(lineRates[l.key] || 0);
       const amount = Number((l.qty * rate).toFixed(2));
       return {
@@ -471,9 +540,34 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
       };
     });
 
-    const totalInwQty = items.reduce((s, i) => s + i.inwQty, 0);
+    const inwardGroups = Array.from(inwGroupMap.values()).map((grp) => {
+      const grpItems = grp.map((l) => {
+        const rate = Number(lineRates[l.key] || 0);
+        const itemId = l.key.split('__')[1] || l.key;
+        const matched = items.find((it) => it.outwardId === l.outwardId && it.id === itemId)!;
+        return {
+          ...matched,
+          lineKey: l.key,
+          rate,
+          amount: Number((l.qty * rate).toFixed(2))
+        };
+      });
+      const groupRate = Number(lineRates[grp[0].key] || 0);
+      const groupTotalOutQty = grpItems.reduce((s, x) => s + x.qty, 0);
+      const groupTotalAmount = Number((groupTotalOutQty * groupRate).toFixed(2));
+      return {
+        inwLineKey: getInwardLineGroupKey(grp[0]),
+        inwQty: grp[0].inwQty,
+        groupRate,
+        groupTotalOutQty,
+        groupTotalAmount,
+        items: grpItems
+      };
+    });
+
+    const totalInwQty = inwardGroups.reduce((s, g) => s + g.inwQty, 0);
     const totalOutQty = items.reduce((s, i) => s + i.qty, 0);
-    const subtotal = items.reduce((s, i) => s + i.amount, 0);
+    const subtotal = Number(items.reduce((s, i) => s + i.amount, 0).toFixed(2));
     const taxableAfterDiscount = Math.max(0, subtotal - (Number(draftDiscount) || 0));
 
     let cgstAmount = 0;
@@ -488,12 +582,14 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
 
     const beforeRound =
       taxableAfterDiscount + cgstAmount + sgstAmount + igstAmount + (Number(draftForwarding) || 0);
-    const roundOff = 0;
-    const totalAmount = Number(beforeRound.toFixed(2));
+    const rounded = draftRoundOffPaise ? Math.round(beforeRound) : beforeRound;
+    const roundOff = Number((rounded - beforeRound).toFixed(2));
+    const totalAmount = Number(rounded.toFixed(2));
     const amountInWords = convertNumberToIndianWords(totalAmount);
 
     return {
       items,
+      inwardGroups,
       totalInwQty,
       totalOutQty,
       subtotal,
@@ -512,8 +608,48 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
     draftCgstRate,
     draftSgstRate,
     draftIgstRate,
-    draftForwarding
+    draftForwarding,
+    draftRoundOffPaise
   ]);
+
+  const handlePreviewDraftInvoice = () => {
+    if (selectedLines.length === 0) return;
+    const first = selectedLines[0];
+    const previewInv: SampleInvoice = {
+      id: 'preview',
+      invoiceNo: draftInvoiceNo,
+      invoiceDate: draftInvoiceDate,
+      hsnSacCode: draftHsnSac || '998821',
+      vendorId: first.vendorId,
+      vendorName: first.vendorName,
+      vendorAddress: first.vendorAddress,
+      vendorPhone: first.vendorPhone,
+      vendorGst: first.vendorGst,
+      items: draftCalculations.items,
+      totalInwQty: draftCalculations.totalInwQty,
+      totalOutQty: draftCalculations.totalOutQty,
+      subtotal: draftCalculations.subtotal,
+      discount: Number(draftDiscount) || 0,
+      gstMode: draftGstMode,
+      cgstRate: draftGstMode === 'cgst_sgst' ? draftCgstRate : 0,
+      sgstRate: draftGstMode === 'cgst_sgst' ? draftSgstRate : 0,
+      igstRate: draftGstMode === 'igst' ? draftIgstRate : 0,
+      cgstAmount: draftCalculations.cgstAmount,
+      sgstAmount: draftCalculations.sgstAmount,
+      igstAmount: draftCalculations.igstAmount,
+      forwarding: Number(draftForwarding) || 0,
+      roundOff: draftCalculations.roundOff,
+      totalAmount: draftCalculations.totalAmount,
+      amountInWords: draftCalculations.amountInWords,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      createdBy: user?.uid || 'admin',
+      createdByName: user?.displayName || 'Pranav'
+    };
+    const doc = SampleInvoicePdfService.generatePdfDoc(previewInv, invoiceSettings);
+    const blobUrl = doc.output('bloburl');
+    setPreviewPdfUrl(String(blobUrl));
+  };
 
   const handleConfirmGenerate = async (alsoDownloadPdf: boolean) => {
     if (selectedLines.length === 0) return;
@@ -648,6 +784,14 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
         if (va == null) return 1;
         if (vb == null) return -1;
         return histSortDir === 'asc' ? (va > vb ? 1 : -1) : va < vb ? 1 : -1;
+      });
+    } else {
+      result.sort((a, b) => {
+        const toMs = (v: any) =>
+          !v ? 0 : typeof v?.toMillis === 'function' ? v.toMillis() : typeof v?.seconds === 'number' ? v.seconds * 1000 : (new Date(v).getTime() || 0);
+        const timeA = toMs(a.createdAt) || toMs(a.updatedAt) || toMs(a.invoiceDate);
+        const timeB = toMs(b.createdAt) || toMs(b.updatedAt) || toMs(b.invoiceDate);
+        return timeB - timeA;
       });
     }
     return result;
@@ -872,11 +1016,10 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
               {selectedLines.length > 0 ? (
                 <span>
                   <strong className="text-[#1F4E79]">{selectedLines.length}</strong> lines selected for{' '}
-                  <strong className="text-slate-900">{selectedLines[0].vendorName}</strong> • Subtotal:{' '}
-                  <strong className="font-mono text-slate-900">₹{formatMoney(draftCalculations.subtotal)}</strong>
+                  <strong className="text-slate-900">{selectedLines[0].vendorName}</strong>
                 </span>
               ) : (
-                <span>Select dispatched sample lines (same customer) and enter rates to generate an invoice.</span>
+                <span>Select dispatched sample lines (same customer) to generate an invoice.</span>
               )}
             </div>
 
@@ -910,23 +1053,9 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                     isMaximized ? 'flex-1 max-h-none' : 'max-h-[600px]'
                   }`}
                 >
-                  <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
+                  <table className="w-full text-left text-xs border-collapse min-w-[1150px]">
                     <thead className="sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] font-bold uppercase tracking-wider text-[10.5px] border-b-2 border-slate-300 select-none">
                       <tr>
-                        <th className="py-3 px-3 w-10 text-center">
-                          <input
-                            type="checkbox"
-                            checked={
-                              filteredEligibleLines.length > 0 &&
-                              filteredEligibleLines
-                                .filter((l) => l.vendorId === filteredEligibleLines[0].vendorId)
-                                .every((l) => selectedKeys.has(l.key))
-                            }
-                            onChange={handleToggleSelectAllVisible}
-                            className="cursor-pointer"
-                            title="Select all lines for first visible customer"
-                          />
-                        </th>
                         <th className="py-3 px-2.5 text-center whitespace-nowrap">SN</th>
                         <th className="py-3 px-2.5 whitespace-nowrap">PO No</th>
                         <th className="py-3 px-2.5 whitespace-nowrap">Company Name</th>
@@ -940,15 +1069,27 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                         <th className="py-3 px-2.5 whitespace-nowrap">Out DC Date</th>
                         <th className="py-3 px-2.5 whitespace-nowrap">Out DC No</th>
                         <th className="py-3 px-2.5 text-right whitespace-nowrap">Out Qty</th>
-                        <th className="py-3 px-2.5 text-right whitespace-nowrap">Rate (₹)</th>
-                        <th className="py-3 px-2.5 pr-12 text-right whitespace-nowrap">Amount (₹)</th>
+                        <th className="py-3 px-3 pr-12 w-16 text-center whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredEligibleLines.length > 0 &&
+                              filteredEligibleLines
+                                .filter((l) => l.vendorId === filteredEligibleLines[0].vendorId)
+                                .every((l) => selectedKeys.has(l.key))
+                            }
+                            onChange={handleToggleSelectAllVisible}
+                            className="cursor-pointer"
+                            title="Select all lines for first visible customer"
+                          />
+                        </th>
                       </tr>
                     </thead>
 
                     <tbody className="bg-white">
                       {groupedEligiblePOs.length === 0 ? (
                         <tr>
-                          <td colSpan={16} className="py-12 text-center text-slate-400">
+                          <td colSpan={14} className="py-12 text-center text-slate-400">
                             No unbilled sample outward lines available.
                           </td>
                         </tr>
@@ -959,20 +1100,16 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                             const groupAllSelected = group.lines.every((l) =>
                               selectedKeys.has(l.key)
                             );
+                            const poTotalRows = group.lines.length;
+                            let poRowCursor = 0;
+
                             return (
                               <React.Fragment key={group.poKey}>
                                 {/* PO Header Strip (matching Invoice Generation table) */}
                                 <tr className="bg-[#EEF5FB]/70 border-t-2 border-b border-blue-200">
-                                  <td colSpan={16} className="py-2 px-3 text-left">
+                                  <td colSpan={14} className="py-2 px-3 text-left">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={groupAllSelected}
-                                          onChange={() => toggleSelectPoGroup(group)}
-                                          className="cursor-pointer"
-                                          title={`Select all lines for PO ${group.inwardEntryNumber}`}
-                                        />
                                         <span className="font-bold text-[#1F4E79] font-mono text-xs">
                                           PO #{group.inwardEntryNumber}
                                         </span>
@@ -980,7 +1117,8 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                                           {group.vendorName}
                                         </span>
                                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#1F4E79]">
-                                          {group.lines.length} Eligible Line
+                                          {group.inwardGroups.length} Inward Line
+                                          {group.inwardGroups.length !== 1 ? 's' : ''} • {group.lines.length} Outward
                                           {group.lines.length !== 1 ? 's' : ''}
                                         </span>
                                       </div>
@@ -997,101 +1135,126 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                                             {group.totalOutQty}
                                           </strong>
                                         </span>
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer text-[#1F4E79]">
+                                          <input
+                                            type="checkbox"
+                                            checked={groupAllSelected}
+                                            onChange={() => toggleSelectPoGroup(group)}
+                                            className="cursor-pointer"
+                                            title={`Select all lines for PO ${group.inwardEntryNumber}`}
+                                          />
+                                          <span className="text-[11px] font-bold">Select PO</span>
+                                        </label>
                                       </div>
                                     </div>
                                   </td>
                                 </tr>
 
-                                {group.lines.map((line, lineIdx) => {
+                                {group.inwardGroups.map((inwGrp) => {
                                   runningSn += 1;
-                                  const isSelected = selectedKeys.has(line.key);
-                                  const rate = lineRates[line.key] ?? 0;
-                                  const amount = line.qty * rate;
-                                  return (
-                                    <tr
-                                      key={line.key}
-                                      className={`transition-colors ${
-                                        isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/90'
-                                      }`}
-                                    >
-                                      <td className="py-2.5 px-3 border border-slate-200 text-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={() => toggleSelectLine(line)}
-                                          className="cursor-pointer"
-                                        />
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-center text-slate-400 font-mono">
-                                        {runningSn}
-                                      </td>
-                                      {lineIdx === 0 && (
-                                        <>
+                                  const inwSpan = inwGrp.lines.length;
+                                  const currentSn = runningSn;
+                                  return inwGrp.lines.map((line, lIdx) => {
+                                    const isPoFirst = poRowCursor === 0;
+                                    poRowCursor += 1;
+                                    const isSelected = selectedKeys.has(line.key);
+                                    return (
+                                      <tr
+                                        key={line.key}
+                                        className={`transition-colors ${
+                                          isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/90'
+                                        }`}
+                                      >
+                                        {lIdx === 0 && (
                                           <td
-                                            rowSpan={group.lines.length}
-                                            className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-[#1F4E79] whitespace-nowrap align-middle bg-white"
+                                            rowSpan={inwSpan}
+                                            className="py-2.5 px-2.5 border border-slate-200 text-center text-slate-400 font-mono align-middle bg-white"
                                           >
-                                            {group.inwardEntryNumber}
+                                            {currentSn}
                                           </td>
-                                          <td
-                                            rowSpan={group.lines.length}
-                                            className="py-2.5 px-2.5 border border-slate-200 font-bold text-slate-900 whitespace-nowrap align-middle bg-white"
-                                          >
-                                            {group.vendorName}
-                                          </td>
-                                        </>
-                                      )}
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-slate-600 whitespace-nowrap">
-                                        {formatDisplayDate(line.custDcDate)}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                        {line.custDcNo}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 font-mono text-slate-700 whitespace-nowrap">
-                                        {line.styleNo}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 font-semibold text-slate-800 whitespace-nowrap">
-                                        {line.itemName}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-slate-700 whitespace-nowrap">
-                                        {line.washType}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">
-                                        {line.inwQty}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-center font-mono text-slate-500 whitespace-nowrap">
-                                        {line.unit}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-slate-600 whitespace-nowrap">
-                                        {formatDisplayDate(line.outDcDate)}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                        {line.outDcNo}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-right font-mono font-bold text-blue-700 whitespace-nowrap">
-                                        {line.qty}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 border border-slate-200 text-right">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          step="any"
-                                          value={lineRates[line.key] ?? ''}
-                                          onChange={(e) =>
-                                            setLineRates((prev) => ({
-                                              ...prev,
-                                              [line.key]:
-                                                e.target.value === '' ? 0 : Number(e.target.value)
-                                            }))
-                                          }
-                                          className="w-20 text-right bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
-                                        />
-                                      </td>
-                                      <td className="py-2.5 px-2.5 pr-12 border border-slate-200 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                        ₹{formatMoney(amount)}
-                                      </td>
-                                    </tr>
-                                  );
+                                        )}
+                                        {isPoFirst && (
+                                          <>
+                                            <td
+                                              rowSpan={poTotalRows}
+                                              className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-[#1F4E79] whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {group.inwardEntryNumber}
+                                            </td>
+                                            <td
+                                              rowSpan={poTotalRows}
+                                              className="py-2.5 px-2.5 border border-slate-200 font-bold text-slate-900 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {group.vendorName}
+                                            </td>
+                                          </>
+                                        )}
+                                        {lIdx === 0 && (
+                                          <>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 text-slate-600 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {formatDisplayDate(line.custDcDate)}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.custDcNo}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 font-mono text-slate-700 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.styleNo}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 font-semibold text-slate-800 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.itemName}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 text-slate-700 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.washType}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 text-right font-mono font-semibold text-slate-800 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.inwQty}
+                                            </td>
+                                            <td
+                                              rowSpan={inwSpan}
+                                              className="py-2.5 px-2.5 border border-slate-200 text-center font-mono text-slate-500 whitespace-nowrap align-middle bg-white"
+                                            >
+                                              {line.unit}
+                                            </td>
+                                          </>
+                                        )}
+                                        <td className="py-2.5 px-2.5 border border-slate-200 text-slate-600 whitespace-nowrap">
+                                          {formatDisplayDate(line.outDcDate)}
+                                        </td>
+                                        <td className="py-2.5 px-2.5 border border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                          {line.outDcNo}
+                                        </td>
+                                        <td className="py-2.5 px-2.5 border border-slate-200 text-right font-mono font-bold text-blue-700 whitespace-nowrap">
+                                          {line.qty}
+                                        </td>
+                                        <td className="py-2.5 px-3 pr-12 border border-slate-200 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleSelectLine(line)}
+                                            className="cursor-pointer"
+                                          />
+                                        </td>
+                                      </tr>
+                                    );
+                                  });
                                 })}
                               </React.Fragment>
                             );
@@ -1103,12 +1266,12 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                     <TableTotalsFooter
                       cells={[
                         {
-                          colSpan: 9,
+                          colSpan: 8,
                           label: `Total (${filteredEligibleLines.length} Eligible Lines)`,
                           isTotal: true
                         },
                         {
-                          quantity: filteredEligibleLines.reduce((s, l) => s + l.inwQty, 0),
+                          quantity: totalEligibleInwQty,
                           unit: 'piece',
                           isTotal: true
                         },
@@ -1120,18 +1283,7 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                           unit: 'piece',
                           isTotal: true
                         },
-                        { content: '—', align: 'center' },
-                        {
-                          content: `₹${formatMoney(
-                            filteredEligibleLines.reduce(
-                              (s, l) => s + l.qty * (lineRates[l.key] || 0),
-                              0
-                            )
-                          )}`,
-                          align: 'right',
-                          isTotal: true,
-                          className: 'pr-12'
-                        }
+                        { content: '—', align: 'center', className: 'pr-12' }
                       ]}
                     />
                   </table>
@@ -1336,7 +1488,7 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                             {renderHistSortIcon('status')}
                           </div>
                         </th>
-                        <th className="py-3 px-3 pr-12 text-center whitespace-nowrap">Actions</th>
+                        <th className="py-3 px-3 pr-12 text-left whitespace-nowrap">Actions</th>
                       </tr>
 
                       {showHistColFilters && (
@@ -1436,8 +1588,8 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                                   {inv.status}
                                 </span>
                               </td>
-                              <td className="py-3 px-3 pr-12 text-center whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1.5">
+                              <td className="py-3 px-3 pr-12 text-left whitespace-nowrap">
+                                <div className="flex items-center justify-start gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => setViewInvoice(inv)}
@@ -1540,12 +1692,25 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   HSN / SAC
                 </label>
-                <input
-                  type="text"
+                <select
                   value={draftHsnSac}
                   onChange={(e) => setDraftHsnSac(e.target.value)}
                   className="w-full bg-white border border-slate-300 rounded p-2 text-xs font-mono font-semibold"
-                />
+                >
+                  {hsnMasterItems.length === 0 && (
+                    <option value={draftHsnSac || '998821'}>{draftHsnSac || '998821'}</option>
+                  )}
+                  {hsnMasterItems.map((h) => (
+                    <option key={h.id} value={h.hsnNo}>
+                      {h.hsnNo} — {h.description}
+                    </option>
+                  ))}
+                  {draftHsnSac &&
+                    hsnMasterItems.length > 0 &&
+                    !hsnMasterItems.some((h) => h.hsnNo === draftHsnSac) && (
+                      <option value={draftHsnSac}>{draftHsnSac}</option>
+                    )}
+                </select>
               </div>
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
@@ -1579,45 +1744,120 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                     <th className="py-2 px-2">Out DC Date</th>
                     <th className="py-2 px-2">Out DC No</th>
                     <th className="py-2 px-2 text-right">Qty</th>
+                    <th className="py-2 px-2 text-right">Total Out</th>
                     <th className="py-2 px-2 text-right">Rate</th>
                     <th className="py-2 px-2 text-right">Amount</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {draftCalculations.items.map((it, idx) => (
-                    <tr key={it.id + idx}>
-                      <td className="py-2 px-2 text-center font-mono text-slate-400">{idx + 1}</td>
-                      <td className="py-2 px-2 whitespace-nowrap">{formatDisplayDate(it.custDcDate)}</td>
-                      <td className="py-2 px-2 font-mono font-bold">{it.custDcNo}</td>
-                      <td className="py-2 px-2 font-mono">{it.styleNo}</td>
-                      <td className="py-2 px-2 font-semibold">{it.itemName}</td>
-                      <td className="py-2 px-2">{it.washType}</td>
-                      <td className="py-2 px-2 text-right font-mono">{formatMoney(it.inwQty)}</td>
-                      <td className="py-2 px-2 text-center">{it.unit}</td>
-                      <td className="py-2 px-2 whitespace-nowrap">{formatDisplayDate(it.outDcDate)}</td>
-                      <td className="py-2 px-2 font-mono font-bold">{it.outDcNo}</td>
-                      <td className="py-2 px-2 text-right font-mono font-bold">{formatMoney(it.qty)}</td>
-                      <td className="py-2 px-2 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={lineRates[`${it.outwardId}__${it.id}`] ?? ''}
-                          onChange={(e) =>
-                            setLineRates((prev) => ({
-                              ...prev,
-                              [`${it.outwardId}__${it.id}`]:
-                                e.target.value === '' ? 0 : Number(e.target.value)
-                            }))
-                          }
-                          className="w-20 text-right border border-slate-300 rounded px-1.5 py-1 font-mono font-bold"
-                        />
-                      </td>
-                      <td className="py-2 px-2 text-right font-mono font-bold">
-                        {formatMoney(it.amount)}
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="bg-white">
+                  {draftCalculations.inwardGroups.map((inwGrp, gIdx) =>
+                    inwGrp.items.map((it, lIdx) => {
+                      const span = inwGrp.items.length;
+                      return (
+                        <tr key={it.lineKey + lIdx} className="border-b border-slate-100">
+                          {lIdx === 0 && (
+                            <>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-center font-mono text-slate-400 align-middle bg-white"
+                              >
+                                {gIdx + 1}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 whitespace-nowrap align-middle bg-white"
+                              >
+                                {formatDisplayDate(it.custDcDate)}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 font-mono font-bold align-middle bg-white"
+                              >
+                                {it.custDcNo}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 font-mono align-middle bg-white"
+                              >
+                                {it.styleNo}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 font-semibold align-middle bg-white"
+                              >
+                                {it.itemName}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 align-middle bg-white"
+                              >
+                                {it.washType}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-right font-mono align-middle bg-white"
+                              >
+                                {formatMoney(it.inwQty)}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-center align-middle bg-white"
+                              >
+                                {it.unit}
+                              </td>
+                            </>
+                          )}
+                          <td className="py-2 px-2 border border-slate-200 whitespace-nowrap">
+                            {formatDisplayDate(it.outDcDate)}
+                          </td>
+                          <td className="py-2 px-2 border border-slate-200 font-mono font-bold">
+                            {it.outDcNo}
+                          </td>
+                          <td className="py-2 px-2 border border-slate-200 text-right font-mono font-bold">
+                            {formatMoney(it.qty)}
+                          </td>
+                          {lIdx === 0 && (
+                            <>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-right font-mono font-bold text-[#1F4E79] align-middle bg-white"
+                              >
+                                {formatMoney(inwGrp.groupTotalOutQty)}
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-right align-middle bg-white"
+                              >
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="any"
+                                  value={lineRates[inwGrp.items[0].lineKey] ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setLineRates((prev) => {
+                                      const next = { ...prev };
+                                      inwGrp.items.forEach((grpIt) => {
+                                        next[grpIt.lineKey] = val;
+                                      });
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-20 text-right border border-slate-300 rounded px-1.5 py-1 font-mono font-bold"
+                                />
+                              </td>
+                              <td
+                                rowSpan={span}
+                                className="py-2 px-2 border border-slate-200 text-right font-mono font-bold align-middle bg-white"
+                              >
+                                {formatMoney(inwGrp.groupTotalAmount)}
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1653,6 +1893,15 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                     />
                   </div>
                 </div>
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draftRoundOffPaise}
+                    onChange={(e) => setDraftRoundOffPaise(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span>Round Off Amount (Paise)</span>
+                </label>
                 <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-[11px]">
                   <span className="font-bold text-slate-500 block uppercase">Amount in Words:</span>
                   <span className="font-bold text-slate-900">{draftCalculations.amountInWords}</span>
@@ -1690,6 +1939,12 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                   <span className="text-slate-600">Forwarding</span>
                   <span className="font-mono">₹{formatMoney(draftForwarding)}</span>
                 </div>
+                {draftRoundOffPaise && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Round Off</span>
+                    <span className="font-mono">₹{formatMoney(draftCalculations.roundOff)}</span>
+                  </div>
+                )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between text-sm font-black text-[#1F4E79]">
                   <span>Total Amt</span>
                   <span className="font-mono">₹{formatMoney(draftCalculations.totalAmount)}</span>
@@ -1697,9 +1952,16 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+            <div className="pt-3 border-t border-slate-200 flex flex-wrap justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setIsGenerateModalOpen(false)}>
                 Cancel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePreviewDraftInvoice}
+              >
+                Preview Invoice
               </Button>
               <Button
                 variant="outline"
@@ -1717,6 +1979,29 @@ export const SampleInvoicePage: React.FC<SampleInvoicePageProps> = ({ vendors = 
                 icon={<Printer className="w-4 h-4" />}
               >
                 {savingInvoice ? 'Generating...' : 'Generate & Download PDF'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL 1B: INVOICE PDF PREVIEW */}
+      {previewPdfUrl && (
+        <Modal
+          isOpen={true}
+          onClose={() => setPreviewPdfUrl(null)}
+          title={`Invoice Preview: ${draftInvoiceNo}`}
+          maxWidth="5xl"
+        >
+          <div className="space-y-3">
+            <iframe
+              src={previewPdfUrl}
+              title="Sample Invoice PDF Preview"
+              className="w-full h-[76vh] border border-slate-200 rounded-xl bg-slate-100"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPreviewPdfUrl(null)}>
+                Close Preview
               </Button>
             </div>
           </div>

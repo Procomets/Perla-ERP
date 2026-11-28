@@ -119,6 +119,7 @@ export class POLockService {
         approvedLineIds: Set<string>;
         approvedColourNames: Set<string>;
         hasInvoiced: boolean;
+        hasFinalizedPO: boolean;
         latestInvoiceNo?: string;
         latestApprovalDate?: string;
       }
@@ -155,7 +156,8 @@ export class POLockService {
           invoicedColourNames: new Set<string>,
           approvedLineIds: new Set<string>(),
           approvedColourNames: new Set<string>(),
-          hasInvoiced: false
+          hasInvoiced: false,
+          hasFinalizedPO: false
         };
 
         if (poId) aggMap.set(poId, newAgg);
@@ -193,6 +195,9 @@ export class POLockService {
               agg.lockedColourNames.add(app.colourName.trim().toLowerCase());
             }
             if (app.invoiceNo) agg.latestInvoiceNo = app.invoiceNo;
+          }
+          if ((app as any).isFinalizedPO === true) {
+            agg.hasFinalizedPO = true;
           }
           if (app.approvedAt) agg.latestApprovalDate = app.approvedAt;
         }
@@ -287,18 +292,23 @@ export class POLockService {
           );
         }
 
-        // A PO is fully locked ONLY when all colour lines have been invoiced completely!
-        const isFullyLocked =
-          totalLines > 0 ? invoicedLinesCount >= totalLines : (agg.hasInvoiced && invoicedLinesCount > 0);
+        // A PO is locked ONLY when explicitly finalized (mid-PO / partial invoices keep PO editable)
+        const isExplicitlyFinalized =
+          Boolean((po as any)?.isFinalized === true) ||
+          po?.status === 'Completed' ||
+          (po?.status as string) === 'completed' ||
+          (po?.status as string) === 'closed' ||
+          agg.hasFinalizedPO;
+        const isFullyLocked = isExplicitlyFinalized;
         const statusType: 'approved' | 'invoiced' = agg.hasInvoiced ? 'invoiced' : 'approved';
 
         let reason = '';
         if (isFullyLocked) {
-          reason = `All colour lines have been invoiced completely (${agg.latestInvoiceNo || 'Billed'}). PO entry cannot be edited.`;
+          reason = `Purchase Order has been finalized (${agg.latestInvoiceNo || 'Finalized'}). PO entry cannot be edited.`;
         } else if (invoicedLinesCount > 0) {
-          reason = `${invoicedLinesCount} of ${totalLines} colour line(s) invoiced (${agg.latestInvoiceNo || 'Billed'}). Invoiced lines cannot be modified.`;
+          reason = `${invoicedLinesCount} of ${totalLines} colour line(s) have mid-PO invoices (${agg.latestInvoiceNo || 'Billed'}). PO remains editable until finalized.`;
         } else if (approvedLinesCount > 0) {
-          reason = `${approvedLinesCount} of ${totalLines} colour line(s) moved to invoice generation.`;
+          reason = `${approvedLinesCount} of ${totalLines} colour line(s) moved to invoice generation. PO remains editable until finalized.`;
         }
 
         const status: POLockStatus = {
@@ -425,27 +435,8 @@ export class POLockService {
     if (!po || !line || !lockedMap) return false;
     const poStatus = this.getPOStatus(po, lockedMap);
     if (!poStatus) return false;
-    if (poStatus.isFullyLocked) return true;
-
-    const lineId = line.id || line.lineId;
-    if (
-      lineId &&
-      ((poStatus.invoicedLineIds && poStatus.invoicedLineIds.includes(lineId)) ||
-        (poStatus.lockedLineIds && poStatus.lockedLineIds.includes(lineId)))
-    ) {
-      return true;
-    }
-
-    const colourName = (line.colourName || line.colour || '').trim().toLowerCase();
-    if (
-      colourName &&
-      ((poStatus.invoicedColourNames && poStatus.invoicedColourNames.includes(colourName)) ||
-        (poStatus.lockedColourNames && poStatus.lockedColourNames.includes(colourName)))
-    ) {
-      return true;
-    }
-
-    return false;
+    // Only lock lines when the PO itself has been finalized
+    return Boolean(poStatus.isFullyLocked);
   }
 
   /**

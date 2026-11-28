@@ -338,8 +338,10 @@ export const POList: React.FC<POListProps> = ({
     if (!sortField || !sortDirection) {
       // Default: Most recent entry first based on timestamp (createdAt / updatedAt / orderDate)
       return [...filteredPOs].sort((a, b) => {
-        const timeA = new Date(a.createdAt || a.updatedAt || a.orderDate || 0).getTime();
-        const timeB = new Date(b.createdAt || b.updatedAt || b.orderDate || 0).getTime();
+        const toMs = (v: any) =>
+          !v ? 0 : typeof v?.toMillis === 'function' ? v.toMillis() : typeof v?.seconds === 'number' ? v.seconds * 1000 : (new Date(v).getTime() || 0);
+        const timeA = toMs(a.createdAt) || toMs(a.updatedAt) || toMs(a.orderDate);
+        const timeB = toMs(b.createdAt) || toMs(b.updatedAt) || toMs(b.orderDate);
         return timeB - timeA;
       });
     }
@@ -1231,7 +1233,18 @@ export const POList: React.FC<POListProps> = ({
 
                       {/* Status - Center */}
                       <td className="py-2.5 px-3.5 border-r border-slate-200 text-center whitespace-nowrap align-middle">
-                        <StatusChip status={po.status} />
+                        {(() => {
+                          const lockInfo = POLockService.getPOStatus(po, lockedPOMap);
+                          const statusLower = (po.status || '').toLowerCase();
+                          const isPoCompleted =
+                            Boolean(lockInfo?.isFullyLocked) ||
+                            Boolean((po as any).isFinalized) ||
+                            statusLower === 'completed' ||
+                            statusLower === 'po_completed' ||
+                            statusLower === 'po completed' ||
+                            statusLower === 'closed';
+                          return <StatusChip status={isPoCompleted ? 'PO Completed' : po.status} />;
+                        })()}
                       </td>
 
                       {/* Actions - Left */}

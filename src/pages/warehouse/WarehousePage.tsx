@@ -824,7 +824,13 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
   // Sorted Purchases Ledger (General & Firewood)
   const sortedPurchases = useMemo(() => {
     if (!sortField || sortDirection === 'normal') {
-      return filteredPurchases;
+      return [...filteredPurchases].sort((a, b) => {
+        const toMs = (v: any) =>
+          !v ? 0 : typeof v?.toMillis === 'function' ? v.toMillis() : typeof v?.seconds === 'number' ? v.seconds * 1000 : (new Date(v).getTime() || 0);
+        const timeA = toMs(a.createdAt) || toMs(a.updatedAt) || toMs(a.purchaseDate);
+        const timeB = toMs(b.createdAt) || toMs(b.updatedAt) || toMs(b.purchaseDate);
+        return timeB - timeA;
+      });
     }
     return [...filteredPurchases].sort((a, b) => {
       let valA: any = '';
@@ -2013,7 +2019,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                             {renderSortIcon('status')}
                           </div>
                         </th>
-                        <th className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
+                        <th className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
                           Actions
                         </th>
                       </tr>
@@ -2276,8 +2282,8 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                                           {p.status}
                                         </span>
                                       </td>
-                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 text-center align-middle whitespace-nowrap bg-white">
-                                        <div className="inline-flex items-center justify-center gap-1.5">
+                                      <td rowSpan={lines.length} className="p-3 border border-slate-200 text-left align-middle whitespace-nowrap bg-white">
+                                        <div className="flex items-center justify-start gap-1.5">
                                           <button
                                             onClick={() => handleOpenViewPurchase(p)}
                                             className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
@@ -2441,7 +2447,7 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                             {renderSortIcon('status')}
                           </div>
                         </th>
-                        <th className="p-3 border border-slate-300 text-center whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
+                        <th className="p-3 border border-slate-300 text-left whitespace-nowrap min-w-[140px] sticky top-0 z-20 bg-[#EEF5FB] text-[#1F4E79] pr-12">
                           Actions
                         </th>
                       </tr>
@@ -2725,8 +2731,8 @@ export const WarehousePage: React.FC<WarehousePageProps> = ({ initialTab = 'over
                                   {p.status}
                                 </span>
                               </td>
-                              <td className="p-3 border border-slate-200 align-middle text-center whitespace-nowrap">
-                                <div className="inline-flex items-center justify-center gap-1.5">
+                              <td className="p-3 border border-slate-200 align-middle text-left whitespace-nowrap">
+                                <div className="flex items-center justify-start gap-1.5">
                                   <button
                                     onClick={() => handleOpenViewPurchase(p)}
                                     className="px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"

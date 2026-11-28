@@ -1929,7 +1929,7 @@ const ChemicalEntryContent: React.FC = () => {
                 </th>
 
                 {/* 9. Actions */}
-                <th className="py-3 px-3.5 pr-12 text-center w-28 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] border-b-2 border-slate-300 min-w-[130px]">
+                <th className="py-3 px-3.5 pr-12 text-left w-28 whitespace-nowrap sticky top-0 z-20 bg-[#EEF5FB] border-b-2 border-slate-300 min-w-[130px]">
                   Actions
                 </th>
               </tr>
@@ -2213,8 +2213,8 @@ const ChemicalEntryContent: React.FC = () => {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3 px-3.5 align-middle text-center whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5">
+                      <td className="py-3 px-3.5 align-middle text-left whitespace-nowrap">
+                        <div className="flex items-center justify-start gap-1.5">
                           <button
                             type="button"
                             onClick={() => setViewEntry(entry)}

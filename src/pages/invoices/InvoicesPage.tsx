@@ -191,6 +191,41 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
     }
   };
 
+  // Handle batch approval of selected colour lines (with optional PO finalization & qty sync)
+  const handleApproveSelectedLines = async (
+    items: { poId: string; poLineId: string; companyId?: string }[],
+    options: { isFinalizedPO: boolean; syncPoQtyToDispatched: boolean }
+  ) => {
+    try {
+      setIsApproving(true);
+      const authUser = {
+        uid: user?.uid || 'usr-authorized',
+        displayName: user?.displayName || 'Authorized User',
+        role: user?.role
+      };
+      await StatementService.approveSelectedLinesForInvoice(
+        {
+          items,
+          isFinalizedPO: options.isFinalizedPO,
+          syncPoQtyToDispatched: options.syncPoQtyToDispatched
+        },
+        authUser,
+        false
+      );
+      showToast(
+        'success',
+        options.isFinalizedPO
+          ? `${items.length} colour line(s) moved to Invoice Generation and PO finalized!`
+          : `${items.length} colour line(s) moved to Invoice Generation (PO stays open for editing & further batches).`
+      );
+      await refreshEligibleItems();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to move colour lines to Invoice Generation.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   // Load invoices history
   const refreshInvoices = useCallback(async () => {
     try {
@@ -683,6 +718,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           searchQuery={filters.searchQuery}
           onApproveLine={handleApproveLine}
           onApproveEntirePO={handleApproveEntirePO}
+          onApproveSelectedLines={handleApproveSelectedLines}
           isApproving={isApproving}
           onRequestInvoicing={handleRequestInvoicing}
           onGenerateInvoice={handleInitiateGenerateInvoice}
@@ -701,6 +737,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({
           searchQuery={filters.searchQuery}
           onApproveLine={handleApproveLine}
           onApproveEntirePO={handleApproveEntirePO}
+          onApproveSelectedLines={handleApproveSelectedLines}
           isApproving={isApproving}
           onRequestInvoicing={handleRequestInvoicing}
           onGenerateInvoice={handleInitiateGenerateInvoice}

@@ -186,40 +186,74 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
     }
   }, [initialInwards]);
 
-  // Load single inward details
-  const loadSingleInward = async (inwardId: string) => {
-    setLoading(true);
+  // Load single inward details (instant from in-memory list when available, hydrate logs in background)
+  const loadSingleInward = async (inwardId: string, background: boolean = false) => {
+    const cached = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId) || null;
+    if (cached) {
+      setSelectedInwardDetails((prev) => ({
+        inward: cached,
+        logs: prev.inward?.inwardId === inwardId || prev.inward?.id === inwardId ? prev.logs : []
+      }));
+      setSelectedInwardId(inwardId);
+    } else if (!background) {
+      setLoading(true);
+    }
+
     try {
       const result = await InwardService.getInwardEntryById(inwardId, isDemoMode);
-      setSelectedInwardDetails(result);
-      setSelectedInwardId(inwardId);
+      if (result.inward) {
+        setSelectedInwardDetails(result);
+        setSelectedInwardId(inwardId);
+      }
     } catch (err) {
       console.error('Failed to load inward receipt details:', err);
     } finally {
-      setLoading(false);
+      if (!cached && !background) {
+        setLoading(false);
+      }
     }
   };
 
-  // View handlers
-  const handleViewDetails = async (inwardId: string) => {
-    await loadSingleInward(inwardId);
-    setCurrentView('details');
+  // View handlers (instant navigation using cached record; audit logs hydrate in background)
+  const handleViewDetails = (inwardId: string) => {
+    const cached = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId);
+    if (cached) {
+      setSelectedInwardDetails({ inward: cached, logs: [] });
+      setSelectedInwardId(inwardId);
+      setCurrentView('details');
+      loadSingleInward(inwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleInward(inwardId).then(() => setCurrentView('details'));
   };
 
-  const handlePrint = async (inwardId: string) => {
-    await loadSingleInward(inwardId);
-    setCurrentView('print');
+  const handlePrint = (inwardId: string) => {
+    const cached = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId);
+    if (cached) {
+      setSelectedInwardDetails({ inward: cached, logs: [] });
+      setSelectedInwardId(inwardId);
+      setCurrentView('print');
+      loadSingleInward(inwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleInward(inwardId).then(() => setCurrentView('print'));
   };
 
-  const handleEditDraft = async (inwardId: string) => {
+  const handleEditDraft = (inwardId: string) => {
     const target = inwards.find((i) => i.inwardId === inwardId || i.id === inwardId) || selectedInwardDetails.inward;
     const lock = POLockService.isLocked(target, lockedPOMap);
     if (lock) {
       alert(lock.reason);
       return;
     }
-    await loadSingleInward(inwardId);
-    setCurrentView('edit');
+    if (target) {
+      setSelectedInwardDetails({ inward: target, logs: [] });
+      setSelectedInwardId(inwardId);
+      setCurrentView('edit');
+      loadSingleInward(inwardId, true).catch(console.warn);
+      return;
+    }
+    loadSingleInward(inwardId).then(() => setCurrentView('edit'));
   };
 
   const handleDeleteInward = async (inwardId: string) => {
@@ -285,7 +319,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       // Refresh in background non-blocking
       loadData().catch(console.warn);
-      loadSingleInward(savedDraft.inwardId).catch(console.warn);
+      loadSingleInward(savedDraft.inwardId, true).catch(console.warn);
     } catch (err: any) {
       alert(`Error saving draft: ${err.message || 'Unknown error'}`);
       setIsSaving(false);
@@ -318,7 +352,7 @@ export const InwardContainer: React.FC<InwardContainerProps> = ({
 
       // Refresh in background non-blocking
       loadData().catch(console.warn);
-      loadSingleInward(posted.inwardId).catch(console.warn);
+      loadSingleInward(posted.inwardId, true).catch(console.warn);
     } catch (err: any) {
       alert(`Error posting inward receipt: ${err.message || 'Unknown error'}`);
       setIsSaving(false);

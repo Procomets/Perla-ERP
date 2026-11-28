@@ -18,7 +18,8 @@ import {
   Shirt,
   Building2,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { Button } from '../../../components/ui/Button';
@@ -29,8 +30,10 @@ import {
   TableTotalsFooter
 } from '../../../components/ui/TableMaximizeWrapper';
 import { SamplePoOutward, SamplePoInward } from '../../../types/samplePo';
+import { SampleInvoice } from '../../../types/sampleInvoice';
 import { Vendor } from '../../../types/vendor';
 import { SamplePoService } from '../../../services/samplePoService';
+import { SampleInvoiceService } from '../../../services/sampleInvoiceService';
 import { SamplePoPdfService } from '../../../services/samplePoPdfService';
 import { SampleOutwardModal } from './SampleOutwardModal';
 import { SampleOutwardDetailsModal } from './SampleOutwardDetailsModal';
@@ -92,6 +95,46 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
   const [viewDetailsOutward, setViewDetailsOutward] = useState<SamplePoOutward | null>(null);
   const [deleteConfirmOutward, setDeleteConfirmOutward] = useState<SamplePoOutward | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [sampleInvoices, setSampleInvoices] = useState<SampleInvoice[]>(() =>
+    SampleInvoiceService.getCache()
+  );
+
+  React.useEffect(() => {
+    let mounted = true;
+    const unsub = SampleInvoiceService.subscribeSampleInvoices(
+      (data) => {
+        if (mounted) setSampleInvoices(data);
+      },
+      (err) => console.warn('SampleInvoice subscription error:', err)
+    );
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [isDemoMode]);
+
+  const invoicedLookup = useMemo(() => {
+    const outwardIds = new Set<string>();
+    const poIds = new Set<string>();
+    const poNumbers = new Set<string>();
+    sampleInvoices.forEach((inv) => {
+      if ((inv.status || '').toLowerCase() === 'cancelled') return;
+      (inv.items || []).forEach((it) => {
+        if (it.outwardId) outwardIds.add(it.outwardId);
+        if (it.inwardId) poIds.add(it.inwardId);
+        if (it.inwardEntryNumber) poNumbers.add(it.inwardEntryNumber);
+      });
+    });
+    return { outwardIds, poIds, poNumbers };
+  }, [sampleInvoices]);
+
+  const isOutwardInvoicedLocked = (out: SamplePoOutward): boolean => {
+    return (
+      invoicedLookup.outwardIds.has(out.id) ||
+      (Boolean(out.inwardId) && invoicedLookup.poIds.has(out.inwardId)) ||
+      (Boolean(out.inwardEntryNumber) && invoicedLookup.poNumbers.has(out.inwardEntryNumber))
+    );
+  };
 
   // Table Controls State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -405,6 +448,14 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
   // Delete Outward Handler
   const handleDeleteOutward = async () => {
     if (!deleteConfirmOutward) return;
+    if (isOutwardInvoicedLocked(deleteConfirmOutward)) {
+      onNotice({
+        type: 'error',
+        text: `Cannot delete ${deleteConfirmOutward.entryNumber}: Sample Invoice already generated for this PO.`
+      });
+      setDeleteConfirmOutward(null);
+      return;
+    }
     try {
       setActionLoading(true);
       await SamplePoService.deleteSampleOutward(deleteConfirmOutward.id, isDemoMode);
@@ -728,7 +779,7 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                       </div>
                     </th>
 
-                    <th className="py-3 px-3 text-center min-w-[210px] pr-12 whitespace-nowrap">
+                    <th className="py-3 px-3 text-left min-w-[210px] pr-12 whitespace-nowrap">
                       Actions
                     </th>
                   </tr>
@@ -937,9 +988,9 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                                 {isFirst && (
                                   <td
                                     rowSpan={rowSpan}
-                                    className="py-3 px-3 text-center pr-12 align-middle border-l border-slate-100 whitespace-nowrap"
+                                    className="py-3 px-3 text-left pr-12 align-middle border-l border-slate-100 whitespace-nowrap"
                                   >
-                                    <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                                    <div className="flex items-center justify-start gap-1.5 whitespace-nowrap">
                                       <button
                                         type="button"
                                         onClick={() => setViewDetailsOutward(outward)}
@@ -956,14 +1007,30 @@ export const SampleOutwardTab: React.FC<SampleOutwardTabProps> = ({
                                       >
                                         Download
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setDeleteConfirmOutward(outward)}
-                                        className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition cursor-pointer"
-                                        title="Delete Outward"
-                                      >
-                                        Delete
-                                      </button>
+                                      {(() => {
+                                        const lockedByInv = isOutwardInvoicedLocked(outward);
+                                        return (
+                                          <button
+                                            type="button"
+                                            disabled={lockedByInv}
+                                            onClick={() => {
+                                              if (!lockedByInv) setDeleteConfirmOutward(outward);
+                                            }}
+                                            className={`px-2.5 py-1 rounded font-bold text-xs transition ${
+                                              lockedByInv
+                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70'
+                                                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer'
+                                            }`}
+                                            title={
+                                              lockedByInv
+                                                ? 'Locked: Invoice generated for this PO'
+                                                : 'Delete Outward'
+                                            }
+                                          >
+                                            Delete
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                   </td>
                                 )}
